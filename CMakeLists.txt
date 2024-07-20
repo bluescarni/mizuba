@@ -10,3 +10,8 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 project(mizuba VERSION 1.0.0 LANGUAGES CXX C)
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/yacma")
+
+message(STATUS "System name: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "mizuba version: ${mizuba_VERSION}")
