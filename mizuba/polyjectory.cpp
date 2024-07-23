@@ -241,12 +241,18 @@ polyjectory::polyjectory(ptag, std::tuple<std::vector<traj_span_t>, std::vector<
 
             // Update the time range.
             if (i == 0u) {
+                // Init at the first iteration.
                 // NOTE: indexing here is safe: we know from earlier checks
                 // that the size of cur_time must be at least 1.
                 time_range.first = cur_time(0);
                 time_range.second = cur_time(cur_time.extent(0) - 1u);
             } else {
-                time_range.first = std::min(time_range.first, cur_time(0));
+                // Update at the other iterations.
+                if (time_range.first != cur_time(0)) [[unlikely]] {
+                    throw std::invalid_argument(fmt::format("The starting time for the object at index {} is not equal "
+                                                            "to the starting time for the other objects",
+                                                            i));
+                }
                 time_range.second = std::max(time_range.second, cur_time(cur_time.extent(0) - 1u));
             }
 
