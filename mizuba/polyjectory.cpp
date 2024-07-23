@@ -60,6 +60,7 @@ struct polyjectory::impl {
         // LCOV_EXCL_STOP
     }
 
+    // Fetch a pointer to the beginning of the data.
     [[nodiscard]] const double *base_ptr() const noexcept
     {
         // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
@@ -259,6 +260,8 @@ polyjectory::polyjectory(ptag, std::tuple<std::vector<traj_span_t>, std::vector<
     }
 }
 
+// NOTE: the polyjectory class will have shallow copy semantics - this is ok
+// as the public API is immutable and thus there is no point in making deep copies.
 polyjectory::polyjectory(const polyjectory &) = default;
 
 polyjectory::polyjectory(polyjectory &&other) noexcept = default;

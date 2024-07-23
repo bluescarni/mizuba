@@ -37,6 +37,7 @@ PYBIND11_MODULE(core, m)
     pt_cl.def(
         py::init([](py::iterable trajs, py::iterable times) {
             auto traj_trans = [](const auto &o) {
+                // NOTE: should we be more strict here and use py::array_t<double>::check_() instead?
                 auto arr = o.template cast<py::array_t<double>>();
 
                 if (arr.ndim() != 3) [[unlikely]] {
