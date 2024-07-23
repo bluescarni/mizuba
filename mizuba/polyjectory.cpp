@@ -6,6 +6,7 @@
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -44,10 +45,18 @@ struct polyjectory::impl {
     // - the polynomial order of the trajectory data.
     using traj_offset_vec_t = std::vector<std::tuple<std::size_t, std::size_t, std::size_t>>;
 
+    boost::filesystem::path m_file_path;
+    traj_offset_vec_t m_traj_offset_vec;
+    std::vector<std::size_t> m_time_offset_vec;
+    // NOTE: these are the min/max time coordinates across
+    // all objects.
+    std::pair<double, double> m_time_range = {};
+    boost::iostreams::mapped_file_source m_file;
+
     explicit impl(boost::filesystem::path file_path, traj_offset_vec_t traj_offset_vec,
-                  std::vector<std::size_t> time_offset_vec)
+                  std::vector<std::size_t> time_offset_vec, std::pair<double, double> time_range)
         : m_file_path(std::move(file_path)), m_traj_offset_vec(std::move(traj_offset_vec)),
-          m_time_offset_vec(std::move(time_offset_vec))
+          m_time_offset_vec(std::move(time_offset_vec)), m_time_range(time_range)
     {
         m_file.open(m_file_path.string());
 
@@ -83,11 +92,6 @@ struct polyjectory::impl {
         // Remove the temp dir and everything within.
         boost::filesystem::remove_all(m_file_path.parent_path());
     }
-
-    boost::filesystem::path m_file_path;
-    traj_offset_vec_t m_traj_offset_vec;
-    std::vector<std::size_t> m_time_offset_vec;
-    boost::iostreams::mapped_file_source m_file;
 };
 
 polyjectory::polyjectory(ptag, std::tuple<std::vector<traj_span_t>, std::vector<time_span_t>> tup)
@@ -202,6 +206,9 @@ polyjectory::polyjectory(ptag, std::tuple<std::vector<traj_span_t>, std::vector<
         std::vector<std::size_t> time_offset_vec;
         time_offset_vec.reserve(n_objs);
 
+        // Init the time range.
+        std::pair<double, double> time_range{};
+
         // Write the time data.
         for (decltype(time_spans.size()) i = 0; i < n_objs; ++i) {
             // Fetch the current traj and time spans.
@@ -232,6 +239,17 @@ polyjectory::polyjectory(ptag, std::tuple<std::vector<traj_span_t>, std::vector<
                 }
             }
 
+            // Update the time range.
+            if (i == 0u) {
+                // NOTE: indexing here is safe: we know from earlier checks
+                // that the size of cur_time must be at least 1.
+                time_range.first = cur_time(0);
+                time_range.second = cur_time(cur_time.extent(0) - 1u);
+            } else {
+                time_range.first = std::min(time_range.first, cur_time(0));
+                time_range.second = std::max(time_range.second, cur_time(cur_time.extent(0) - 1u));
+            }
+
             // Bulk write into the file.
             storage_file.write(reinterpret_cast<const char *>(cur_time.data_handle()),
                                static_cast<std::streamsize>(time_size * sizeof(double)));
@@ -252,8 +270,8 @@ polyjectory::polyjectory(ptag, std::tuple<std::vector<traj_span_t>, std::vector<
         // If an exception is thrown (e.g., from memory allocation or from the impl ctor throwing), the impl has not
         // been fully constructed and thus its dtor will not be invoked, and the cleanup of tmp_dir_path will be
         // performed in the catch block below.
-        m_impl
-            = std::make_shared<impl>(std::move(storage_path), std::move(traj_offset_vec), std::move(time_offset_vec));
+        m_impl = std::make_shared<impl>(std::move(storage_path), std::move(traj_offset_vec), std::move(time_offset_vec),
+                                        time_range);
     } catch (...) {
         boost::filesystem::remove_all(tmp_dir_path);
         throw;
