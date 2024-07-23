@@ -74,7 +74,7 @@ public:
     poly_trajectory &operator=(poly_trajectory &&) noexcept;
     ~poly_trajectory();
 
-    std::pair<traj_span_t, time_span_t> get_obj_data(std::size_t) const;
+    [[nodiscard]] std::pair<traj_span_t, time_span_t> operator[](std::size_t) const;
 };
 
 } // namespace mizuba

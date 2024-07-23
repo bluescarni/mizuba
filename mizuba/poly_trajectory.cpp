@@ -152,20 +152,23 @@ poly_trajectory::poly_trajectory(ptag, std::tuple<std::vector<traj_span_t>, std:
         safe_size_t cur_offset(0);
 
         // Check and write the trajectory data.
+        // NOTE: we could investigate if computing and pre-allocating the file size
+        // leads to better performance. For now, let us keep it simple.
         for (decltype(traj_spans.size()) i = 0; i < n_objs; ++i) {
             // Fetch the traj data for the current object.
             const auto cur_traj = traj_spans[i];
 
             // Check the number of steps.
             if (cur_traj.extent(0) == 0u) [[unlikely]] {
-                // TODO
-                throw;
+                throw std::invalid_argument(fmt::format(
+                    "The trajectory for the object at index {} consists of zero steps - this is not allowed", i));
             }
 
             // Check the order + 1.
             if (cur_traj.extent(2) < 3u) [[unlikely]] {
-                // TODO
-                throw;
+                throw std::invalid_argument(fmt::format(
+                    "The trajectory polynomial order for the object at index {} is less than 2 - this is not allowed",
+                    i));
             }
 
             // Compute the total data size (in number of floating-point values).
@@ -176,8 +179,8 @@ poly_trajectory::poly_trajectory(ptag, std::tuple<std::vector<traj_span_t>, std:
                 for (std::size_t k = 0; k < cur_traj.extent(1); ++k) {
                     for (std::size_t l = 0; l < cur_traj.extent(2); ++l) {
                         if (!std::isfinite(cur_traj(j, k, l))) [[unlikely]] {
-                            std::invalid_argument(
-                                fmt::format("A non-finite element was found in the trajectory at index {}", i));
+                            throw std::invalid_argument(
+                                fmt::format("A non-finite value was found in the trajectory at index {}", i));
                         }
                     }
                 }
@@ -206,8 +209,10 @@ poly_trajectory::poly_trajectory(ptag, std::tuple<std::vector<traj_span_t>, std:
 
             // The number of times must be consistent with the number of steps.
             if (cur_traj.extent(0) != cur_time.extent(0)) [[unlikely]] {
-                // TODO
-                throw;
+                throw std::invalid_argument(
+                    fmt::format("The number of steps for the trajectory of the object at index {} is {}, but the "
+                                "number of times is {} - the two numbers must be equal",
+                                i, cur_traj.extent(0), cur_time.extent(0)));
             }
 
             // Compute the total data size (in number of floating-point values).
@@ -216,13 +221,13 @@ poly_trajectory::poly_trajectory(ptag, std::tuple<std::vector<traj_span_t>, std:
             // Check data.
             for (std::size_t j = 0; j < cur_time.extent(0); ++j) {
                 if (!std::isfinite(cur_time(j))) [[unlikely]] {
-                    // TODO
-                    throw;
+                    throw std::invalid_argument(
+                        fmt::format("A non-finite time coordinate was found for the object at index {}", i));
                 }
 
                 if (j > 0u && !(cur_time(j) > cur_time(j - 1u))) [[unlikely]] {
-                    // TODO
-                    throw;
+                    throw std::invalid_argument(fmt::format(
+                        "The sequence of times for the object at index {} is not monotonically increasing", i));
                 }
             }
 
@@ -264,11 +269,12 @@ poly_trajectory &poly_trajectory::operator=(poly_trajectory &&) noexcept = defau
 
 poly_trajectory::~poly_trajectory() = default;
 
-std::pair<poly_trajectory::traj_span_t, poly_trajectory::time_span_t> poly_trajectory::get_obj_data(std::size_t i) const
+std::pair<poly_trajectory::traj_span_t, poly_trajectory::time_span_t> poly_trajectory::operator[](std::size_t i) const
 {
     if (i >= m_impl->m_traj_offset_vec.size()) [[unlikely]] {
-        // TODO.
-        throw;
+        throw std::out_of_range(
+            fmt::format("Invalid object index {} specified - the total number of objects is only {}", i,
+                        m_impl->m_traj_offset_vec.size()));
     }
 
     // Fetch the base pointer.

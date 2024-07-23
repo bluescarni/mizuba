@@ -6,10 +6,12 @@
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-#include <pybind11/cast.h>
 #include <ranges>
+#include <stdexcept>
 
 #include <boost/numeric/conversion/cast.hpp>
+
+#include <fmt/core.h>
 
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
@@ -38,16 +40,21 @@ PYBIND11_MODULE(core, m)
                 auto arr = o.template cast<py::array_t<double>>();
 
                 if (arr.ndim() != 3) [[unlikely]] {
-                    // TODO
-                    throw;
+                    throw std::invalid_argument(fmt::format(
+                        "A trajectory array must have 3 dimensions, but instead {} dimension(s) were detected",
+                        arr.ndim()));
                 }
 
                 if (arr.shape(1) != 7) [[unlikely]] {
-                    // TODO
-                    throw;
+                    throw std::invalid_argument(fmt::format("A trajectory array must have a size of 7 in the second "
+                                                            "dimension, but instead a size of {} was detected",
+                                                            arr.shape(1)));
                 }
 
-                // TODO check C contiguous and aligned.
+                if (!py::cast<bool>(arr.attr("flags").attr("aligned"))
+                    || !py::cast<bool>(arr.attr("flags").attr("c_contiguous"))) [[unlikely]] {
+                    throw std::invalid_argument("All trajectory arrays must be C contiguous and properly aligned");
+                }
 
                 return mz::poly_trajectory::traj_span_t(arr.data(), boost::numeric_cast<py::ssize_t>(arr.shape(0)),
                                                         boost::numeric_cast<py::ssize_t>(arr.shape(2)));
@@ -57,11 +64,14 @@ PYBIND11_MODULE(core, m)
                 auto arr = o.template cast<py::array_t<double>>();
 
                 if (arr.ndim() != 1) [[unlikely]] {
-                    // TODO
-                    throw;
+                    throw std::invalid_argument(fmt::format(
+                        "A time array must have 1 dimension, but instead {} dimension(s) were detected", arr.ndim()));
                 }
 
-                // TODO check C contiguous and aligned.
+                if (!py::cast<bool>(arr.attr("flags").attr("aligned"))
+                    || !py::cast<bool>(arr.attr("flags").attr("c_contiguous"))) [[unlikely]] {
+                    throw std::invalid_argument("All time arrays must be C contiguous and properly aligned");
+                }
 
                 return mz::poly_trajectory::time_span_t(arr.data(), boost::numeric_cast<py::ssize_t>(arr.shape(0)));
             };
@@ -71,10 +81,12 @@ PYBIND11_MODULE(core, m)
         }),
         "trajs"_a.noconvert(), "times"_a.noconvert());
     pt_cl.def(
-        "get_obj_data",
+        "__getitem__",
         [](const py::object &self, std::size_t i) {
             const auto *p = py::cast<const mz::poly_trajectory *>(self);
-            const auto [traj_span, time_span] = p->get_obj_data(i);
+
+            // Fetch the spans.
+            const auto [traj_span, time_span] = (*p)[i];
 
             // Trajectory data.
             auto traj_ret
