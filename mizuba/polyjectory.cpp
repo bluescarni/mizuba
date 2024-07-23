@@ -25,7 +25,7 @@
 
 #include <fmt/core.h>
 
-#include "poly_trajectory.hpp"
+#include "polyjectory.hpp"
 
 #if defined(__GNUC__)
 
@@ -37,7 +37,7 @@
 namespace mizuba
 {
 
-struct poly_trajectory::impl {
+struct polyjectory::impl {
     // This is a vector that will contain:
     // - the offset in the buffer at which the trajectory data for an object begins,
     // - the total number of steps in the trajectory data,
@@ -89,23 +89,23 @@ struct poly_trajectory::impl {
     boost::iostreams::mapped_file_source m_file;
 };
 
-poly_trajectory::poly_trajectory(ptag, std::tuple<std::vector<traj_span_t>, std::vector<time_span_t>> tup)
+polyjectory::polyjectory(ptag, std::tuple<std::vector<traj_span_t>, std::vector<time_span_t>> tup)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
 
     const auto &[traj_spans, time_spans] = tup;
 
     if (traj_spans.empty()) [[unlikely]] {
-        throw std::invalid_argument("Cannot initialise a poly_trajectory object from an empty list of trajectories");
+        throw std::invalid_argument("Cannot initialise a polyjectory object from an empty list of trajectories");
     }
 
     if (time_spans.empty()) [[unlikely]] {
-        throw std::invalid_argument("Cannot initialise a poly_trajectory object from an empty list of times");
+        throw std::invalid_argument("Cannot initialise a polyjectory object from an empty list of times");
     }
 
     if (traj_spans.size() != time_spans.size()) [[unlikely]] {
         throw std::invalid_argument(fmt::format(
-            "In the construction of a poly_trajectory, the number of objects deduced from the list of trajectories "
+            "In the construction of a polyjectory, the number of objects deduced from the list of trajectories "
             "({}) is inconsistent with the number of objects deduced from the list of times ({})",
             traj_spans.size(), time_spans.size()));
     }
@@ -259,17 +259,17 @@ poly_trajectory::poly_trajectory(ptag, std::tuple<std::vector<traj_span_t>, std:
     }
 }
 
-poly_trajectory::poly_trajectory(const poly_trajectory &) = default;
+polyjectory::polyjectory(const polyjectory &) = default;
 
-poly_trajectory::poly_trajectory(poly_trajectory &&other) noexcept = default;
+polyjectory::polyjectory(polyjectory &&other) noexcept = default;
 
-poly_trajectory &poly_trajectory::operator=(const poly_trajectory &) = default;
+polyjectory &polyjectory::operator=(const polyjectory &) = default;
 
-poly_trajectory &poly_trajectory::operator=(poly_trajectory &&) noexcept = default;
+polyjectory &polyjectory::operator=(polyjectory &&) noexcept = default;
 
-poly_trajectory::~poly_trajectory() = default;
+polyjectory::~polyjectory() = default;
 
-std::pair<poly_trajectory::traj_span_t, poly_trajectory::time_span_t> poly_trajectory::operator[](std::size_t i) const
+std::pair<polyjectory::traj_span_t, polyjectory::time_span_t> polyjectory::operator[](std::size_t i) const
 {
     if (i >= m_impl->m_traj_offset_vec.size()) [[unlikely]] {
         throw std::out_of_range(

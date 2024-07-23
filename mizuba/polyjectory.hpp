@@ -6,8 +6,8 @@
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-#ifndef MIZUBA_POLY_TRAJECTORY_HPP
-#define MIZUBA_POLY_TRAJECTORY_HPP
+#ifndef MIZUBA_POLYJECTORY_HPP
+#define MIZUBA_POLYJECTORY_HPP
 
 #include <algorithm>
 #include <concepts>
@@ -26,7 +26,7 @@
 namespace mizuba
 {
 
-class poly_trajectory
+class polyjectory
 {
     struct impl;
 
@@ -44,7 +44,7 @@ public:
 private:
     struct ptag {
     };
-    explicit poly_trajectory(ptag, std::tuple<std::vector<traj_span_t>, std::vector<time_span_t>>);
+    explicit polyjectory(ptag, std::tuple<std::vector<traj_span_t>, std::vector<time_span_t>>);
 
     template <typename TrajRng, typename TimeRng>
     static auto ctor_impl(TrajRng &&traj_rng, TimeRng &&time_rng)
@@ -64,15 +64,14 @@ public:
                  && std::same_as<traj_span_t, std::remove_cvref_t<std::ranges::range_reference_t<TrajRng>>>
                  && std::ranges::input_range<TimeRng>
                  && std::same_as<time_span_t, std::remove_cvref_t<std::ranges::range_reference_t<TimeRng>>>
-    explicit poly_trajectory(TrajRng &&traj_rng, TimeRng &&time_rng)
-        : poly_trajectory(ptag{}, ctor_impl(traj_rng, time_rng))
+    explicit polyjectory(TrajRng &&traj_rng, TimeRng &&time_rng) : polyjectory(ptag{}, ctor_impl(traj_rng, time_rng))
     {
     }
-    poly_trajectory(const poly_trajectory &);
-    poly_trajectory(poly_trajectory &&) noexcept;
-    poly_trajectory &operator=(const poly_trajectory &);
-    poly_trajectory &operator=(poly_trajectory &&) noexcept;
-    ~poly_trajectory();
+    polyjectory(const polyjectory &);
+    polyjectory(polyjectory &&) noexcept;
+    polyjectory &operator=(const polyjectory &);
+    polyjectory &operator=(polyjectory &&) noexcept;
+    ~polyjectory();
 
     [[nodiscard]] std::pair<traj_span_t, time_span_t> operator[](std::size_t) const;
 };

@@ -16,7 +16,7 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 
-#include "poly_trajectory.hpp"
+#include "polyjectory.hpp"
 
 PYBIND11_MODULE(core, m)
 {
@@ -32,8 +32,8 @@ PYBIND11_MODULE(core, m)
 
     m.doc() = "The core mizuba module";
 
-    // poly_trajectory.
-    py::class_<mz::poly_trajectory> pt_cl(m, "poly_trajectory", py::dynamic_attr{});
+    // polyjectory.
+    py::class_<mz::polyjectory> pt_cl(m, "polyjectory", py::dynamic_attr{});
     pt_cl.def(
         py::init([](py::iterable trajs, py::iterable times) {
             auto traj_trans = [](const auto &o) {
@@ -56,8 +56,8 @@ PYBIND11_MODULE(core, m)
                     throw std::invalid_argument("All trajectory arrays must be C contiguous and properly aligned");
                 }
 
-                return mz::poly_trajectory::traj_span_t(arr.data(), boost::numeric_cast<py::ssize_t>(arr.shape(0)),
-                                                        boost::numeric_cast<py::ssize_t>(arr.shape(2)));
+                return mz::polyjectory::traj_span_t(arr.data(), boost::numeric_cast<py::ssize_t>(arr.shape(0)),
+                                                    boost::numeric_cast<py::ssize_t>(arr.shape(2)));
             };
 
             auto time_trans = [](const auto &o) {
@@ -73,17 +73,17 @@ PYBIND11_MODULE(core, m)
                     throw std::invalid_argument("All time arrays must be C contiguous and properly aligned");
                 }
 
-                return mz::poly_trajectory::time_span_t(arr.data(), boost::numeric_cast<py::ssize_t>(arr.shape(0)));
+                return mz::polyjectory::time_span_t(arr.data(), boost::numeric_cast<py::ssize_t>(arr.shape(0)));
             };
 
-            return mz::poly_trajectory(trajs | std::views::transform(traj_trans),
-                                       times | std::views::transform(time_trans));
+            return mz::polyjectory(trajs | std::views::transform(traj_trans),
+                                   times | std::views::transform(time_trans));
         }),
         "trajs"_a.noconvert(), "times"_a.noconvert());
     pt_cl.def(
         "__getitem__",
         [](const py::object &self, std::size_t i) {
-            const auto *p = py::cast<const mz::poly_trajectory *>(self);
+            const auto *p = py::cast<const mz::polyjectory *>(self);
 
             // Fetch the spans.
             const auto [traj_span, time_span] = (*p)[i];
