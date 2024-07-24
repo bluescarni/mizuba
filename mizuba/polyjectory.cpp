@@ -53,13 +53,15 @@ struct polyjectory::impl {
     // NOTE: these are the min/max time coordinates across
     // all objects.
     std::pair<double, double> m_time_range = {};
+    std::vector<std::int32_t> m_status;
     boost::iostreams::mapped_file_source m_file;
 
     explicit impl(boost::filesystem::path file_path, traj_offset_vec_t traj_offset_vec,
                   std::vector<std::size_t> time_offset_vec, std::uint32_t poly_op1,
-                  std::pair<double, double> time_range)
+                  std::pair<double, double> time_range, std::vector<std::int32_t> status)
         : m_file_path(std::move(file_path)), m_traj_offset_vec(std::move(traj_offset_vec)),
-          m_time_offset_vec(std::move(time_offset_vec)), m_poly_op1(poly_op1), m_time_range(time_range)
+          m_time_offset_vec(std::move(time_offset_vec)), m_poly_op1(poly_op1), m_time_range(time_range),
+          m_status(std::move(status))
     {
         m_file.open(m_file_path.string());
 
@@ -97,29 +99,33 @@ struct polyjectory::impl {
     }
 };
 
-polyjectory::polyjectory(ptag, std::tuple<std::vector<traj_span_t>, std::vector<time_span_t>> tup)
+polyjectory::polyjectory(ptag,
+                         std::tuple<std::vector<traj_span_t>, std::vector<time_span_t>, std::vector<std::int32_t>> tup)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
 
-    const auto &[traj_spans, time_spans] = tup;
-
-    if (traj_spans.empty()) [[unlikely]] {
-        throw std::invalid_argument("Cannot initialise a polyjectory object from an empty list of trajectories");
-    }
-
-    if (time_spans.empty()) [[unlikely]] {
-        throw std::invalid_argument("Cannot initialise a polyjectory object from an empty list of times");
-    }
-
-    if (traj_spans.size() != time_spans.size()) [[unlikely]] {
-        throw std::invalid_argument(fmt::format(
-            "In the construction of a polyjectory, the number of objects deduced from the list of trajectories "
-            "({}) is inconsistent with the number of objects deduced from the list of times ({})",
-            traj_spans.size(), time_spans.size()));
-    }
+    auto &[traj_spans, time_spans, status] = tup;
 
     // Cache the total number of objects.
     const auto n_objs = traj_spans.size();
+
+    if (n_objs == 0u) [[unlikely]] {
+        throw std::invalid_argument("Cannot initialise a polyjectory object from an empty list of trajectories");
+    }
+
+    if (n_objs != time_spans.size()) [[unlikely]] {
+        throw std::invalid_argument(fmt::format(
+            "In the construction of a polyjectory, the number of objects deduced from the list of trajectories "
+            "({}) is inconsistent with the number of objects deduced from the list of times ({})",
+            n_objs, time_spans.size()));
+    }
+
+    if (n_objs != status.size()) [[unlikely]] {
+        throw std::invalid_argument(fmt::format(
+            "In the construction of a polyjectory, the number of objects deduced from the list of trajectories "
+            "({}) is inconsistent with the number of objects deduced from the status list ({})",
+            n_objs, status.size()));
+    }
 
     // Assemble a "unique" dir path into the system temp dir.
     const auto tmp_dir_path
@@ -293,7 +299,7 @@ polyjectory::polyjectory(ptag, std::tuple<std::vector<traj_span_t>, std::vector<
         // been fully constructed and thus its dtor will not be invoked, and the cleanup of tmp_dir_path will be
         // performed in the catch block below.
         m_impl = std::make_shared<impl>(std::move(storage_path), std::move(traj_offset_vec), std::move(time_offset_vec),
-                                        poly_op1, time_range);
+                                        poly_op1, time_range, std::move(status));
     } catch (...) {
         boost::filesystem::remove_all(tmp_dir_path);
         throw;
@@ -312,7 +318,8 @@ polyjectory &polyjectory::operator=(polyjectory &&) noexcept = default;
 
 polyjectory::~polyjectory() = default;
 
-std::pair<polyjectory::traj_span_t, polyjectory::time_span_t> polyjectory::operator[](std::size_t i) const
+std::tuple<polyjectory::traj_span_t, polyjectory::time_span_t, std::int32_t>
+polyjectory::operator[](std::size_t i) const
 {
     if (i >= m_impl->m_traj_offset_vec.size()) [[unlikely]] {
         throw std::out_of_range(
@@ -334,7 +341,7 @@ std::pair<polyjectory::traj_span_t, polyjectory::time_span_t> polyjectory::opera
     return {traj_span_t{traj_ptr, nsteps,
                         // NOTE: static_cast is ok, m_poly_op1 was originally a std::size_t.
                         static_cast<std::size_t>(m_impl->m_poly_op1)},
-            time_span_t{time_ptr, nsteps}};
+            time_span_t{time_ptr, nsteps}, m_impl->m_status[i]};
 }
 
 } // namespace mizuba

@@ -9,7 +9,9 @@ set(MIZUBA_PYTHON_FILES
 # Core module.
 set(_MIZUBA_CORE_SOURCES
     core.cpp
+    common_utils.cpp
     polyjectory.cpp
+    sgp4_polyjectory.cpp
 )
 
 Python3_add_library(core MODULE WITH_SOABI ${_MIZUBA_CORE_SOURCES})

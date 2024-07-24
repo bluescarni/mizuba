@@ -6,7 +6,11 @@
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <ranges>
+#include <span>
 #include <stdexcept>
 
 #include <boost/numeric/conversion/cast.hpp>
@@ -16,13 +20,22 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 
+#include <Python.h>
+
+#include <heyoka/mdspan.hpp>
+
+#include "common_utils.hpp"
 #include "polyjectory.hpp"
+#include "sgp4_polyjectory.hpp"
 
 PYBIND11_MODULE(core, m)
 {
     namespace py = pybind11;
-    using namespace py::literals;
     namespace mz = mizuba;
+    namespace mzpy = mizuba_py;
+    namespace hy = heyoka;
+
+    using namespace py::literals;
 
     // Disable automatic function signatures in the docs.
     // NOTE: the 'options' object needs to stay alive
@@ -35,9 +48,9 @@ PYBIND11_MODULE(core, m)
     // polyjectory.
     py::class_<mz::polyjectory> pt_cl(m, "polyjectory", py::dynamic_attr{});
     pt_cl.def(
-        py::init([](py::iterable trajs, py::iterable times) {
+        py::init([](py::iterable trajs, py::iterable times, py::array_t<std::int32_t> status) {
             auto traj_trans = [](const auto &o) {
-                // NOTE: should we be more strict here and use py::array_t<double>::check_() instead?
+                // TODO: stricter check via py::array_t<double>::check_().
                 auto arr = o.template cast<py::array_t<double>>();
 
                 if (arr.ndim() != 3) [[unlikely]] {
@@ -52,6 +65,7 @@ PYBIND11_MODULE(core, m)
                                                             arr.shape(1)));
                 }
 
+                // TODO: refactor this check in utils.
                 if (!py::cast<bool>(arr.attr("flags").attr("aligned"))
                     || !py::cast<bool>(arr.attr("flags").attr("c_contiguous"))) [[unlikely]] {
                     throw std::invalid_argument("All trajectory arrays must be C contiguous and properly aligned");
@@ -77,17 +91,30 @@ PYBIND11_MODULE(core, m)
                 return mz::polyjectory::time_span_t(arr.data(), boost::numeric_cast<py::ssize_t>(arr.shape(0)));
             };
 
-            return mz::polyjectory(trajs | std::views::transform(traj_trans),
-                                   times | std::views::transform(time_trans));
+            // Checks on the status array.
+            if (status.ndim() != 1) [[unlikely]] {
+                throw std::invalid_argument(fmt::format(
+                    "A status array must have 1 dimension, but instead {} dimension(s) were detected", status.ndim()));
+            }
+
+            if (!py::cast<bool>(status.attr("flags").attr("aligned"))
+                || !py::cast<bool>(status.attr("flags").attr("c_contiguous"))) [[unlikely]] {
+                throw std::invalid_argument("The status array must be C contiguous and properly aligned");
+            }
+
+            const auto *status_ptr = status.data();
+
+            return mz::polyjectory(trajs | std::views::transform(traj_trans), times | std::views::transform(time_trans),
+                                   std::ranges::subrange(status_ptr, status_ptr + status.shape(0)));
         }),
-        "trajs"_a.noconvert(), "times"_a.noconvert());
+        "trajs"_a.noconvert(), "times"_a.noconvert(), "status"_a.noconvert());
     pt_cl.def(
         "__getitem__",
         [](const py::object &self, std::size_t i) {
             const auto *p = py::cast<const mz::polyjectory *>(self);
 
-            // Fetch the spans.
-            const auto [traj_span, time_span] = (*p)[i];
+            // Fetch the spans and the status.
+            const auto [traj_span, time_span, status] = (*p)[i];
 
             // Trajectory data.
             auto traj_ret
@@ -107,7 +134,34 @@ PYBIND11_MODULE(core, m)
             // Ensure the returned array is read-only.
             time_ret.attr("flags").attr("writeable") = false;
 
-            return py::make_tuple(std::move(traj_ret), std::move(time_ret));
+            return py::make_tuple(std::move(traj_ret), std::move(time_ret), status);
         },
         "i"_a.noconvert());
+
+    m.def(
+        "sgp4_polyjectory",
+        [](py::list sat_list, double jd_begin, double jd_end) {
+            // Check that the sgp4 module is available.
+            try {
+                py::module_::import("sgp4.api");
+            } catch (...) {
+                mzpy::py_throw(
+                    PyExc_ImportError,
+                    "The Python module 'sgp4' must be installed in order to be able to create sgp4 polyjectories");
+            }
+
+            // Turn sat_list into a data vector.
+            const auto sat_data = mzpy::sat_list_to_vector(sat_list);
+            assert(sat_data.size() % 9u == 0u);
+
+            // Create the input span.
+            using span_t = hy::mdspan<const double, hy::extents<std::size_t, 9, std::dynamic_extent>>;
+            const span_t in(sat_data.data(), boost::numeric_cast<std::size_t>(sat_data.size()) / 9u);
+
+            // NOTE: release the GIL during propagation.
+            py::gil_scoped_release release;
+
+            return mz::sgp4_polyjectory(in, jd_begin, jd_end);
+        },
+        "sat_list"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert());
 }

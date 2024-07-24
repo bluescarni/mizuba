@@ -112,7 +112,7 @@ endif()
 # Find the dependencies.
 
 # heyoka.
-find_package(heyoka 5.0.0 REQUIRED CONFIG)
+find_package(heyoka 5.1.0 REQUIRED CONFIG)
 
 # fmt.
 find_package(fmt REQUIRED CONFIG)
