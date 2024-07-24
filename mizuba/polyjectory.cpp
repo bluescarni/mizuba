@@ -10,6 +10,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <ios>
 #include <memory>
@@ -22,6 +23,7 @@
 #include <boost/filesystem/file_status.hpp>
 #include <boost/filesystem/operations.hpp>
 #include <boost/iostreams/device/mapped_file.hpp>
+#include <boost/numeric/conversion/cast.hpp>
 #include <boost/safe_numerics/safe_integer.hpp>
 
 #include <fmt/core.h>
@@ -41,27 +43,28 @@ namespace mizuba
 struct polyjectory::impl {
     // This is a vector that will contain:
     // - the offset in the buffer at which the trajectory data for an object begins,
-    // - the total number of steps in the trajectory data,
-    // - the polynomial order of the trajectory data.
-    using traj_offset_vec_t = std::vector<std::tuple<std::size_t, std::size_t, std::size_t>>;
+    // - the total number of steps in the trajectory data.
+    using traj_offset_vec_t = std::vector<std::tuple<std::size_t, std::size_t>>;
 
     boost::filesystem::path m_file_path;
     traj_offset_vec_t m_traj_offset_vec;
     std::vector<std::size_t> m_time_offset_vec;
+    std::uint32_t m_poly_op1 = 0;
     // NOTE: these are the min/max time coordinates across
     // all objects.
     std::pair<double, double> m_time_range = {};
     boost::iostreams::mapped_file_source m_file;
 
     explicit impl(boost::filesystem::path file_path, traj_offset_vec_t traj_offset_vec,
-                  std::vector<std::size_t> time_offset_vec, std::pair<double, double> time_range)
+                  std::vector<std::size_t> time_offset_vec, std::uint32_t poly_op1,
+                  std::pair<double, double> time_range)
         : m_file_path(std::move(file_path)), m_traj_offset_vec(std::move(traj_offset_vec)),
-          m_time_offset_vec(std::move(time_offset_vec)), m_time_range(time_range)
+          m_time_offset_vec(std::move(time_offset_vec)), m_poly_op1(poly_op1), m_time_range(time_range)
     {
         m_file.open(m_file_path.string());
 
         // LCOV_EXCL_START
-        if (static_cast<unsigned>(m_file.alignment()) < alignof(double)) [[unlikely]] {
+        if (boost::numeric_cast<unsigned>(m_file.alignment()) < alignof(double)) [[unlikely]] {
             throw std::runtime_error(fmt::format("Invalid alignment detected in a memory mapped file: the alignment of "
                                                  "the file is {}, but an alignment of {} is required instead",
                                                  m_file.alignment(), alignof(double)));
@@ -156,6 +159,9 @@ polyjectory::polyjectory(ptag, std::tuple<std::vector<traj_span_t>, std::vector<
         // Keep track of the current offset into the file.
         safe_size_t cur_offset(0);
 
+        // Init the poly order + 1.
+        std::uint32_t poly_op1 = 0;
+
         // Check and write the trajectory data.
         // NOTE: we could investigate if computing and pre-allocating the file size
         // leads to better performance. For now, let us keep it simple.
@@ -169,11 +175,21 @@ polyjectory::polyjectory(ptag, std::tuple<std::vector<traj_span_t>, std::vector<
                     "The trajectory for the object at index {} consists of zero steps - this is not allowed", i));
             }
 
-            // Check the order + 1.
-            if (cur_traj.extent(2) < 3u) [[unlikely]] {
-                throw std::invalid_argument(fmt::format(
-                    "The trajectory polynomial order for the object at index {} is less than 2 - this is not allowed",
-                    i));
+            // Set/check the order + 1.
+            if (i == 0u) {
+                if (cur_traj.extent(2) < 3u) [[unlikely]] {
+                    throw std::invalid_argument("The trajectory polynomial order for the first object "
+                                                "is less than 2 - this is not allowed");
+                }
+
+                poly_op1 = boost::numeric_cast<std::uint32_t>(cur_traj.extent(2));
+            } else {
+                if (cur_traj.extent(2) != poly_op1) [[unlikely]] {
+                    throw std::invalid_argument(
+                        fmt::format("The trajectory polynomial order for the object at index "
+                                    "{} is inconsistent with the polynomial order deduced from the first object ({})",
+                                    i, poly_op1 - 1u));
+                }
             }
 
             // Compute the total data size (in number of floating-point values).
@@ -196,7 +212,7 @@ polyjectory::polyjectory(ptag, std::tuple<std::vector<traj_span_t>, std::vector<
                                static_cast<std::streamsize>(traj_size * sizeof(double)));
 
             // Add entry to the offset vector.
-            traj_offset_vec.emplace_back(cur_offset, cur_traj.extent(0), cur_traj.extent(2));
+            traj_offset_vec.emplace_back(cur_offset, cur_traj.extent(0));
 
             // Update cur_offset.
             cur_offset += traj_size;
@@ -239,7 +255,7 @@ polyjectory::polyjectory(ptag, std::tuple<std::vector<traj_span_t>, std::vector<
                 }
             }
 
-            // Update the time range.
+            // Set/update the time range.
             if (i == 0u) {
                 // Init at the first iteration.
                 // NOTE: indexing here is safe: we know from earlier checks
@@ -277,7 +293,7 @@ polyjectory::polyjectory(ptag, std::tuple<std::vector<traj_span_t>, std::vector<
         // been fully constructed and thus its dtor will not be invoked, and the cleanup of tmp_dir_path will be
         // performed in the catch block below.
         m_impl = std::make_shared<impl>(std::move(storage_path), std::move(traj_offset_vec), std::move(time_offset_vec),
-                                        time_range);
+                                        poly_op1, time_range);
     } catch (...) {
         boost::filesystem::remove_all(tmp_dir_path);
         throw;
@@ -307,15 +323,18 @@ std::pair<polyjectory::traj_span_t, polyjectory::time_span_t> polyjectory::opera
     // Fetch the base pointer.
     const auto *base_ptr = m_impl->base_ptr();
 
-    // Fetch the traj offset, nsteps and order.
-    const auto [traj_offset, nsteps, order] = m_impl->m_traj_offset_vec[i];
+    // Fetch the traj offset and nsteps.
+    const auto [traj_offset, nsteps] = m_impl->m_traj_offset_vec[i];
 
     // Compute the pointers.
     const auto *traj_ptr = base_ptr + traj_offset;
     const auto *time_ptr = base_ptr + m_impl->m_time_offset_vec[i];
 
     // Return the spans.
-    return {traj_span_t{traj_ptr, nsteps, order}, time_span_t{time_ptr, nsteps}};
+    return {traj_span_t{traj_ptr, nsteps,
+                        // NOTE: static_cast is ok, m_poly_op1 was originally a std::size_t.
+                        static_cast<std::size_t>(m_impl->m_poly_op1)},
+            time_span_t{time_ptr, nsteps}};
 }
 
 } // namespace mizuba
