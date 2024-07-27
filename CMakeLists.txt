@@ -117,6 +117,9 @@ find_package(heyoka 5.1.0 REQUIRED CONFIG)
 # fmt.
 find_package(fmt REQUIRED CONFIG)
 
+# Mandatory dependency on TBB.
+find_package(TBB REQUIRED CONFIG)
+
 # Boost.
 # NOTE: need 1.69 for safe numerics.
 find_package(Boost 1.69 COMPONENTS serialization iostreams filesystem REQUIRED CONFIG)
