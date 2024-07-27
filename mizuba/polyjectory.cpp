@@ -42,7 +42,8 @@ namespace mizuba
 
 struct polyjectory::impl {
     // This is a vector that will contain:
-    // - the offset in the buffer at which the trajectory data for an object begins,
+    // - the offset (in number of double-precision values) in the mmap buffer
+    //   at which the trajectory data for an object begins,
     // - the total number of steps in the trajectory data.
     using traj_offset_vec_t = std::vector<std::tuple<std::size_t, std::size_t>>;
 
@@ -50,18 +51,16 @@ struct polyjectory::impl {
     traj_offset_vec_t m_traj_offset_vec;
     std::vector<std::size_t> m_time_offset_vec;
     std::uint32_t m_poly_op1 = 0;
-    // NOTE: these are the min/max time coordinates across
-    // all objects.
-    std::pair<double, double> m_time_range = {};
+    // The duration of the longest trajectory.
+    double m_maxT = 0;
     std::vector<std::int32_t> m_status;
     boost::iostreams::mapped_file_source m_file;
 
     explicit impl(boost::filesystem::path file_path, traj_offset_vec_t traj_offset_vec,
-                  std::vector<std::size_t> time_offset_vec, std::uint32_t poly_op1,
-                  std::pair<double, double> time_range, std::vector<std::int32_t> status)
+                  std::vector<std::size_t> time_offset_vec, std::uint32_t poly_op1, double maxT,
+                  std::vector<std::int32_t> status)
         : m_file_path(std::move(file_path)), m_traj_offset_vec(std::move(traj_offset_vec)),
-          m_time_offset_vec(std::move(time_offset_vec)), m_poly_op1(poly_op1), m_time_range(time_range),
-          m_status(std::move(status))
+          m_time_offset_vec(std::move(time_offset_vec)), m_poly_op1(poly_op1), m_maxT(maxT), m_status(std::move(status))
     {
         m_file.open(m_file_path.string());
 
@@ -154,7 +153,7 @@ polyjectory::polyjectory(ptag,
                 fmt::format("Cannot create the storage file '{}', as it exists already", storage_path.string()));
         }
         // LCOV_EXCL_STOP
-        std::ofstream storage_file(storage_path.string(), std::ios::binary | std::ios::out);
+        std::ofstream storage_file(storage_path, std::ios::binary | std::ios::out);
         // Make sure we throw on errors.
         storage_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
@@ -228,8 +227,8 @@ polyjectory::polyjectory(ptag,
         std::vector<std::size_t> time_offset_vec;
         time_offset_vec.reserve(n_objs);
 
-        // Init the time range.
-        std::pair<double, double> time_range{};
+        // Init maxT.
+        double maxT = 0;
 
         // Write the time data.
         for (decltype(time_spans.size()) i = 0; i < n_objs; ++i) {
@@ -255,28 +254,19 @@ polyjectory::polyjectory(ptag,
                         fmt::format("A non-finite time coordinate was found for the object at index {}", i));
                 }
 
+                if (cur_time(j) <= 0) [[unlikely]] {
+                    throw std::invalid_argument(
+                        fmt::format("A non-positive time coordinate was found for the object at index {}", i));
+                }
+
                 if (j > 0u && !(cur_time(j) > cur_time(j - 1u))) [[unlikely]] {
                     throw std::invalid_argument(fmt::format(
                         "The sequence of times for the object at index {} is not monotonically increasing", i));
                 }
             }
 
-            // Set/update the time range.
-            if (i == 0u) {
-                // Init at the first iteration.
-                // NOTE: indexing here is safe: we know from earlier checks
-                // that the size of cur_time must be at least 1.
-                time_range.first = cur_time(0);
-                time_range.second = cur_time(cur_time.extent(0) - 1u);
-            } else {
-                // Update at the other iterations.
-                if (time_range.first != cur_time(0)) [[unlikely]] {
-                    throw std::invalid_argument(fmt::format("The starting time for the object at index {} is not equal "
-                                                            "to the starting time for the other objects",
-                                                            i));
-                }
-                time_range.second = std::max(time_range.second, cur_time(cur_time.extent(0) - 1u));
-            }
+            // Update maxT.
+            maxT = std::max(maxT, cur_time(cur_time.extent(0) - 1u));
 
             // Bulk write into the file.
             storage_file.write(reinterpret_cast<const char *>(cur_time.data_handle()),
@@ -289,6 +279,8 @@ polyjectory::polyjectory(ptag,
             cur_offset += time_size;
         }
 
+        assert(maxT != 0);
+
         // Close the storage file.
         storage_file.close();
 
@@ -299,7 +291,7 @@ polyjectory::polyjectory(ptag,
         // been fully constructed and thus its dtor will not be invoked, and the cleanup of tmp_dir_path will be
         // performed in the catch block below.
         m_impl = std::make_shared<impl>(std::move(storage_path), std::move(traj_offset_vec), std::move(time_offset_vec),
-                                        poly_op1, time_range, std::move(status));
+                                        poly_op1, maxT, std::move(status));
     } catch (...) {
         boost::filesystem::remove_all(tmp_dir_path);
         throw;
