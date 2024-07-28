@@ -22,6 +22,6 @@ namespace mizuba
 polyjectory sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, std::dynamic_extent>>, double,
                              double);
 
-}
+} // namespace mizuba
 
 #endif
