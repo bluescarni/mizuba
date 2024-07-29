@@ -138,19 +138,15 @@ PYBIND11_MODULE(core, m)
         },
         "i"_a.noconvert());
 
+    // sgp4 polyjectory.
     m.def(
         "sgp4_polyjectory",
         [](py::list sat_list, double jd_begin, double jd_end, double exit_radius, double reentry_radius) {
-            // Check that the sgp4 module is available.
-            // LCOV_EXCL_START
-            try {
-                py::module_::import("sgp4.api");
-            } catch (...) {
-                mzpy::py_throw(
-                    PyExc_ImportError,
-                    "The Python module 'sgp4' must be installed in order to be able to create sgp4 polyjectories");
-            }
-            // LCOV_EXCL_STOP
+            // Check and pre-filter sat_list.
+            py::tuple filter_res = py::module_::import("mizuba").attr("_sgp4_pre_filter_sat_list")(
+                sat_list, jd_begin, exit_radius, reentry_radius);
+            sat_list = filter_res[0];
+            py::object ret_mask = filter_res[1];
 
             // Turn sat_list into a data vector.
             const auto sat_data = mzpy::sat_list_to_vector(sat_list);
@@ -160,10 +156,14 @@ PYBIND11_MODULE(core, m)
             using span_t = hy::mdspan<const double, hy::extents<std::size_t, 9, std::dynamic_extent>>;
             const span_t in(sat_data.data(), boost::numeric_cast<std::size_t>(sat_data.size()) / 9u);
 
-            // NOTE: release the GIL during propagation.
-            py::gil_scoped_release release;
+            auto poly_ret = [&]() {
+                // NOTE: release the GIL during propagation.
+                py::gil_scoped_release release;
 
-            return mz::sgp4_polyjectory(in, jd_begin, jd_end, exit_radius, reentry_radius);
+                return mz::sgp4_polyjectory(in, jd_begin, jd_end, exit_radius, reentry_radius);
+            }();
+
+            return py::make_tuple(std::move(poly_ret), std::move(ret_mask));
         },
         "sat_list"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert(),
         "exit_radius"_a.noconvert() = mz::sgp4_exit_radius, "reentry_radius"_a.noconvert() = mz::sgp4_reentry_radius);

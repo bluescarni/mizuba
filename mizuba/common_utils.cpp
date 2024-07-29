@@ -44,27 +44,14 @@ std::string str(const py::handle &o)
 
 std::vector<double> sat_list_to_vector(py::list sat_list)
 {
-    // Import the Satrec class from the sgp4 module.
-    py::object satrec = py::module_::import("sgp4.api").attr("Satrec");
-
     // Prepare the output vector.
     std::vector<double> retval;
     const auto n_sats = boost::safe_numerics::safe<decltype(retval.size())>(py::len(sat_list));
     retval.resize(n_sats * 9);
 
     // Fill it in.
-    py::object isinst = builtins().attr("isinstance");
     for (decltype(retval.size()) i = 0; i < n_sats; ++i) {
         auto sat_obj = sat_list[boost::numeric_cast<py::size_t>(i)];
-
-        if (!py::cast<bool>(isinst(sat_obj, satrec))) [[unlikely]] {
-            py_throw(
-                PyExc_TypeError,
-                fmt::format("Invalid object encountered in the satellite data for an sgp4 polyjectory: a list of sgp4 "
-                            "Satrec objects is expected, but an object of type '{}' was detected instead at index {}",
-                            str(type(sat_obj)), i)
-                    .c_str());
-        }
 
         retval[i] = sat_obj.attr("no_kozai").template cast<double>();
         retval[i + n_sats] = sat_obj.attr("ecco").template cast<double>();
