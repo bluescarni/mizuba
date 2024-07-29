@@ -70,9 +70,9 @@ constexpr auto exit_radius = 8000.;
 // The reentry radius, 150km over the average surface.
 constexpr auto reentry_radius = 6371 + 150.;
 
-// Helper to check that the initial states of all satellites at jd_begin are sane. If there are no
-// issues, the initial states will be returned as an mdspan together with the underlying buffer.
-auto check_initial_sat_state(
+// Helper to compute the initial states of all satellites at jd_begin. If there are no
+// issues with the states, they will be returned as an mdspan together with the underlying buffer.
+auto sgp4_compute_initial_sat_states(
     heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, std::dynamic_extent>> sat_data, double jd_begin)
 {
     using prop_t = heyoka::model::sgp4_propagator<double>;
@@ -180,7 +180,7 @@ std::vector<std::pair<heyoka::expression, heyoka::expression>> construct_sgp4_od
 // Construct the ODE integrator, which includes the terminal events for the
 // detection of reentry/exit.
 template <typename ODESys>
-auto construct_ode_integrator(const ODESys &sys)
+auto construct_sgp4_ode_integrator(const ODESys &sys)
 {
     using ta_t = heyoka::taylor_adaptive_batch<double>;
 
@@ -619,9 +619,9 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
     storage_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
     // This is a vector that will contain:
-    // - the offset (in number of double-precision values) in the mmap buffer
+    // - the offset (in number of double-precision values) in the storage file
     //   at which the trajectory data for an object begins,
-    // - the total number of steps in the trajectory data.
+    // - the number of steps.
     std::vector<std::tuple<std::size_t, std::size_t>> traj_offset;
     traj_offset.reserve(n_sats);
 
@@ -654,15 +654,18 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
         boost::filesystem::remove(tc_path);
 
         // Update traj_offset.
-        traj_offset.emplace_back(
-            cur_offset, boost::numeric_cast<std::size_t>(
-                            tc_size / static_cast<std::size_t>(safe_size_t(sizeof(double)) * (order + 1u) * 7u)));
+        const auto n_steps = boost::numeric_cast<std::size_t>(
+            tc_size / static_cast<std::size_t>(safe_size_t(sizeof(double)) * (order + 1u) * 7u));
+        traj_offset.emplace_back(cur_offset, n_steps);
 
         // Update cur_offset.
         cur_offset += tc_size / sizeof(double);
     }
 
-    // Offset vector for the time data.
+    // Offset vector for the time data. It will contain:
+    // - the offset (in number of double-precision values) in the storage file
+    //   at which the time data for an object begins,
+    // - the number of steps.
     std::vector<std::tuple<std::size_t, std::size_t>> time_offset;
     time_offset.reserve(n_sats);
 
@@ -702,6 +705,8 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
     return std::make_pair(std::move(traj_offset), std::move(time_offset));
 }
 
+// Construct the polyjectory resulting from the ODE integration
+// of the SGP4 dynamics.
 template <typename TrajOffset, typename TimeOffset>
 polyjectory build_polyjectory(const boost::filesystem::path &tmp_dir_path, const TrajOffset &traj_offset,
                               const TimeOffset &time_offset, const std::vector<int> &status, std::uint32_t order)
@@ -758,13 +763,13 @@ sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, st
     }
 
     // Fetch the states of the satellites at jd_begin.
-    const auto [init_states, init_states_data] = detail::check_initial_sat_state(sat_data, jd_begin);
+    const auto [init_states, init_states_data] = detail::sgp4_compute_initial_sat_states(sat_data, jd_begin);
 
     // Construct the sgp4 ODE sys.
     const auto sgp4_ode = detail::construct_sgp4_ode();
 
     // Construct the ODE integrator.
-    const auto ta = detail::construct_ode_integrator(sgp4_ode);
+    const auto ta = detail::construct_sgp4_ode_integrator(sgp4_ode);
 
     // Assemble a "unique" dir path into the system temp dir.
     const auto tmp_dir_path = boost::filesystem::temp_directory_path()
