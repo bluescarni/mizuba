@@ -8,6 +8,10 @@
 
 import unittest as _ut
 
+# NOTE: all the TLEs used for testing were donwloaded from space-track.org
+# in July 2024:
+# https://www.space-track.org/
+
 # TLEs of an object whose orbital radius goes
 # over 8000km.
 _s_8000 = "1 00011U 59001A   24187.51496924  .00001069  00000-0  55482-3 0  9992"
