@@ -19,8 +19,17 @@
 namespace mizuba
 {
 
+// Default exit radius.
+// This roughly corresponds to the semi-major axis at which
+// one should start using the deep space part of the SGP4 algorithm.
+inline constexpr double sgp4_exit_radius = 12000;
+
+// Default reentry radius: 150km of altitude over the mean
+// Earth radius.
+inline constexpr double sgp4_reentry_radius = 6371 + 150.;
+
 polyjectory sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, std::dynamic_extent>>, double,
-                             double);
+                             double, double = sgp4_exit_radius, double = sgp4_reentry_radius);
 
 } // namespace mizuba
 

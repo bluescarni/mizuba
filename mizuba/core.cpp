@@ -140,8 +140,9 @@ PYBIND11_MODULE(core, m)
 
     m.def(
         "sgp4_polyjectory",
-        [](py::list sat_list, double jd_begin, double jd_end) {
+        [](py::list sat_list, double jd_begin, double jd_end, double exit_radius, double reentry_radius) {
             // Check that the sgp4 module is available.
+            // LCOV_EXCL_START
             try {
                 py::module_::import("sgp4.api");
             } catch (...) {
@@ -149,6 +150,7 @@ PYBIND11_MODULE(core, m)
                     PyExc_ImportError,
                     "The Python module 'sgp4' must be installed in order to be able to create sgp4 polyjectories");
             }
+            // LCOV_EXCL_STOP
 
             // Turn sat_list into a data vector.
             const auto sat_data = mzpy::sat_list_to_vector(sat_list);
@@ -161,7 +163,8 @@ PYBIND11_MODULE(core, m)
             // NOTE: release the GIL during propagation.
             py::gil_scoped_release release;
 
-            return mz::sgp4_polyjectory(in, jd_begin, jd_end);
+            return mz::sgp4_polyjectory(in, jd_begin, jd_end, exit_radius, reentry_radius);
         },
-        "sat_list"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert());
+        "sat_list"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert(),
+        "exit_radius"_a.noconvert() = mz::sgp4_exit_radius, "reentry_radius"_a.noconvert() = mz::sgp4_reentry_radius);
 }

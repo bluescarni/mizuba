@@ -6,13 +6,11 @@
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <fstream>
 #include <ios>
-#include <iterator>
 #include <ranges>
 #include <span>
 #include <stdexcept>
@@ -64,16 +62,11 @@ namespace detail
 namespace
 {
 
-// The exit radius (in km).
-constexpr auto exit_radius = 8000.;
-
-// The reentry radius, 150km over the average surface.
-constexpr auto reentry_radius = 6371 + 150.;
-
 // Helper to compute the initial states of all satellites at jd_begin. If there are no
 // issues with the states, they will be returned as an mdspan together with the underlying buffer.
 auto sgp4_compute_initial_sat_states(
-    heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, std::dynamic_extent>> sat_data, double jd_begin)
+    heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, std::dynamic_extent>> sat_data, double jd_begin,
+    double exit_radius, double reentry_radius)
 {
     using prop_t = heyoka::model::sgp4_propagator<double>;
 
@@ -101,6 +94,13 @@ auto sgp4_compute_initial_sat_states(
     // Check the otutput.
     // NOTE: this can be easily parallelised if needed.
     for (std::size_t i = 0; i < out_span.extent(1); ++i) {
+        // Check the sgp4 error code first.
+        if (out_span(6, i) != 0.) [[unlikely]] {
+            throw std::invalid_argument(
+                fmt::format("The sgp4 propagation of the object at index {} at jd_begin generated the error code {}", i,
+                            static_cast<int>(out_span(6, i))));
+        }
+
         // Check finiteness of the state.
         const auto x = out_span(0, i);
         const auto y = out_span(1, i);
@@ -122,13 +122,6 @@ auto sgp4_compute_initial_sat_states(
             throw std::invalid_argument(fmt::format("The sgp4 propagation of the object at index {} at jd_begin "
                                                     "generated a position vector with invalid radius {}",
                                                     i, dist));
-        }
-
-        // Check the sgp4 error code.
-        if (out_span(6, i) != 0.) [[unlikely]] {
-            throw std::invalid_argument(
-                fmt::format("The sgp4 propagation of the object at index {} at jd_begin generated the error code {}", i,
-                            static_cast<int>(out_span(6, i))));
         }
     }
 
@@ -180,7 +173,7 @@ std::vector<std::pair<heyoka::expression, heyoka::expression>> construct_sgp4_od
 // Construct the ODE integrator, which includes the terminal events for the
 // detection of reentry/exit.
 template <typename ODESys>
-auto construct_sgp4_ode_integrator(const ODESys &sys)
+auto construct_sgp4_ode_integrator(const ODESys &sys, double exit_radius, double reentry_radius)
 {
     using ta_t = heyoka::taylor_adaptive_batch<double>;
 
@@ -511,7 +504,7 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
                         // state vector.
                         const auto ecode = state_view(6, i);
 
-                        if (ecode != 0.) {
+                        if (ecode != 0. && ecode != 6.) {
                             // sgp4 propagation error: set the inactive flag, zero out
                             // max_h, set the status, and continue.
                             active_flags[i] = 0;
@@ -554,6 +547,21 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
                             global_status[b_idx + i] = 3;
 
                             continue;
+                        }
+
+                        if (ecode == 6.) {
+                            // NOTE: if we get here, we are in the following situation:
+                            //
+                            // - neither SGP4 nor our ODE integration errored out,
+                            // - the ODE integration might or might not have reached the time limit or
+                            //   a stopping terminal event,
+                            // - the SGP4 algorithm detected a decay.
+                            //
+                            // We treat this equivalently to a decay detected by the ODE
+                            // integration.
+                            active_flags[i] = 0;
+                            max_h[i] = 0;
+                            global_status[b_idx + i] = 1;
                         }
 
                         // NOTE: if we are here, it means that we need to record the Taylor
@@ -644,8 +652,7 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
         tc_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
         // Copy into storage_file.
-        std::ranges::copy(std::istreambuf_iterator<char>(tc_file), std::istreambuf_iterator<char>{},
-                          std::ostreambuf_iterator<char>(storage_file));
+        storage_file << tc_file.rdbuf();
 
         // Close the file.
         tc_file.close();
@@ -685,8 +692,7 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
         time_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
         // Copy into storage_file.
-        std::ranges::copy(std::istreambuf_iterator<char>(time_file), std::istreambuf_iterator<char>{},
-                          std::ostreambuf_iterator<char>(storage_file));
+        storage_file << time_file.rdbuf();
 
         // Close the file.
         time_file.close();
@@ -752,7 +758,7 @@ polyjectory build_polyjectory(const boost::filesystem::path &tmp_dir_path, const
 
 polyjectory
 sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, std::dynamic_extent>> sat_data,
-                 double jd_begin, double jd_end)
+                 double jd_begin, double jd_end, double exit_radius, double reentry_radius)
 {
     // Check the date range.
     if (!std::isfinite(jd_begin) || !std::isfinite(jd_end) || !(jd_begin < jd_end)) [[unlikely]] {
@@ -762,14 +768,27 @@ sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, st
                         jd_begin, jd_end));
     }
 
+    // Check the exit/reentry radiuses.
+    if (!std::isfinite(exit_radius) || exit_radius <= 0) [[unlikely]] {
+        throw std::invalid_argument(fmt::format(
+            "Invalid exit radius {} supplied to sgp4_polyjectory(): the exit radius must be finite and positive",
+            exit_radius));
+    }
+    if (!std::isfinite(reentry_radius) || reentry_radius <= 0 || reentry_radius >= exit_radius) [[unlikely]] {
+        throw std::invalid_argument(fmt::format("Invalid reentry radius {} supplied to sgp4_polyjectory(): the reentry "
+                                                "radius must be finite, positive and less than the exit radius",
+                                                reentry_radius));
+    }
+
     // Fetch the states of the satellites at jd_begin.
-    const auto [init_states, init_states_data] = detail::sgp4_compute_initial_sat_states(sat_data, jd_begin);
+    const auto [init_states, init_states_data]
+        = detail::sgp4_compute_initial_sat_states(sat_data, jd_begin, exit_radius, reentry_radius);
 
     // Construct the sgp4 ODE sys.
     const auto sgp4_ode = detail::construct_sgp4_ode();
 
     // Construct the ODE integrator.
-    const auto ta = detail::construct_sgp4_ode_integrator(sgp4_ode);
+    const auto ta = detail::construct_sgp4_ode_integrator(sgp4_ode, exit_radius, reentry_radius);
 
     // Assemble a "unique" dir path into the system temp dir.
     const auto tmp_dir_path = boost::filesystem::temp_directory_path()

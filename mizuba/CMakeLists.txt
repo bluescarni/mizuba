@@ -4,6 +4,8 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/_version.py.in" "${CMAKE_CURRENT_BIN
 # The list of mizuba's Python files.
 set(MIZUBA_PYTHON_FILES
     __init__.py
+    test/__init__.py
+    test/test_sgp4_polyjectory.py
 )
 
 # Core module.

@@ -46,3 +46,5 @@ else:
     from .core import *
 
 del core
+
+from . import test
