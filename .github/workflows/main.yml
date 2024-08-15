@@ -16,4 +16,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build
-        run: bash tools/gha_conda_asan.sh
+        run: bash tools/conda_asan.sh
