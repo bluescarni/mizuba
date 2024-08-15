@@ -31,7 +31,7 @@ class polyjectory
 {
     struct impl;
 
-    std::shared_ptr<impl> m_impl;
+    std::shared_ptr<const impl> m_impl;
 
 public:
     // NOTE: the three dimensions here are, respectively:
