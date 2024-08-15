@@ -141,4 +141,11 @@ def _sgp4_pre_filter_sat_list(sat_list, jd_begin, exit_radius, reentry_radius):
         )
     )
 
-    return list(sat_list[mask]), mask
+    ret_list = list(sat_list[mask])
+
+    if len(ret_list) == 0:
+        raise ValueError(
+            "Pre-filtering the satellite list during the construction of an sgp4_polyjectory resulted in an empty list - that is, the propagation of all satellites at jd_begin resulted in either an error or an invalid state vector"
+        )
+
+    return ret_list, np.where(~mask)[0]
