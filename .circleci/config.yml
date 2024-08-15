@@ -9,7 +9,7 @@ jobs:
     - checkout
     - run:
         name: Build and test
-        command: bash ./tools/conda_asan.sh
+        command: bash ./tools/conda.sh
         environment:
           CONDA_INSTALLER_ARCH: Linux-aarch64
 
