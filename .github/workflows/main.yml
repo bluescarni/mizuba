@@ -11,6 +11,8 @@ on:
 jobs:
   conda_asan:
     runs-on: ubuntu-latest
+    env:
+      CONDA_INSTALLER_ARCH: Linux-x86_64
     steps:
       - uses: actions/checkout@v4
       - name: Build
