@@ -362,7 +362,7 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
                             fmt::format("Cannot create the storage file '{}', as it exists already", tc_path.string()));
                     }
                     // LCOV_EXCL_STOP
-                    std::ofstream tc_file(tc_path, std::ios::binary | std::ios::out);
+                    std::ofstream tc_file(tc_path.string(), std::ios::binary | std::ios::out);
                     tc_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
                     const auto time_path = tmp_dir_path / fmt::format("time_{}", b_idx + i);
@@ -372,7 +372,7 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
                             "Cannot create the storage file '{}', as it exists already", time_path.string()));
                     }
                     // LCOV_EXCL_STOP
-                    std::ofstream time_file(time_path, std::ios::binary | std::ios::out);
+                    std::ofstream time_file(time_path.string(), std::ios::binary | std::ios::out);
                     time_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
                     out_files.emplace_back(std::move(tc_file), std::move(time_file));
@@ -648,7 +648,7 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
         assert(tc_size % (safe_size_t(sizeof(double)) * (order + 1u) * 7u) == 0u);
 
         // Open it.
-        std::ifstream tc_file(tc_path, std::ios::binary | std::ios::in);
+        std::ifstream tc_file(tc_path.string(), std::ios::binary | std::ios::in);
         tc_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
         // Copy into storage_file.
@@ -688,7 +688,7 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
         assert(time_size % sizeof(double) == 0u);
 
         // Open it.
-        std::ifstream time_file(time_path, std::ios::binary | std::ios::in);
+        std::ifstream time_file(time_path.string(), std::ios::binary | std::ios::in);
         time_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
         // Copy into storage_file.
