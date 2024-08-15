@@ -1,1 +1,57 @@
-
+name: GitHub CI
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  pull_request:
+    branches:
+      - main
+jobs:
+  conda_asan:
+    runs-on: ubuntu-latest
+    env:
+      CONDA_INSTALLER_ARCH: Linux-x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: bash tools/conda_asan.sh
+  osx_13_x86:
+    runs-on: macos-13
+    env:
+      CONDA_INSTALLER_ARCH: MacOSX-x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: bash tools/conda.sh
+  osx_14_arm64:
+    runs-on: macos-14
+    env:
+      CONDA_INSTALLER_ARCH: MacOSX-arm64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: bash tools/conda.sh
+  windows_2022:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          python-version: "3.12"
+          channels: conda-forge
+          channel-priority: strict
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Build
+        shell: pwsh
+        run: |
+          conda install -y cmake tbb-devel tbb libboost-devel heyoka fmt 'python=3.12' numpy pybind11 skyfield sgp4
+          mkdir build
+          cd build
+          cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH=C:\Miniconda\envs\test\Library
+          cmake --build . --config Release --target install -j2
+          cd ..
+          cd tools
+          python -c "from mizuba.test import run_test_suite; run_test_suite()"
