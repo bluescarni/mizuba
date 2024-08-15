@@ -153,7 +153,7 @@ polyjectory::polyjectory(ptag,
                 fmt::format("Cannot create the storage file '{}', as it exists already", storage_path.string()));
         }
         // LCOV_EXCL_STOP
-        std::ofstream storage_file(storage_path, std::ios::binary | std::ios::out);
+        std::ofstream storage_file(storage_path.string(), std::ios::binary | std::ios::out);
         // Make sure we throw on errors.
         storage_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
