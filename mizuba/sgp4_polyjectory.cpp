@@ -34,6 +34,7 @@
 #include <oneapi/tbb/parallel_for.h>
 #include <oneapi/tbb/task_arena.h>
 
+#include <heyoka/config.hpp>
 #include <heyoka/detail/dfloat.hpp>
 #include <heyoka/expression.hpp>
 #include <heyoka/kw.hpp>
@@ -141,14 +142,15 @@ std::vector<std::pair<heyoka::expression, heyoka::expression>> construct_sgp4_od
 
     // In sgp4_func, replace the TLE data with params, and tsince
     // with tsince + par[7].
-    sgp4_func = heyoka::subs(sgp4_func, {{"n0", heyoka::par[0]},
-                                         {"e0", heyoka::par[1]},
-                                         {"i0", heyoka::par[2]},
-                                         {"node0", heyoka::par[3]},
-                                         {"omega0", heyoka::par[4]},
-                                         {"m0", heyoka::par[5]},
-                                         {"bstar", heyoka::par[6]},
-                                         {"tsince", tsince + heyoka::par[7]}});
+    sgp4_func = heyoka::subs(sgp4_func,
+                             std::unordered_map<std::string, heyoka::expression>{{"n0", heyoka::par[0]},
+                                                                                 {"e0", heyoka::par[1]},
+                                                                                 {"i0", heyoka::par[2]},
+                                                                                 {"node0", heyoka::par[3]},
+                                                                                 {"omega0", heyoka::par[4]},
+                                                                                 {"m0", heyoka::par[5]},
+                                                                                 {"bstar", heyoka::par[6]},
+                                                                                 {"tsince", tsince + heyoka::par[7]}});
 
     // Compute the rhs of the sgp4 ODE, substituting tsince with the time placeholder.
     const auto dt = heyoka::diff_tensors(sgp4_func, {tsince});
@@ -199,7 +201,12 @@ auto construct_sgp4_ode_integrator(const ODESys &sys, double exit_radius, double
     init_state.resize(boost::safe_numerics::safe<decltype(init_state.size())>(sys.size()) * batch_size);
 
     return ta_t(sys, std::move(init_state), batch_size, heyoka::kw::t_events = std::move(t_events),
-                heyoka::kw::compact_mode = true);
+                heyoka::kw::compact_mode = true
+#if HEYOKA_VERSION_MAJOR >= 6
+                ,
+                heyoka::kw::parjit = true
+#endif
+    );
 }
 
 // Run the ODE integration according to the sgp4 dynamics, storing the Taylor coefficients
