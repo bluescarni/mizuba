@@ -47,12 +47,17 @@ struct polyjectory::impl {
     // - the total number of steps in the trajectory data.
     using traj_offset_vec_t = std::vector<std::tuple<std::size_t, std::size_t>>;
 
+    // Path to the mapped file.
     boost::filesystem::path m_file_path;
+    // Offsets for the trajectory data.
     traj_offset_vec_t m_traj_offset_vec;
+    // Offsets for the time data.
     std::vector<std::size_t> m_time_offset_vec;
+    // Polynomial order + 1 for the trajectory data.
     std::uint32_t m_poly_op1 = 0;
     // The duration of the longest trajectory.
     double m_maxT = 0;
+    // Vector of trajectory statuses.
     std::vector<std::int32_t> m_status;
     boost::iostreams::mapped_file_source m_file;
 
@@ -181,15 +186,16 @@ polyjectory::polyjectory(ptag,
             }
 
             // Set/check the order + 1.
+            const auto op1 = cur_traj.extent(2);
             if (i == 0u) {
-                if (cur_traj.extent(2) < 3u) [[unlikely]] {
+                if (op1 < 3u) [[unlikely]] {
                     throw std::invalid_argument("The trajectory polynomial order for the first object "
                                                 "is less than 2 - this is not allowed");
                 }
 
-                poly_op1 = boost::numeric_cast<std::uint32_t>(cur_traj.extent(2));
+                poly_op1 = boost::numeric_cast<std::uint32_t>(op1);
             } else {
-                if (cur_traj.extent(2) != poly_op1) [[unlikely]] {
+                if (op1 != poly_op1) [[unlikely]] {
                     throw std::invalid_argument(
                         fmt::format("The trajectory polynomial order for the object at index "
                                     "{} is inconsistent with the polynomial order deduced from the first object ({})",
@@ -198,12 +204,12 @@ polyjectory::polyjectory(ptag,
             }
 
             // Compute the total data size (in number of floating-point values).
-            const auto traj_size = safe_size_t(cur_traj.extent(0)) * cur_traj.extent(1) * cur_traj.extent(2);
+            const auto traj_size = safe_size_t(cur_traj.extent(0)) * cur_traj.extent(1) * op1;
 
             // Check for non-finite data.
             for (std::size_t j = 0; j < cur_traj.extent(0); ++j) {
                 for (std::size_t k = 0; k < cur_traj.extent(1); ++k) {
-                    for (std::size_t l = 0; l < cur_traj.extent(2); ++l) {
+                    for (std::size_t l = 0; l < op1; ++l) {
                         if (!std::isfinite(cur_traj(j, k, l))) [[unlikely]] {
                             throw std::invalid_argument(
                                 fmt::format("A non-finite value was found in the trajectory at index {}", i));

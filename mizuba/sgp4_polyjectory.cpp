@@ -315,6 +315,8 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
     // A **global** vector of statuses, one per object.
     // We do not need to protect writes into this, as each status
     // will be written to exactly at most once.
+    // NOTE: this is zero-inited, meaning that the default status flag
+    // of each object is "no error detected".
     std::vector<int> global_status;
     global_status.resize(boost::numeric_cast<decltype(global_status.size())>(n_sats));
 
@@ -403,6 +405,9 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
                     for (std::size_t j = 0; j < 7u; ++j) {
                         state_view(j, i) = init_states(j, b_idx + i);
                     }
+                    // NOTE: the error code should always be zero
+                    // since we checked the initial states.
+                    assert(state_view(6, i) == 0.);
                     // Set the initial radius.
                     state_view(7, i)
                         = std::sqrt(state_view(0, i) * state_view(0, i) + state_view(1, i) * state_view(1, i)
