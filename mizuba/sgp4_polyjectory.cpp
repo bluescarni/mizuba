@@ -622,6 +622,13 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
 
 // Copy all trajectory/time data generated in perform_ode_integration() into
 // a single storage file.
+//
+// NOTE: here we could perhaps improve performance via multi-threading:
+//
+// - determine the total size required for the single storage file and the offsets
+//   for the Taylor coefficients/time data into the single storage file (single-thread),
+// - create the single storage file,
+// - mmap and write into it from multiple threads (multi-thread).
 auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n_sats, std::uint32_t order)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
