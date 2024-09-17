@@ -316,6 +316,9 @@ polyjectory &polyjectory::operator=(polyjectory &&) noexcept = default;
 
 polyjectory::~polyjectory() = default;
 
+// NOTE: using std::size_t for indexing is ok because we used std::size_t-based
+// spans on construction - thus, std::size_t can always represent the number
+// of objects in the polyjectory.
 std::tuple<polyjectory::traj_span_t, polyjectory::time_span_t, std::int32_t>
 polyjectory::operator[](std::size_t i) const
 {
@@ -340,6 +343,14 @@ polyjectory::operator[](std::size_t i) const
                         // NOTE: static_cast is ok, m_poly_op1 was originally a std::size_t.
                         static_cast<std::size_t>(m_impl->m_poly_op1)},
             time_span_t{time_ptr, nsteps}, m_impl->m_status[i]};
+}
+
+// NOTE: using std::size_t as a size type is ok because we used std::size_t-based
+// spans on construction - thus, std::size_t can always represent the number
+// of objects in the polyjectory.
+std::size_t polyjectory::get_nobjs() const noexcept
+{
+    return static_cast<std::size_t>(m_impl->m_traj_offset_vec.size());
 }
 
 } // namespace mizuba

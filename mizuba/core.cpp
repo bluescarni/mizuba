@@ -135,6 +135,7 @@ PYBIND11_MODULE(core, m)
             return py::make_tuple(std::move(traj_ret), std::move(time_ret), status);
         },
         "i"_a.noconvert());
+    pt_cl.def_property_readonly("nobjs", &mz::polyjectory::get_nobjs);
 
     // sgp4 polyjectory.
     m.def(
@@ -144,7 +145,7 @@ PYBIND11_MODULE(core, m)
             py::tuple filter_res = py::module_::import("mizuba").attr("_sgp4_pre_filter_sat_list")(
                 sat_list, jd_begin, exit_radius, reentry_radius);
             sat_list = filter_res[0];
-            py::object rem_list = filter_res[1];
+            py::object mask = filter_res[1];
 
             // Turn sat_list into a data vector.
             const auto sat_data = mzpy::sat_list_to_vector(sat_list);
@@ -161,7 +162,7 @@ PYBIND11_MODULE(core, m)
                 return mz::sgp4_polyjectory(in, jd_begin, jd_end, exit_radius, reentry_radius);
             }();
 
-            return py::make_tuple(std::move(poly_ret), std::move(rem_list));
+            return py::make_tuple(std::move(poly_ret), std::move(mask));
         },
         "sat_list"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert(),
         "exit_radius"_a.noconvert() = mz::sgp4_exit_radius, "reentry_radius"_a.noconvert() = mz::sgp4_reentry_radius);
