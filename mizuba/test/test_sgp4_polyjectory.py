@@ -160,70 +160,78 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
 
         from .. import sgp4_polyjectory
         import numpy as np
-        from ._sgp4_test_data_202407 import sgp4_test_tle
+        from ._sgp4_test_data_202407 import sgp4_test_tle as sgp4_test_tle_202407
+        from ._sgp4_test_data_202409 import sgp4_test_tle as sgp4_test_tle_202409
 
-        # Load the test TLEs.
-        ts = load.timescale()
-        sat_list = list(
-            parse_tle_file((bytes(_, "ascii") for _ in sgp4_test_tle.split("\n")), ts)
-        )
+        def run_test(sgp4_test_tle, begin_jd):
+            # Load the test TLEs.
+            ts = load.timescale()
+            sat_list = list(
+                parse_tle_file(
+                    (bytes(_, "ascii") for _ in sgp4_test_tle.split("\n")), ts
+                )
+            )
 
-        # Use only some of the satellites.
-        sat_list = sat_list[::20]
+            # Use only some of the satellites.
+            sat_list = sat_list[::20]
 
-        # Build the polyjectory.
-        begin_jd = 2460496.5
-        pt, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 1)
+            # Build the polyjectory.
+            pt, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 1)
 
-        # Filter out the masked satellites from sat_list.
-        sat_list = list(np.array(sat_list)[mask])
+            # Filter out the masked satellites from sat_list.
+            sat_list = list(np.array(sat_list)[mask])
 
-        # Check consistency between pt and sat_list.
-        self.assertEqual(pt.nobjs, len(sat_list))
+            # Check consistency between pt and sat_list.
+            self.assertEqual(pt.nobjs, len(sat_list))
 
-        # For each satellite, we compute the state
-        # towards the end of the trajectory via Taylor
-        # series evaluation, and we then compare it to the
-        # state computed by the sgp4 propagator.
-        for tdata, sat in zip(pt, sat_list):
-            traj, tm, status = tdata
-            mod = sat.model
+            # For each satellite, we compute the state
+            # towards the end of the trajectory via Taylor
+            # series evaluation, and we then compare it to the
+            # state computed by the sgp4 propagator.
+            for tdata, sat in zip(pt, sat_list):
+                traj, tm, status = tdata
+                mod = sat.model
 
-            # Take the midpoint of the last step.
-            last_mp = (tm[-2] + tm[-1]) / 2
-            jd, fr = begin_jd, last_mp / 1440
+                # Take the midpoint of the last step.
+                last_mp = (tm[-2] + tm[-1]) / 2
+                jd, fr = begin_jd, last_mp / 1440
 
-            # Compute the state at last_mp via the sgp4 propagator.
-            e, r, v = mod.sgp4(jd, fr)
+                # Compute the state at last_mp via the sgp4 propagator.
+                e, r, v = mod.sgp4(jd, fr)
 
-            # The error code here should be 0 (all good)
-            # or 6 (decay). The other error codes should not
-            # show up here, because no trajectory data is recorded
-            # in the polyjectory when they occur.
-            self.assertTrue((e == 0 or e == 6))
+                # The error code here should be 0 (all good)
+                # or 6 (decay). The other error codes should not
+                # show up here, because no trajectory data is recorded
+                # in the polyjectory when they occur.
+                self.assertTrue((e == 0 or e == 6))
 
-            # We do not want to check the state vector
-            # in case of reentry.
-            if e == 6:
-                continue
+                # We do not want to check the state vector
+                # in case of reentry.
+                if e == 6:
+                    continue
 
-            # Taylor series evaluation needs the time elapsed
-            # since the beginning of the last timestep.
-            dt = (tm[-1] - tm[-2]) / 2
+                # Taylor series evaluation needs the time elapsed
+                # since the beginning of the last timestep.
+                dt = (tm[-1] - tm[-2]) / 2
 
-            # Fetch the state vector and compare.
-            # NOTE: need ::-1 because numpy wants polynomials from highest
-            # power to lowest, but we store them in the opposite order.
-            ts_x = traj[-1, 0, ::-1]
-            self.assertAlmostEqual(np.polyval(ts_x, dt), r[0], delta=1e-6)
-            ts_y = traj[-1, 1, ::-1]
-            self.assertAlmostEqual(np.polyval(ts_y, dt), r[1], delta=1e-6)
-            ts_z = traj[-1, 2, ::-1]
-            self.assertAlmostEqual(np.polyval(ts_z, dt), r[2], delta=1e-6)
+                # Fetch the state vector and compare.
+                # NOTE: need ::-1 because numpy wants polynomials from highest
+                # power to lowest, but we store them in the opposite order.
+                ts_x = traj[-1, 0, ::-1]
+                self.assertAlmostEqual(np.polyval(ts_x, dt), r[0], delta=1e-8)
+                ts_y = traj[-1, 1, ::-1]
+                self.assertAlmostEqual(np.polyval(ts_y, dt), r[1], delta=1e-8)
+                ts_z = traj[-1, 2, ::-1]
+                self.assertAlmostEqual(np.polyval(ts_z, dt), r[2], delta=1e-8)
 
-            ts_vx = traj[-1, 3, ::-1]
-            self.assertAlmostEqual(np.polyval(ts_vx, dt), v[0], delta=1e-6)
-            ts_vy = traj[-1, 4, ::-1]
-            self.assertAlmostEqual(np.polyval(ts_vy, dt), v[1], delta=1e-6)
-            ts_vz = traj[-1, 5, ::-1]
-            self.assertAlmostEqual(np.polyval(ts_vz, dt), v[2], delta=1e-6)
+                ts_vx = traj[-1, 3, ::-1]
+                self.assertAlmostEqual(np.polyval(ts_vx, dt), v[0], delta=1e-8)
+                ts_vy = traj[-1, 4, ::-1]
+                self.assertAlmostEqual(np.polyval(ts_vy, dt), v[1], delta=1e-8)
+                ts_vz = traj[-1, 5, ::-1]
+                self.assertAlmostEqual(np.polyval(ts_vz, dt), v[2], delta=1e-8)
+
+        for sgp4_test_tle, begin_jd in zip(
+            [sgp4_test_tle_202407, sgp4_test_tle_202409], [2460496.5, 2460569.5]
+        ):
+            run_test(sgp4_test_tle, begin_jd)

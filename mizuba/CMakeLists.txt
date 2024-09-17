@@ -7,6 +7,7 @@ set(MIZUBA_PYTHON_FILES
     test/__init__.py
     test/test_sgp4_polyjectory.py
     test/_sgp4_test_data_202407.py
+    test/_sgp4_test_data_202409.py
 )
 
 # Core module.
