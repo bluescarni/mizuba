@@ -285,7 +285,7 @@ polyjectory::polyjectory(ptag,
         storage_file.close();
 
         // Create the impl.
-        // NOTE: here make_shared first allocates, and then constructs. If there are no exceptions, the assignment
+        // NOTE: here make_shared() first allocates, and then constructs. If there are no exceptions, the assignment
         // to m_impl is noexcept and the dtor of impl takes charge of cleaning up the tmp_dir_path upon destruction.
         // If an exception is thrown (e.g., from memory allocation or from the impl ctor throwing), the impl has not
         // been fully constructed and thus its dtor will not be invoked, and the cleanup of tmp_dir_path will be
@@ -302,7 +302,7 @@ polyjectory::polyjectory(ptag,
 // as the public API is immutable and thus there is no point in making deep copies.
 polyjectory::polyjectory(const polyjectory &) = default;
 
-polyjectory::polyjectory(polyjectory &&other) noexcept = default;
+polyjectory::polyjectory(polyjectory &&) noexcept = default;
 
 polyjectory &polyjectory::operator=(const polyjectory &) = default;
 

@@ -48,59 +48,64 @@ PYBIND11_MODULE(core, m)
     // polyjectory.
     py::class_<mz::polyjectory> pt_cl(m, "polyjectory", py::dynamic_attr{});
     pt_cl.def(
-        py::init([](py::iterable trajs, py::iterable times, py::array_t<std::int32_t> status) {
+        py::init([](py::iterable trajs, py::iterable times, py::iterable status_) {
             auto traj_trans = [](const auto &o) {
-                // TODO: stricter check via py::array_t<double>::check_().
+                // Cast o to a NumPy array.
                 auto arr = o.template cast<py::array_t<double>>();
 
+                // Check shape/dimension.
                 if (arr.ndim() != 3) [[unlikely]] {
                     throw std::invalid_argument(fmt::format(
                         "A trajectory array must have 3 dimensions, but instead {} dimension(s) were detected",
                         arr.ndim()));
                 }
-
                 if (arr.shape(1) != 7) [[unlikely]] {
                     throw std::invalid_argument(fmt::format("A trajectory array must have a size of 7 in the second "
                                                             "dimension, but instead a size of {} was detected",
                                                             arr.shape(1)));
                 }
 
-                // TODO: refactor this check in utils.
-                if (!py::cast<bool>(arr.attr("flags").attr("aligned"))
-                    || !py::cast<bool>(arr.attr("flags").attr("c_contiguous"))) [[unlikely]] {
-                    throw std::invalid_argument("All trajectory arrays must be C contiguous and properly aligned");
-                }
+                // Check contiguousness/alignment.
+                mzpy::check_array_cc_aligned(arr, "All trajectory arrays must be C contiguous and properly aligned");
 
                 return mz::polyjectory::traj_span_t(arr.data(), boost::numeric_cast<py::ssize_t>(arr.shape(0)),
                                                     boost::numeric_cast<py::ssize_t>(arr.shape(2)));
             };
 
             auto time_trans = [](const auto &o) {
+                // Cast o to a NumPy array.
+                if (!py::array_t<double>::check_(o)) [[unlikely]] {
+                    mzpy::py_throw(PyExc_TypeError,
+                                   fmt::format("Time data must be supplied as a double-precision NumPy array, "
+                                               "but an object of type '{}' was detected instead",
+                                               mzpy::str(mzpy::type(o)))
+                                       .c_str());
+                }
                 auto arr = o.template cast<py::array_t<double>>();
 
+                // Check dimensions.
                 if (arr.ndim() != 1) [[unlikely]] {
                     throw std::invalid_argument(fmt::format(
                         "A time array must have 1 dimension, but instead {} dimension(s) were detected", arr.ndim()));
                 }
 
-                if (!py::cast<bool>(arr.attr("flags").attr("aligned"))
-                    || !py::cast<bool>(arr.attr("flags").attr("c_contiguous"))) [[unlikely]] {
-                    throw std::invalid_argument("All time arrays must be C contiguous and properly aligned");
-                }
+                // Check contiguousness/alignment.
+                mzpy::check_array_cc_aligned(arr, "All time arrays must be C contiguous and properly aligned");
 
                 return mz::polyjectory::time_span_t(arr.data(), boost::numeric_cast<py::ssize_t>(arr.shape(0)));
             };
 
-            // Checks on the status array.
+            // Cast status to a NumPy array.
+            auto status = status_.cast<py::array_t<std::int32_t>>();
+
+            // Check dimensions.
             if (status.ndim() != 1) [[unlikely]] {
                 throw std::invalid_argument(fmt::format(
                     "A status array must have 1 dimension, but instead {} dimension(s) were detected", status.ndim()));
             }
 
-            if (!py::cast<bool>(status.attr("flags").attr("aligned"))
-                || !py::cast<bool>(status.attr("flags").attr("c_contiguous"))) [[unlikely]] {
-                throw std::invalid_argument("The status array must be C contiguous and properly aligned");
-            }
+            // Check contiguousness/alignment.
+            mzpy::check_array_cc_aligned(status, "The status array must be C contiguous and properly aligned");
 
             const auto *status_ptr = status.data();
 

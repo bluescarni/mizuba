@@ -6,6 +6,7 @@
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -14,6 +15,7 @@
 
 #include <fmt/core.h>
 
+#include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 
 #include "common_utils.hpp"
@@ -65,6 +67,14 @@ std::vector<double> sat_list_to_vector(py::list sat_list)
     }
 
     return retval;
+}
+
+void check_array_cc_aligned(const py::array &arr, const char *msg)
+{
+    if (!py::cast<bool>(arr.attr("flags").attr("aligned")) || !py::cast<bool>(arr.attr("flags").attr("c_contiguous")))
+        [[unlikely]] {
+        throw std::invalid_argument(msg);
+    }
 }
 
 } // namespace mizuba_py
