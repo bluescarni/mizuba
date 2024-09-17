@@ -74,13 +74,6 @@ PYBIND11_MODULE(core, m)
 
             auto time_trans = [](const auto &o) {
                 // Cast o to a NumPy array.
-                if (!py::array_t<double>::check_(o)) [[unlikely]] {
-                    mzpy::py_throw(PyExc_TypeError,
-                                   fmt::format("Time data must be supplied as a double-precision NumPy array, "
-                                               "but an object of type '{}' was detected instead",
-                                               mzpy::str(mzpy::type(o)))
-                                       .c_str());
-                }
                 auto arr = o.template cast<py::array_t<double>>();
 
                 // Check dimensions.
