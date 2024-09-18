@@ -702,14 +702,7 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
 
     // Memory-map it.
     boost::iostreams::mapped_file_sink file(storage_path.string());
-
-    // LCOV_EXCL_START
-    if (boost::numeric_cast<unsigned>(file.alignment()) < alignof(double)) [[unlikely]] {
-        throw std::runtime_error(fmt::format("Invalid alignment detected in a memory mapped file: the alignment of "
-                                             "the file is {}, but an alignment of {} is required instead",
-                                             file.alignment(), alignof(double)));
-    }
-    // LCOV_EXCL_STOP
+    assert(boost::alignment::is_aligned(file.data(), alignof(double)));
 
     // Fetch a pointer to the beginning of the data.
     // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
@@ -780,14 +773,7 @@ polyjectory build_polyjectory(const boost::filesystem::path &tmp_dir_path, const
 {
     const auto storage_path = tmp_dir_path / "storage";
     boost::iostreams::mapped_file_source file(storage_path.string());
-
-    // LCOV_EXCL_START
-    if (boost::numeric_cast<unsigned>(file.alignment()) < alignof(double)) [[unlikely]] {
-        throw std::runtime_error(fmt::format("Invalid alignment detected in a memory mapped file: the alignment of "
-                                             "the file is {}, but an alignment of {} is required instead",
-                                             file.alignment(), alignof(double)));
-    }
-    // LCOV_EXCL_STOP
+    assert(boost::alignment::is_aligned(file.data(), alignof(double)));
 
     // Fetch a pointer to the beginning of the data.
     // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:

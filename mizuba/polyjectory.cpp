@@ -68,17 +68,10 @@ struct polyjectory::impl {
                   std::vector<std::size_t> time_offset_vec, std::uint32_t poly_op1, double maxT,
                   std::vector<std::int32_t> status)
         : m_file_path(std::move(file_path)), m_traj_offset_vec(std::move(traj_offset_vec)),
-          m_time_offset_vec(std::move(time_offset_vec)), m_poly_op1(poly_op1), m_maxT(maxT), m_status(std::move(status))
+          m_time_offset_vec(std::move(time_offset_vec)), m_poly_op1(poly_op1), m_maxT(maxT),
+          m_status(std::move(status)), m_file(m_file_path.string())
     {
-        m_file.open(m_file_path.string());
-
-        // LCOV_EXCL_START
-        if (boost::numeric_cast<unsigned>(m_file.alignment()) < alignof(double)) [[unlikely]] {
-            throw std::runtime_error(fmt::format("Invalid alignment detected in a memory mapped file: the alignment of "
-                                                 "the file is {}, but an alignment of {} is required instead",
-                                                 m_file.alignment(), alignof(double)));
-        }
-        // LCOV_EXCL_STOP
+        assert(boost::alignment::is_aligned(m_file.data(), alignof(double)));
     }
 
     // Fetch a pointer to the beginning of the data.
@@ -268,14 +261,7 @@ polyjectory::polyjectory(ptag,
 
         // Memory-map it.
         boost::iostreams::mapped_file_sink file(storage_path.string());
-
-        // LCOV_EXCL_START
-        if (boost::numeric_cast<unsigned>(file.alignment()) < alignof(double)) [[unlikely]] {
-            throw std::runtime_error(fmt::format("Invalid alignment detected in a memory mapped file: the alignment of "
-                                                 "the file is {}, but an alignment of {} is required instead",
-                                                 file.alignment(), alignof(double)));
-        }
-        // LCOV_EXCL_STOP
+        assert(boost::alignment::is_aligned(file.data(), alignof(double)));
 
         // Fetch a pointer to the beginning of the data.
         // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
