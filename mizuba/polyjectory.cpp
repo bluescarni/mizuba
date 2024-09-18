@@ -278,6 +278,9 @@ polyjectory::polyjectory(ptag,
                     const auto cur_traj = traj_spans[i];
 
                     // Check for non-finite data.
+                    // NOTE: at one point we should probably investigate here if it is
+                    // better to copy the data while it is being checked, instead of
+                    // checking first and then doing a bulk copy later.
                     for (std::size_t j = 0; j < cur_traj.extent(0); ++j) {
                         for (std::size_t k = 0; k < cur_traj.extent(1); ++k) {
                             for (std::size_t l = 0; l < poly_op1; ++l) {
@@ -301,6 +304,9 @@ polyjectory::polyjectory(ptag,
                     const auto cur_time = time_spans[i];
 
                     // Check data.
+                    // NOTE: at one point we should probably investigate here if it is
+                    // better to copy the data while it is being checked, instead of
+                    // checking first and then doing a bulk copy later.
                     for (std::size_t j = 0; j < cur_time.extent(0); ++j) {
                         if (!std::isfinite(cur_time(j))) [[unlikely]] {
                             throw std::invalid_argument(
