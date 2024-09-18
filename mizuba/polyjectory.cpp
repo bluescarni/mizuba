@@ -28,6 +28,9 @@
 
 #include <fmt/core.h>
 
+#include <oneapi/tbb/blocked_range.h>
+#include <oneapi/tbb/parallel_for.h>
+
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -65,17 +68,10 @@ struct polyjectory::impl {
                   std::vector<std::size_t> time_offset_vec, std::uint32_t poly_op1, double maxT,
                   std::vector<std::int32_t> status)
         : m_file_path(std::move(file_path)), m_traj_offset_vec(std::move(traj_offset_vec)),
-          m_time_offset_vec(std::move(time_offset_vec)), m_poly_op1(poly_op1), m_maxT(maxT), m_status(std::move(status))
+          m_time_offset_vec(std::move(time_offset_vec)), m_poly_op1(poly_op1), m_maxT(maxT),
+          m_status(std::move(status)), m_file(m_file_path.string())
     {
-        m_file.open(m_file_path.string());
-
-        // LCOV_EXCL_START
-        if (boost::numeric_cast<unsigned>(m_file.alignment()) < alignof(double)) [[unlikely]] {
-            throw std::runtime_error(fmt::format("Invalid alignment detected in a memory mapped file: the alignment of "
-                                                 "the file is {}, but an alignment of {} is required instead",
-                                                 m_file.alignment(), alignof(double)));
-        }
-        // LCOV_EXCL_STOP
+        assert(boost::alignment::is_aligned(m_file.data(), alignof(double)));
     }
 
     // Fetch a pointer to the beginning of the data.
@@ -150,17 +146,10 @@ polyjectory::polyjectory(ptag,
         // Change the permissions so that only the owner has access.
         boost::filesystem::permissions(tmp_dir_path, boost::filesystem::owner_all);
 
-        // Init the storage file.
-        auto storage_path = tmp_dir_path / "storage";
-        // LCOV_EXCL_START
-        if (boost::filesystem::exists(storage_path)) [[unlikely]] {
-            throw std::runtime_error(
-                fmt::format("Cannot create the storage file '{}', as it exists already", storage_path.string()));
-        }
-        // LCOV_EXCL_STOP
-        std::ofstream storage_file(storage_path.string(), std::ios::binary | std::ios::out);
-        // Make sure we throw on errors.
-        storage_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
+        // Do a first single-threaded pass on the spans to determine:
+        // - the offsets of traj and time data,
+        // - the polynomial order,
+        // - the duration of the longest trajectory.
 
         // Init the trajectories offset vector.
         impl::traj_offset_vec_t traj_offset_vec;
@@ -172,9 +161,8 @@ polyjectory::polyjectory(ptag,
         // Init the poly order + 1.
         std::uint32_t poly_op1 = 0;
 
-        // Check and write the trajectory data.
-        // NOTE: we could investigate if computing and pre-allocating the file size
-        // leads to better performance. For now, let us keep it simple.
+        // Build the traj offset vector, determine poly_op1 and
+        // run checks on the traj spans' dimensions.
         for (decltype(traj_spans.size()) i = 0; i < n_objs; ++i) {
             // Fetch the traj data for the current object.
             const auto cur_traj = traj_spans[i];
@@ -206,22 +194,6 @@ polyjectory::polyjectory(ptag,
             // Compute the total data size (in number of floating-point values).
             const auto traj_size = safe_size_t(cur_traj.extent(0)) * cur_traj.extent(1) * op1;
 
-            // Check for non-finite data.
-            for (std::size_t j = 0; j < cur_traj.extent(0); ++j) {
-                for (std::size_t k = 0; k < cur_traj.extent(1); ++k) {
-                    for (std::size_t l = 0; l < op1; ++l) {
-                        if (!std::isfinite(cur_traj(j, k, l))) [[unlikely]] {
-                            throw std::invalid_argument(
-                                fmt::format("A non-finite value was found in the trajectory at index {}", i));
-                        }
-                    }
-                }
-            }
-
-            // Bulk write into the file.
-            storage_file.write(reinterpret_cast<const char *>(cur_traj.data_handle()),
-                               static_cast<std::streamsize>(traj_size * sizeof(double)));
-
             // Add entry to the offset vector.
             traj_offset_vec.emplace_back(cur_offset, cur_traj.extent(0));
 
@@ -236,7 +208,8 @@ polyjectory::polyjectory(ptag,
         // Init maxT.
         double maxT = 0;
 
-        // Write the time data.
+        // Build the time offset vector, determine maxT and
+        // run checks on the time spans' dimensions.
         for (decltype(time_spans.size()) i = 0; i < n_objs; ++i) {
             // Fetch the current traj and time spans.
             const auto cur_traj = traj_spans[i];
@@ -253,30 +226,9 @@ polyjectory::polyjectory(ptag,
             // Compute the total data size (in number of floating-point values).
             const auto time_size = safe_size_t(cur_time.extent(0));
 
-            // Check data.
-            for (std::size_t j = 0; j < cur_time.extent(0); ++j) {
-                if (!std::isfinite(cur_time(j))) [[unlikely]] {
-                    throw std::invalid_argument(
-                        fmt::format("A non-finite time coordinate was found for the object at index {}", i));
-                }
-
-                if (cur_time(j) <= 0) [[unlikely]] {
-                    throw std::invalid_argument(
-                        fmt::format("A non-positive time coordinate was found for the object at index {}", i));
-                }
-
-                if (j > 0u && !(cur_time(j) > cur_time(j - 1u))) [[unlikely]] {
-                    throw std::invalid_argument(fmt::format(
-                        "The sequence of times for the object at index {} is not monotonically increasing", i));
-                }
-            }
-
             // Update maxT.
-            maxT = std::max(maxT, cur_time(cur_time.extent(0) - 1u));
-
-            // Bulk write into the file.
-            storage_file.write(reinterpret_cast<const char *>(cur_time.data_handle()),
-                               static_cast<std::streamsize>(time_size * sizeof(double)));
+            const auto curT = cur_time(cur_time.extent(0) - 1u);
+            maxT = (curT > maxT) ? curT : maxT;
 
             // Add entry to the offset vector.
             time_offset_vec.emplace_back(cur_offset);
@@ -285,10 +237,108 @@ polyjectory::polyjectory(ptag,
             cur_offset += time_size;
         }
 
+        // NOTE: at this point maxT could contain bogus/incorrect values because
+        // we have not checked the time data yet. We will do this below.
+
+        // Init the storage file.
+        auto storage_path = tmp_dir_path / "storage";
+        // LCOV_EXCL_START
+        if (boost::filesystem::exists(storage_path)) [[unlikely]] {
+            throw std::runtime_error(
+                fmt::format("Cannot create the storage file '{}', as it exists already", storage_path.string()));
+        }
+        // LCOV_EXCL_STOP
+        {
+            // NOTE: here we just create the file and close it immediately, so that it will
+            // have a size of zero. Then, we will resize it to the necessary size.
+            std::ofstream storage_file(storage_path.string(), std::ios::binary | std::ios::out);
+            // Make sure we throw on errors.
+            storage_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
+        }
+
+        // Resize it.
+        boost::filesystem::resize_file(storage_path, cur_offset * sizeof(double));
+
+        // Memory-map it.
+        boost::iostreams::mapped_file_sink file(storage_path.string());
+        assert(boost::alignment::is_aligned(file.data(), alignof(double)));
+
+        // Fetch a pointer to the beginning of the data.
+        // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
+        // https://en.cppreference.com/w/cpp/memory/start_lifetime_as
+        auto *base_ptr = reinterpret_cast<double *>(file.data());
+        assert(boost::alignment::is_aligned(base_ptr, alignof(double)));
+
+        // Check and copy over the data from the spans.
+        oneapi::tbb::parallel_for(
+            oneapi::tbb::blocked_range<decltype(traj_spans.size())>(0, n_objs),
+            [base_ptr, poly_op1, &traj_spans, &traj_offset_vec, &time_spans, &time_offset_vec](const auto &range) {
+                for (auto i = range.begin(); i != range.end(); ++i) {
+                    // Trajectory data.
+                    const auto cur_traj = traj_spans[i];
+
+                    // Check for non-finite data.
+                    // NOTE: at one point we should probably investigate here if it is
+                    // better to copy the data while it is being checked, instead of
+                    // checking first and then doing a bulk copy later.
+                    for (std::size_t j = 0; j < cur_traj.extent(0); ++j) {
+                        for (std::size_t k = 0; k < cur_traj.extent(1); ++k) {
+                            for (std::size_t l = 0; l < poly_op1; ++l) {
+                                if (!std::isfinite(cur_traj(j, k, l))) [[unlikely]] {
+                                    throw std::invalid_argument(
+                                        fmt::format("A non-finite value was found in the trajectory at index {}", i));
+                                }
+                            }
+                        }
+                    }
+
+                    // Compute the total data size (in number of floating-point values).
+                    const auto traj_size = safe_size_t(cur_traj.extent(0)) * cur_traj.extent(1) * poly_op1;
+
+                    // Copy the data into the file.
+                    std::ranges::copy(cur_traj.data_handle(),
+                                      cur_traj.data_handle() + static_cast<std::size_t>(traj_size),
+                                      base_ptr + std::get<0>(traj_offset_vec[i]));
+
+                    // Time data.
+                    const auto cur_time = time_spans[i];
+
+                    // Check data.
+                    // NOTE: at one point we should probably investigate here if it is
+                    // better to copy the data while it is being checked, instead of
+                    // checking first and then doing a bulk copy later.
+                    for (std::size_t j = 0; j < cur_time.extent(0); ++j) {
+                        if (!std::isfinite(cur_time(j))) [[unlikely]] {
+                            throw std::invalid_argument(
+                                fmt::format("A non-finite time coordinate was found for the object at index {}", i));
+                        }
+
+                        if (cur_time(j) <= 0) [[unlikely]] {
+                            throw std::invalid_argument(
+                                fmt::format("A non-positive time coordinate was found for the object at index {}", i));
+                        }
+
+                        if (j > 0u && !(cur_time(j) > cur_time(j - 1u))) [[unlikely]] {
+                            throw std::invalid_argument(fmt::format(
+                                "The sequence of times for the object at index {} is not monotonically increasing", i));
+                        }
+                    }
+
+                    // Compute the total data size (in number of floating-point values).
+                    const auto time_size = safe_size_t(cur_time.extent(0));
+
+                    // Copy the data into the file.
+                    std::ranges::copy(cur_time.data_handle(),
+                                      cur_time.data_handle() + static_cast<std::size_t>(time_size),
+                                      base_ptr + time_offset_vec[i]);
+                }
+            });
+
+        // We can now assert that maxT must not be zero.
         assert(maxT != 0);
 
         // Close the storage file.
-        storage_file.close();
+        file.close();
 
         // Create the impl.
         // NOTE: here make_shared() first allocates, and then constructs. If there are no exceptions, the assignment
