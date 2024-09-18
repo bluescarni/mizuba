@@ -719,8 +719,7 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
 
     // Copy over the data from the individual files.
     oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, n_sats),
-                              [&tmp_dir_path, base_ptr, order, &traj_offset = std::as_const(traj_offset),
-                               &time_offset = std::as_const(time_offset)](const auto &range) {
+                              [&tmp_dir_path, base_ptr, order, &traj_offset, &time_offset](const auto &range) {
                                   for (auto i = range.begin(); i != range.end(); ++i) {
                                       // Taylor coefficients.
 

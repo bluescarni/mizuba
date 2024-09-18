@@ -286,9 +286,7 @@ polyjectory::polyjectory(ptag,
         // Check and copy over the data from the spans.
         oneapi::tbb::parallel_for(
             oneapi::tbb::blocked_range<decltype(traj_spans.size())>(0, n_objs),
-            [base_ptr, poly_op1, &traj_spans = std::as_const(traj_spans),
-             &traj_offset_vec = std::as_const(traj_offset_vec), &time_spans = std::as_const(time_spans),
-             &time_offset_vec = std::as_const(time_offset_vec)](const auto &range) {
+            [base_ptr, poly_op1, &traj_spans, &traj_offset_vec, &time_spans, &time_offset_vec](const auto &range) {
                 for (auto i = range.begin(); i != range.end(); ++i) {
                     // Trajectory data.
                     const auto cur_traj = traj_spans[i];
