@@ -622,28 +622,9 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
 
 // Copy all trajectory/time data generated in perform_ode_integration() into
 // a single storage file.
-//
-// NOTE: here we could perhaps improve performance via multi-threading:
-//
-// - determine the total size required for the single storage file and the offsets
-//   for the Taylor coefficients/time data into the single storage file (single-thread),
-// - create the single storage file,
-// - mmap and write into it from multiple threads (multi-thread).
 auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n_sats, std::uint32_t order)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
-
-    // Create and open the storage file.
-    const auto storage_path = tmp_dir_path / "storage";
-    // LCOV_EXCL_START
-    if (boost::filesystem::exists(storage_path)) [[unlikely]] {
-        throw std::runtime_error(
-            fmt::format("Cannot create the storage file '{}', as it exists already", storage_path.string()));
-    }
-    // LCOV_EXCL_STOP
-    std::ofstream storage_file(storage_path.string(), std::ios::binary | std::ios::out);
-    // Make sure we throw on errors.
-    storage_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
     // This is a vector that will contain:
     // - the offset (in number of double-precision values) in the storage file
@@ -665,19 +646,6 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
         assert(boost::filesystem::is_regular_file(tc_path));
         const auto tc_size = boost::filesystem::file_size(tc_path);
         assert(tc_size % (safe_size_t(sizeof(double)) * (order + 1u) * 7u) == 0u);
-
-        // Open it.
-        std::ifstream tc_file(tc_path.string(), std::ios::binary | std::ios::in);
-        tc_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
-
-        // Copy into storage_file.
-        storage_file << tc_file.rdbuf();
-
-        // Close the file.
-        tc_file.close();
-
-        // Remove the file.
-        boost::filesystem::remove(tc_path);
 
         // Update traj_offset.
         const auto n_steps = boost::numeric_cast<std::size_t>(
@@ -706,25 +674,100 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
         const auto time_size = boost::filesystem::file_size(time_path);
         assert(time_size % sizeof(double) == 0u);
 
-        // Open it.
-        std::ifstream time_file(time_path.string(), std::ios::binary | std::ios::in);
-        time_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
-
-        // Copy into storage_file.
-        storage_file << time_file.rdbuf();
-
-        // Close the file.
-        time_file.close();
-
-        // Remove the file.
-        boost::filesystem::remove(time_path);
-
         // Update time_offset.
         time_offset.emplace_back(cur_offset, time_size / sizeof(double));
 
         // Update cur_offset.
         cur_offset += time_size / sizeof(double);
     }
+
+    // Create the storage file.
+    const auto storage_path = tmp_dir_path / "storage";
+    // LCOV_EXCL_START
+    if (boost::filesystem::exists(storage_path)) [[unlikely]] {
+        throw std::runtime_error(
+            fmt::format("Cannot create the storage file '{}', as it exists already", storage_path.string()));
+    }
+    // LCOV_EXCL_STOP
+    {
+        // NOTE: here we just create the file and close it immediately, so that it will
+        // have a size of zero. Then, we will resize it to the necessary size.
+        std::ofstream storage_file(storage_path.string(), std::ios::binary | std::ios::out);
+        // Make sure we throw on errors.
+        storage_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
+    }
+
+    // Resize it.
+    boost::filesystem::resize_file(storage_path, cur_offset * sizeof(double));
+
+    // Memory-map it.
+    boost::iostreams::mapped_file_sink file(storage_path.string());
+
+    // LCOV_EXCL_START
+    if (boost::numeric_cast<unsigned>(file.alignment()) < alignof(double)) [[unlikely]] {
+        throw std::runtime_error(fmt::format("Invalid alignment detected in a memory mapped file: the alignment of "
+                                             "the file is {}, but an alignment of {} is required instead",
+                                             file.alignment(), alignof(double)));
+    }
+    // LCOV_EXCL_STOP
+
+    // Fetch a pointer to the beginning of the data.
+    // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
+    // https://en.cppreference.com/w/cpp/memory/start_lifetime_as
+    auto *base_ptr = reinterpret_cast<double *>(file.data());
+    assert(boost::alignment::is_aligned(base_ptr, alignof(double)));
+
+    // Copy over the data from the individual files.
+    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, n_sats),
+                              [&tmp_dir_path, base_ptr, order, &traj_offset = std::as_const(traj_offset),
+                               &time_offset = std::as_const(time_offset)](const auto &range) {
+                                  for (auto i = range.begin(); i != range.end(); ++i) {
+                                      // Taylor coefficients.
+
+                                      // Compute the file size.
+                                      const auto tc_size
+                                          = sizeof(double) * (order + 1u) * 7u * std::get<1>(traj_offset[i]);
+
+                                      // Build the file path.
+                                      const auto tc_path = tmp_dir_path / fmt::format("tc_{}", i);
+
+                                      // Open it.
+                                      std::ifstream tc_file(tc_path.string(), std::ios::binary | std::ios::in);
+                                      tc_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
+
+                                      // Copy it into the mapped file.
+                                      tc_file.read(reinterpret_cast<char *>(base_ptr + std::get<0>(traj_offset[i])),
+                                                   boost::numeric_cast<std::streamsize>(tc_size));
+
+                                      // Close the file.
+                                      tc_file.close();
+
+                                      // Remove the file.
+                                      boost::filesystem::remove(tc_path);
+
+                                      // Time data.
+
+                                      // Compute the file size.
+                                      const auto time_size = sizeof(double) * std::get<1>(time_offset[i]);
+
+                                      // Build the file path.
+                                      const auto time_path = tmp_dir_path / fmt::format("time_{}", i);
+
+                                      // Open it.
+                                      std::ifstream time_file(time_path.string(), std::ios::binary | std::ios::in);
+                                      time_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
+
+                                      // Copy it into the mapped file.
+                                      time_file.read(reinterpret_cast<char *>(base_ptr + std::get<0>(time_offset[i])),
+                                                     boost::numeric_cast<std::streamsize>(time_size));
+
+                                      // Close the file.
+                                      time_file.close();
+
+                                      // Remove the file.
+                                      boost::filesystem::remove(time_path);
+                                  }
+                              });
 
     // Return the offset vectors.
     return std::make_pair(std::move(traj_offset), std::move(time_offset));
@@ -737,8 +780,7 @@ polyjectory build_polyjectory(const boost::filesystem::path &tmp_dir_path, const
                               const TimeOffset &time_offset, const std::vector<int> &status, std::uint32_t order)
 {
     const auto storage_path = tmp_dir_path / "storage";
-    boost::iostreams::mapped_file_source file;
-    file.open(storage_path.string());
+    boost::iostreams::mapped_file_source file(storage_path.string());
 
     // LCOV_EXCL_START
     if (boost::numeric_cast<unsigned>(file.alignment()) < alignof(double)) [[unlikely]] {
