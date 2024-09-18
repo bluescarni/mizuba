@@ -47,12 +47,17 @@ struct polyjectory::impl {
     // - the total number of steps in the trajectory data.
     using traj_offset_vec_t = std::vector<std::tuple<std::size_t, std::size_t>>;
 
+    // Path to the mapped file.
     boost::filesystem::path m_file_path;
+    // Offsets for the trajectory data.
     traj_offset_vec_t m_traj_offset_vec;
+    // Offsets for the time data.
     std::vector<std::size_t> m_time_offset_vec;
+    // Polynomial order + 1 for the trajectory data.
     std::uint32_t m_poly_op1 = 0;
     // The duration of the longest trajectory.
     double m_maxT = 0;
+    // Vector of trajectory statuses.
     std::vector<std::int32_t> m_status;
     boost::iostreams::mapped_file_source m_file;
 
@@ -181,15 +186,16 @@ polyjectory::polyjectory(ptag,
             }
 
             // Set/check the order + 1.
+            const auto op1 = cur_traj.extent(2);
             if (i == 0u) {
-                if (cur_traj.extent(2) < 3u) [[unlikely]] {
+                if (op1 < 3u) [[unlikely]] {
                     throw std::invalid_argument("The trajectory polynomial order for the first object "
                                                 "is less than 2 - this is not allowed");
                 }
 
-                poly_op1 = boost::numeric_cast<std::uint32_t>(cur_traj.extent(2));
+                poly_op1 = boost::numeric_cast<std::uint32_t>(op1);
             } else {
-                if (cur_traj.extent(2) != poly_op1) [[unlikely]] {
+                if (op1 != poly_op1) [[unlikely]] {
                     throw std::invalid_argument(
                         fmt::format("The trajectory polynomial order for the object at index "
                                     "{} is inconsistent with the polynomial order deduced from the first object ({})",
@@ -198,12 +204,12 @@ polyjectory::polyjectory(ptag,
             }
 
             // Compute the total data size (in number of floating-point values).
-            const auto traj_size = safe_size_t(cur_traj.extent(0)) * cur_traj.extent(1) * cur_traj.extent(2);
+            const auto traj_size = safe_size_t(cur_traj.extent(0)) * cur_traj.extent(1) * op1;
 
             // Check for non-finite data.
             for (std::size_t j = 0; j < cur_traj.extent(0); ++j) {
                 for (std::size_t k = 0; k < cur_traj.extent(1); ++k) {
-                    for (std::size_t l = 0; l < cur_traj.extent(2); ++l) {
+                    for (std::size_t l = 0; l < op1; ++l) {
                         if (!std::isfinite(cur_traj(j, k, l))) [[unlikely]] {
                             throw std::invalid_argument(
                                 fmt::format("A non-finite value was found in the trajectory at index {}", i));
@@ -285,7 +291,7 @@ polyjectory::polyjectory(ptag,
         storage_file.close();
 
         // Create the impl.
-        // NOTE: here make_shared first allocates, and then constructs. If there are no exceptions, the assignment
+        // NOTE: here make_shared() first allocates, and then constructs. If there are no exceptions, the assignment
         // to m_impl is noexcept and the dtor of impl takes charge of cleaning up the tmp_dir_path upon destruction.
         // If an exception is thrown (e.g., from memory allocation or from the impl ctor throwing), the impl has not
         // been fully constructed and thus its dtor will not be invoked, and the cleanup of tmp_dir_path will be
@@ -302,7 +308,7 @@ polyjectory::polyjectory(ptag,
 // as the public API is immutable and thus there is no point in making deep copies.
 polyjectory::polyjectory(const polyjectory &) = default;
 
-polyjectory::polyjectory(polyjectory &&other) noexcept = default;
+polyjectory::polyjectory(polyjectory &&) noexcept = default;
 
 polyjectory &polyjectory::operator=(const polyjectory &) = default;
 
@@ -310,6 +316,9 @@ polyjectory &polyjectory::operator=(polyjectory &&) noexcept = default;
 
 polyjectory::~polyjectory() = default;
 
+// NOTE: using std::size_t for indexing is ok because we used std::size_t-based
+// spans on construction - thus, std::size_t can always represent the number
+// of objects in the polyjectory.
 std::tuple<polyjectory::traj_span_t, polyjectory::time_span_t, std::int32_t>
 polyjectory::operator[](std::size_t i) const
 {
@@ -334,6 +343,14 @@ polyjectory::operator[](std::size_t i) const
                         // NOTE: static_cast is ok, m_poly_op1 was originally a std::size_t.
                         static_cast<std::size_t>(m_impl->m_poly_op1)},
             time_span_t{time_ptr, nsteps}, m_impl->m_status[i]};
+}
+
+// NOTE: using std::size_t as a size type is ok because we used std::size_t-based
+// spans on construction - thus, std::size_t can always represent the number
+// of objects in the polyjectory.
+std::size_t polyjectory::get_nobjs() const noexcept
+{
+    return static_cast<std::size_t>(m_impl->m_traj_offset_vec.size());
 }
 
 } // namespace mizuba

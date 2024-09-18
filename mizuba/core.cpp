@@ -48,59 +48,57 @@ PYBIND11_MODULE(core, m)
     // polyjectory.
     py::class_<mz::polyjectory> pt_cl(m, "polyjectory", py::dynamic_attr{});
     pt_cl.def(
-        py::init([](py::iterable trajs, py::iterable times, py::array_t<std::int32_t> status) {
+        py::init([](py::iterable trajs, py::iterable times, py::iterable status_) {
             auto traj_trans = [](const auto &o) {
-                // TODO: stricter check via py::array_t<double>::check_().
+                // Cast o to a NumPy array.
                 auto arr = o.template cast<py::array_t<double>>();
 
+                // Check shape/dimension.
                 if (arr.ndim() != 3) [[unlikely]] {
                     throw std::invalid_argument(fmt::format(
                         "A trajectory array must have 3 dimensions, but instead {} dimension(s) were detected",
                         arr.ndim()));
                 }
-
                 if (arr.shape(1) != 7) [[unlikely]] {
                     throw std::invalid_argument(fmt::format("A trajectory array must have a size of 7 in the second "
                                                             "dimension, but instead a size of {} was detected",
                                                             arr.shape(1)));
                 }
 
-                // TODO: refactor this check in utils.
-                if (!py::cast<bool>(arr.attr("flags").attr("aligned"))
-                    || !py::cast<bool>(arr.attr("flags").attr("c_contiguous"))) [[unlikely]] {
-                    throw std::invalid_argument("All trajectory arrays must be C contiguous and properly aligned");
-                }
+                // Check contiguousness/alignment.
+                mzpy::check_array_cc_aligned(arr, "All trajectory arrays must be C contiguous and properly aligned");
 
                 return mz::polyjectory::traj_span_t(arr.data(), boost::numeric_cast<py::ssize_t>(arr.shape(0)),
                                                     boost::numeric_cast<py::ssize_t>(arr.shape(2)));
             };
 
             auto time_trans = [](const auto &o) {
+                // Cast o to a NumPy array.
                 auto arr = o.template cast<py::array_t<double>>();
 
+                // Check dimensions.
                 if (arr.ndim() != 1) [[unlikely]] {
                     throw std::invalid_argument(fmt::format(
                         "A time array must have 1 dimension, but instead {} dimension(s) were detected", arr.ndim()));
                 }
 
-                if (!py::cast<bool>(arr.attr("flags").attr("aligned"))
-                    || !py::cast<bool>(arr.attr("flags").attr("c_contiguous"))) [[unlikely]] {
-                    throw std::invalid_argument("All time arrays must be C contiguous and properly aligned");
-                }
+                // Check contiguousness/alignment.
+                mzpy::check_array_cc_aligned(arr, "All time arrays must be C contiguous and properly aligned");
 
                 return mz::polyjectory::time_span_t(arr.data(), boost::numeric_cast<py::ssize_t>(arr.shape(0)));
             };
 
-            // Checks on the status array.
+            // Cast status to a NumPy array.
+            auto status = status_.cast<py::array_t<std::int32_t>>();
+
+            // Check dimensions.
             if (status.ndim() != 1) [[unlikely]] {
                 throw std::invalid_argument(fmt::format(
                     "A status array must have 1 dimension, but instead {} dimension(s) were detected", status.ndim()));
             }
 
-            if (!py::cast<bool>(status.attr("flags").attr("aligned"))
-                || !py::cast<bool>(status.attr("flags").attr("c_contiguous"))) [[unlikely]] {
-                throw std::invalid_argument("The status array must be C contiguous and properly aligned");
-            }
+            // Check contiguousness/alignment.
+            mzpy::check_array_cc_aligned(status, "The status array must be C contiguous and properly aligned");
 
             const auto *status_ptr = status.data();
 
@@ -137,6 +135,7 @@ PYBIND11_MODULE(core, m)
             return py::make_tuple(std::move(traj_ret), std::move(time_ret), status);
         },
         "i"_a.noconvert());
+    pt_cl.def_property_readonly("nobjs", &mz::polyjectory::get_nobjs);
 
     // sgp4 polyjectory.
     m.def(
@@ -146,7 +145,7 @@ PYBIND11_MODULE(core, m)
             py::tuple filter_res = py::module_::import("mizuba").attr("_sgp4_pre_filter_sat_list")(
                 sat_list, jd_begin, exit_radius, reentry_radius);
             sat_list = filter_res[0];
-            py::object rem_list = filter_res[1];
+            py::object mask = filter_res[1];
 
             // Turn sat_list into a data vector.
             const auto sat_data = mzpy::sat_list_to_vector(sat_list);
@@ -163,7 +162,7 @@ PYBIND11_MODULE(core, m)
                 return mz::sgp4_polyjectory(in, jd_begin, jd_end, exit_radius, reentry_radius);
             }();
 
-            return py::make_tuple(std::move(poly_ret), std::move(rem_list));
+            return py::make_tuple(std::move(poly_ret), std::move(mask));
         },
         "sat_list"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert(),
         "exit_radius"_a.noconvert() = mz::sgp4_exit_radius, "reentry_radius"_a.noconvert() = mz::sgp4_reentry_radius);

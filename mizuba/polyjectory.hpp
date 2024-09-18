@@ -84,6 +84,7 @@ public:
     ~polyjectory();
 
     [[nodiscard]] std::tuple<traj_span_t, time_span_t, std::int32_t> operator[](std::size_t) const;
+    [[nodiscard]] std::size_t get_nobjs() const noexcept;
 };
 
 } // namespace mizuba

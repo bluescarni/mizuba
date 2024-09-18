@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 
 namespace mizuba_py
@@ -28,6 +29,8 @@ py::object type(const py::handle &);
 std::string str(const py::handle &);
 
 std::vector<double> sat_list_to_vector(py::list);
+
+void check_array_cc_aligned(const py::array &, const char *);
 
 } // namespace mizuba_py
 

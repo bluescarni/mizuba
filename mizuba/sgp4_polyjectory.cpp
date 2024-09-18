@@ -34,6 +34,7 @@
 #include <oneapi/tbb/parallel_for.h>
 #include <oneapi/tbb/task_arena.h>
 
+#include <heyoka/config.hpp>
 #include <heyoka/detail/dfloat.hpp>
 #include <heyoka/expression.hpp>
 #include <heyoka/kw.hpp>
@@ -141,14 +142,15 @@ std::vector<std::pair<heyoka::expression, heyoka::expression>> construct_sgp4_od
 
     // In sgp4_func, replace the TLE data with params, and tsince
     // with tsince + par[7].
-    sgp4_func = heyoka::subs(sgp4_func, {{"n0", heyoka::par[0]},
-                                         {"e0", heyoka::par[1]},
-                                         {"i0", heyoka::par[2]},
-                                         {"node0", heyoka::par[3]},
-                                         {"omega0", heyoka::par[4]},
-                                         {"m0", heyoka::par[5]},
-                                         {"bstar", heyoka::par[6]},
-                                         {"tsince", tsince + heyoka::par[7]}});
+    sgp4_func = heyoka::subs(sgp4_func,
+                             std::unordered_map<std::string, heyoka::expression>{{"n0", heyoka::par[0]},
+                                                                                 {"e0", heyoka::par[1]},
+                                                                                 {"i0", heyoka::par[2]},
+                                                                                 {"node0", heyoka::par[3]},
+                                                                                 {"omega0", heyoka::par[4]},
+                                                                                 {"m0", heyoka::par[5]},
+                                                                                 {"bstar", heyoka::par[6]},
+                                                                                 {"tsince", tsince + heyoka::par[7]}});
 
     // Compute the rhs of the sgp4 ODE, substituting tsince with the time placeholder.
     const auto dt = heyoka::diff_tensors(sgp4_func, {tsince});
@@ -199,7 +201,12 @@ auto construct_sgp4_ode_integrator(const ODESys &sys, double exit_radius, double
     init_state.resize(boost::safe_numerics::safe<decltype(init_state.size())>(sys.size()) * batch_size);
 
     return ta_t(sys, std::move(init_state), batch_size, heyoka::kw::t_events = std::move(t_events),
-                heyoka::kw::compact_mode = true);
+                heyoka::kw::compact_mode = true
+#if HEYOKA_VERSION_MAJOR >= 6
+                ,
+                heyoka::kw::parjit = true
+#endif
+    );
 }
 
 // Run the ODE integration according to the sgp4 dynamics, storing the Taylor coefficients
@@ -308,6 +315,8 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
     // A **global** vector of statuses, one per object.
     // We do not need to protect writes into this, as each status
     // will be written to exactly at most once.
+    // NOTE: this is zero-inited, meaning that the default status flag
+    // of each object is "no error detected".
     std::vector<int> global_status;
     global_status.resize(boost::numeric_cast<decltype(global_status.size())>(n_sats));
 
@@ -396,6 +405,9 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
                     for (std::size_t j = 0; j < 7u; ++j) {
                         state_view(j, i) = init_states(j, b_idx + i);
                     }
+                    // NOTE: the error code should always be zero
+                    // since we checked the initial states.
+                    assert(state_view(6, i) == 0.);
                     // Set the initial radius.
                     state_view(7, i)
                         = std::sqrt(state_view(0, i) * state_view(0, i) + state_view(1, i) * state_view(1, i)
@@ -610,6 +622,13 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
 
 // Copy all trajectory/time data generated in perform_ode_integration() into
 // a single storage file.
+//
+// NOTE: here we could perhaps improve performance via multi-threading:
+//
+// - determine the total size required for the single storage file and the offsets
+//   for the Taylor coefficients/time data into the single storage file (single-thread),
+// - create the single storage file,
+// - mmap and write into it from multiple threads (multi-thread).
 auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n_sats, std::uint32_t order)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;

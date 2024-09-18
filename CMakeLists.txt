@@ -112,7 +112,11 @@ endif()
 # Find the dependencies.
 
 # heyoka.
-find_package(heyoka 5.1.0 REQUIRED CONFIG)
+find_package(heyoka REQUIRED CONFIG)
+if(NOT (${heyoka_VERSION} VERSION_GREATER_EQUAL 5.1.0 AND ${heyoka_VERSION} VERSION_LESS_EQUAL 6.0.0))
+    message(FATAL_ERROR "heyoka >= 5.1.0 and <= 6.0.0 is required.")
+endif()
+message(STATUS "Found heyoka version ${heyoka_VERSION}")
 
 # fmt.
 find_package(fmt REQUIRED CONFIG)
