@@ -121,6 +121,9 @@ message(STATUS "Found heyoka version ${heyoka_VERSION}")
 # fmt.
 find_package(fmt REQUIRED CONFIG)
 
+# spdlog.
+find_package(spdlog REQUIRED CONFIG)
+
 # Mandatory dependency on TBB.
 find_package(TBB REQUIRED CONFIG)
 

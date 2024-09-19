@@ -16,13 +16,24 @@ set(_MIZUBA_CORE_SOURCES
     common_utils.cpp
     polyjectory.cpp
     sgp4_polyjectory.cpp
+    logging.cpp
 )
 
 Python3_add_library(core MODULE WITH_SOABI ${_MIZUBA_CORE_SOURCES})
 
 unset(_MIZUBA_CORE_SOURCES)
 
-target_link_libraries(core PRIVATE heyoka::heyoka fmt::fmt TBB::tbb Boost::boost Boost::serialization Boost::iostreams Boost::filesystem Boost::disable_autolinking)
+target_link_libraries(core PRIVATE
+    heyoka::heyoka
+    fmt::fmt
+    spdlog::spdlog
+    TBB::tbb
+    Boost::boost
+    Boost::serialization
+    Boost::iostreams
+    Boost::filesystem
+    Boost::disable_autolinking
+)
 target_link_libraries(core PRIVATE "${pybind11_LIBRARIES}")
 target_compile_definitions(core PRIVATE "BOOST_FILESYSTEM_VERSION=4")
 target_include_directories(core SYSTEM PRIVATE "${pybind11_INCLUDE_DIR}" "${Python3_INCLUDE_DIRS}")
