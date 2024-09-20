@@ -414,6 +414,17 @@ std::filesystem::path polyjectory::get_file_path() const
     return std::filesystem::path(boost::filesystem::canonical(m_impl->m_file_path).string());
 }
 
+double polyjectory::get_maxT() const noexcept
+{
+    return m_impl->m_maxT;
+}
+
+std::uint32_t polyjectory::get_poly_order() const noexcept
+{
+    assert(m_impl->m_poly_op1 > 0u);
+    return m_impl->m_poly_op1 - 1u;
+}
+
 } // namespace mizuba
 
 #if defined(__GNUC__)

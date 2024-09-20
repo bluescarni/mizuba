@@ -84,11 +84,12 @@ public:
     polyjectory &operator=(polyjectory &&) noexcept;
     ~polyjectory();
 
-    [[nodiscard]] std::tuple<traj_span_t, time_span_t, std::int32_t> operator[](std::size_t) const;
-
     [[nodiscard]] std::size_t get_nobjs() const noexcept;
-
     [[nodiscard]] std::filesystem::path get_file_path() const;
+    [[nodiscard]] double get_maxT() const noexcept;
+    [[nodiscard]] std::uint32_t get_poly_order() const noexcept;
+
+    [[nodiscard]] std::tuple<traj_span_t, time_span_t, std::int32_t> operator[](std::size_t) const;
 };
 
 } // namespace mizuba

@@ -107,6 +107,10 @@ PYBIND11_MODULE(core, m)
                                    std::ranges::subrange(status_ptr, status_ptr + status.shape(0)));
         }),
         "trajs"_a.noconvert(), "times"_a.noconvert(), "status"_a.noconvert());
+    pt_cl.def_property_readonly("nobjs", &mz::polyjectory::get_nobjs);
+    pt_cl.def_property_readonly("file_path", &mz::polyjectory::get_file_path);
+    pt_cl.def_property_readonly("maxT", &mz::polyjectory::get_maxT);
+    pt_cl.def_property_readonly("poly_order", &mz::polyjectory::get_poly_order);
     pt_cl.def(
         "__getitem__",
         [](const py::object &self, std::size_t i) {
@@ -136,8 +140,6 @@ PYBIND11_MODULE(core, m)
             return py::make_tuple(std::move(traj_ret), std::move(time_ret), status);
         },
         "i"_a.noconvert());
-    pt_cl.def_property_readonly("nobjs", &mz::polyjectory::get_nobjs);
-    pt_cl.def_property_readonly("file_path", &mz::polyjectory::get_file_path);
 
     // sgp4 polyjectory.
     m.def(
