@@ -340,14 +340,18 @@ polyjectory::polyjectory(ptag,
         // Close the storage file.
         file.close();
 
+        // Mark it as read-only.
+        boost::filesystem::permissions(storage_path,
+                                       boost::filesystem::perms::remove_perms | boost::filesystem::perms::owner_write);
+
         // Create the impl.
         // NOTE: here make_shared() first allocates, and then constructs. If there are no exceptions, the assignment
         // to m_impl is noexcept and the dtor of impl takes charge of cleaning up the tmp_dir_path upon destruction.
         // If an exception is thrown (e.g., from memory allocation or from the impl ctor throwing), the impl has not
         // been fully constructed and thus its dtor will not be invoked, and the cleanup of tmp_dir_path will be
         // performed in the catch block below.
-        m_impl = std::make_shared<impl>(std::move(storage_path), std::move(traj_offset_vec), std::move(time_offset_vec),
-                                        poly_op1, maxT, std::move(status));
+        m_impl = std::make_shared<const impl>(std::move(storage_path), std::move(traj_offset_vec),
+                                              std::move(time_offset_vec), poly_op1, maxT, std::move(status));
     } catch (...) {
         boost::filesystem::remove_all(tmp_dir_path);
         throw;
