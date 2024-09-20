@@ -19,6 +19,7 @@
 
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
+#include <pybind11/stl/filesystem.h>
 
 #include <Python.h>
 
@@ -136,6 +137,7 @@ PYBIND11_MODULE(core, m)
         },
         "i"_a.noconvert());
     pt_cl.def_property_readonly("nobjs", &mz::polyjectory::get_nobjs);
+    pt_cl.def_property_readonly("file_path", &mz::polyjectory::get_file_path);
 
     // sgp4 polyjectory.
     m.def(

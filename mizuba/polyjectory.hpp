@@ -13,6 +13,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <iterator>
 #include <memory>
 #include <ranges>
@@ -84,7 +85,10 @@ public:
     ~polyjectory();
 
     [[nodiscard]] std::tuple<traj_span_t, time_span_t, std::int32_t> operator[](std::size_t) const;
+
     [[nodiscard]] std::size_t get_nobjs() const noexcept;
+
+    [[nodiscard]] std::filesystem::path get_file_path() const;
 };
 
 } // namespace mizuba

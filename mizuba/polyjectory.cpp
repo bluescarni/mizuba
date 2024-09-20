@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <ios>
 #include <memory>
@@ -405,6 +406,12 @@ polyjectory::operator[](std::size_t i) const
 std::size_t polyjectory::get_nobjs() const noexcept
 {
     return static_cast<std::size_t>(m_impl->m_traj_offset_vec.size());
+}
+
+std::filesystem::path polyjectory::get_file_path() const
+{
+    // NOTE: need to convert from Boost::filesystem to std::filesystem.
+    return std::filesystem::path(boost::filesystem::canonical(m_impl->m_file_path).string());
 }
 
 } // namespace mizuba
