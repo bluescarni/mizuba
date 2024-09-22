@@ -49,6 +49,7 @@ boost::filesystem::path create_temp_dir(const char *tplt)
 }
 
 // Create a file at the input path with the given size.
+// The file will **not** be opened.
 // If the file exists already, an error will be thrown.
 void create_sized_file(const boost::filesystem::path &path, std::size_t size)
 {
