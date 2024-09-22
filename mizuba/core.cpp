@@ -12,6 +12,8 @@
 #include <ranges>
 #include <span>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include <boost/numeric/conversion/cast.hpp>
 
@@ -19,6 +21,7 @@
 
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 #include <pybind11/stl/filesystem.h>
 
 #include <Python.h>
@@ -26,6 +29,7 @@
 #include <heyoka/mdspan.hpp>
 
 #include "common_utils.hpp"
+#include "conjunctions.hpp"
 #include "polyjectory.hpp"
 #include "sgp4_polyjectory.hpp"
 
@@ -170,4 +174,13 @@ PYBIND11_MODULE(core, m)
         },
         "sat_list"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert(),
         "exit_radius"_a.noconvert() = mz::sgp4_exit_radius, "reentry_radius"_a.noconvert() = mz::sgp4_reentry_radius);
+
+    // Conjunctions.
+    py::class_<mz::conjunctions> conj_cl(m, "conjunctions", py::dynamic_attr{});
+    conj_cl.def(py::init([](mz::polyjectory pj, double conj_thresh, double conj_det_interval,
+                            std::vector<std::size_t> whitelist) {
+                    return mz::conjunctions(std::move(pj), conj_thresh, conj_det_interval, std::move(whitelist));
+                }),
+                "pj"_a.noconvert(), "conj_thresh"_a.noconvert(), "conj_det_interval"_a.noconvert(),
+                "whitelist"_a.noconvert() = std::vector<std::size_t>{});
 }
