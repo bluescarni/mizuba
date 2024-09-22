@@ -18,16 +18,17 @@
 namespace mizuba::detail
 {
 
-// Helper to create a directory with a unique name into the
+// Helper to create a directory with a "unique" name into the
 // system's temporary dir. If the directory to be created exists
-// already, an exception will be thrown.
+// already, an exception will be thrown, otherwise the path
+// to the newly-created directory will be returned.
 boost::filesystem::path create_temp_dir(const char *tplt)
 {
-    // Assemble a "unique" dir path into the system temp dir.
-    // NOTE: make sure to canonicalise the result, so that if we
-    // convert it to string we get an absolute path with resolved symlinks.
+    // Assemble a "unique" dir path into the system's temp dir.
+    // NOTE: make sure to canonicalise the temp dir path, so that if we
+    // convert the result to string we get an absolute path with resolved symlinks.
     auto tmp_dir_path
-        = boost::filesystem::canonical(boost::filesystem::temp_directory_path() / boost::filesystem::unique_path(tplt));
+        = boost::filesystem::canonical(boost::filesystem::temp_directory_path()) / boost::filesystem::unique_path(tplt);
 
     // Attempt to create it.
     // LCOV_EXCL_START
