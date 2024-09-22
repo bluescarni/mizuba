@@ -32,6 +32,7 @@
 #include <oneapi/tbb/blocked_range.h>
 #include <oneapi/tbb/parallel_for.h>
 
+#include "detail/file_utils.hpp"
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -129,17 +130,7 @@ polyjectory::polyjectory(ptag,
     }
 
     // Assemble a "unique" dir path into the system temp dir.
-    const auto tmp_dir_path
-        = boost::filesystem::temp_directory_path() / boost::filesystem::unique_path("mizuba-%%%%-%%%%-%%%%-%%%%");
-
-    // Attempt to create it.
-    // LCOV_EXCL_START
-    if (!boost::filesystem::create_directory(tmp_dir_path)) [[unlikely]] {
-        throw std::runtime_error(
-            fmt::format("Error while creating a unique temporary directory: the directory '{}' already exists",
-                        tmp_dir_path.string()));
-    }
-    // LCOV_EXCL_STOP
+    const auto tmp_dir_path = detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
 
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the temp dir in case of exceptions.

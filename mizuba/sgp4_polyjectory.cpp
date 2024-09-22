@@ -45,6 +45,7 @@
 #include <heyoka/model/sgp4.hpp>
 #include <heyoka/taylor.hpp>
 
+#include "detail/file_utils.hpp"
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -837,17 +838,7 @@ sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, st
     const auto ta = detail::construct_sgp4_ode_integrator(sgp4_ode, exit_radius, reentry_radius);
 
     // Assemble a "unique" dir path into the system temp dir.
-    const auto tmp_dir_path = boost::filesystem::temp_directory_path()
-                              / boost::filesystem::unique_path("mizuba_sgp4_polyjectory-%%%%-%%%%-%%%%-%%%%");
-
-    // Attempt to create it.
-    // LCOV_EXCL_START
-    if (!boost::filesystem::create_directory(tmp_dir_path)) [[unlikely]] {
-        throw std::runtime_error(
-            fmt::format("Error while creating a unique temporary directory: the directory '{}' already exists",
-                        tmp_dir_path.string()));
-    }
-    // LCOV_EXCL_STOP
+    const auto tmp_dir_path = detail::create_temp_dir("mizuba_sgp4_polyjectory-%%%%-%%%%-%%%%-%%%%");
 
     // NOTE: from now on, we need to ensure that the temp dir is automatically
     // cleaned up, even in case of exceptions. We use this little RAII helper

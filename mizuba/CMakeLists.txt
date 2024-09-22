@@ -17,6 +17,7 @@ set(_MIZUBA_CORE_SOURCES
     polyjectory.cpp
     sgp4_polyjectory.cpp
     conjunctions.cpp
+    detail/file_utils.cpp
 )
 
 Python3_add_library(core MODULE WITH_SOABI ${_MIZUBA_CORE_SOURCES})
