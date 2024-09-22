@@ -344,10 +344,13 @@ polyjectory::polyjectory(ptag,
         // performed in the catch block below.
         m_impl = std::make_shared<const impl>(std::move(storage_path), std::move(traj_offset_vec),
                                               std::move(time_offset_vec), poly_op1, maxT, std::move(status));
+
+        // LCOV_EXCL_START
     } catch (...) {
         boost::filesystem::remove_all(tmp_dir_path);
         throw;
     }
+    // LCOV_EXCL_STOP
 }
 
 // NOTE: the polyjectory class will have shallow copy semantics - this is ok
