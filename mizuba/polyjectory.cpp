@@ -52,7 +52,7 @@ struct polyjectory::impl {
     // - the total number of steps in the trajectory data.
     using traj_offset_vec_t = std::vector<std::tuple<std::size_t, std::size_t>>;
 
-    // Path to the mapped file.
+    // Path to the memory-mapped file.
     boost::filesystem::path m_file_path;
     // Offsets for the trajectory data.
     traj_offset_vec_t m_traj_offset_vec;
@@ -64,7 +64,10 @@ struct polyjectory::impl {
     double m_maxT = 0;
     // Vector of trajectory statuses.
     std::vector<std::int32_t> m_status;
+    // The memory-mapped file.
     boost::iostreams::mapped_file_source m_file;
+    // Pointer to the beginning of m_file, cast to double.
+    const double *m_base_ptr = nullptr;
 
     explicit impl(boost::filesystem::path file_path, traj_offset_vec_t traj_offset_vec,
                   std::vector<std::size_t> time_offset_vec, std::uint32_t poly_op1, double maxT,
@@ -73,18 +76,10 @@ struct polyjectory::impl {
           m_time_offset_vec(std::move(time_offset_vec)), m_poly_op1(poly_op1), m_maxT(maxT),
           m_status(std::move(status)), m_file(m_file_path.string())
     {
-        assert(boost::alignment::is_aligned(m_file.data(), alignof(double)));
-    }
-
-    // Fetch a pointer to the beginning of the data.
-    [[nodiscard]] const double *base_ptr() const noexcept
-    {
         // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
         // https://en.cppreference.com/w/cpp/memory/start_lifetime_as
-        const auto *base_ptr = reinterpret_cast<const double *>(m_file.data());
-        assert(boost::alignment::is_aligned(base_ptr, alignof(double)));
-
-        return base_ptr;
+        m_base_ptr = reinterpret_cast<const double *>(m_file.data());
+        assert(boost::alignment::is_aligned(m_base_ptr, alignof(double)));
     }
 
     impl(impl &&) noexcept = delete;
@@ -378,7 +373,7 @@ polyjectory::operator[](std::size_t i) const
     }
 
     // Fetch the base pointer.
-    const auto *base_ptr = m_impl->base_ptr();
+    const auto *base_ptr = m_impl->m_base_ptr;
 
     // Fetch the traj offset and nsteps.
     const auto [traj_offset, nsteps] = m_impl->m_traj_offset_vec[i];
