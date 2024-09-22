@@ -688,7 +688,6 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
 
     // Memory-map it.
     boost::iostreams::mapped_file_sink file(storage_path.string());
-    assert(boost::alignment::is_aligned(file.data(), alignof(double)));
 
     // Fetch a pointer to the beginning of the data.
     // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
