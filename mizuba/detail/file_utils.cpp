@@ -6,10 +6,16 @@
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+#include <cstddef>
+#include <fstream>
+#include <ios>
 #include <stdexcept>
 
+#include <boost/cstdint.hpp>
+#include <boost/filesystem/file_status.hpp>
 #include <boost/filesystem/operations.hpp>
 #include <boost/filesystem/path.hpp>
+#include <boost/numeric/conversion/cast.hpp>
 
 #include <fmt/core.h>
 
@@ -40,6 +46,27 @@ boost::filesystem::path create_temp_dir(const char *tplt)
     // LCOV_EXCL_STOP
 
     return tmp_dir_path;
+}
+
+// Create a file at the input path with the given size.
+// If the file exists already, an error will be thrown.
+void create_sized_file(const boost::filesystem::path &path, std::size_t size)
+{
+    // LCOV_EXCL_START
+    if (boost::filesystem::exists(path)) [[unlikely]] {
+        throw std::runtime_error(fmt::format("Cannot create the sized file '{}', as it exists already", path.string()));
+    }
+    // LCOV_EXCL_STOP
+    {
+        // NOTE: here we just create the file and close it immediately, so that it will
+        // have a size of zero. Then, we will resize it to the necessary size.
+        std::ofstream file(path.string(), std::ios::binary | std::ios::out);
+        // Make sure we throw on errors.
+        file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
+    }
+
+    // Resize it.
+    boost::filesystem::resize_file(path, boost::numeric_cast<boost::uintmax_t>(size));
 }
 
 } // namespace mizuba::detail

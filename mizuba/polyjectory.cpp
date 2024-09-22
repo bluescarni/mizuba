@@ -12,8 +12,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
-#include <ios>
 #include <memory>
 #include <stdexcept>
 #include <tuple>
@@ -21,7 +19,6 @@
 #include <vector>
 
 #include <boost/align.hpp>
-#include <boost/filesystem/file_status.hpp>
 #include <boost/filesystem/operations.hpp>
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <boost/numeric/conversion/cast.hpp>
@@ -229,22 +226,7 @@ polyjectory::polyjectory(ptag,
 
         // Init the storage file.
         auto storage_path = tmp_dir_path / "storage";
-        // LCOV_EXCL_START
-        if (boost::filesystem::exists(storage_path)) [[unlikely]] {
-            throw std::runtime_error(
-                fmt::format("Cannot create the storage file '{}', as it exists already", storage_path.string()));
-        }
-        // LCOV_EXCL_STOP
-        {
-            // NOTE: here we just create the file and close it immediately, so that it will
-            // have a size of zero. Then, we will resize it to the necessary size.
-            std::ofstream storage_file(storage_path.string(), std::ios::binary | std::ios::out);
-            // Make sure we throw on errors.
-            storage_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
-        }
-
-        // Resize it.
-        boost::filesystem::resize_file(storage_path, cur_offset * sizeof(double));
+        detail::create_sized_file(storage_path, cur_offset * sizeof(double));
 
         // Memory-map it.
         boost::iostreams::mapped_file_sink file(storage_path.string());

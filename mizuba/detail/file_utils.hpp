@@ -9,6 +9,8 @@
 #ifndef MIZUBA_DETAIL_FILE_UTILS_HPP
 #define MIZUBA_DETAIL_FILE_UTILS_HPP
 
+#include <cstddef>
+
 #include <boost/filesystem/path.hpp>
 
 namespace mizuba::detail
@@ -16,6 +18,8 @@ namespace mizuba::detail
 
 boost::filesystem::path create_temp_dir(const char *);
 
-}
+void create_sized_file(const boost::filesystem::path &, std::size_t);
+
+} // namespace mizuba::detail
 
 #endif
