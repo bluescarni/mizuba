@@ -183,4 +183,22 @@ PYBIND11_MODULE(core, m)
                 }),
                 "pj"_a.noconvert(), "conj_thresh"_a.noconvert(), "conj_det_interval"_a.noconvert(),
                 "whitelist"_a.noconvert() = std::vector<std::size_t>{});
+    conj_cl.def_property_readonly("aabbs", [](const py::object &self) {
+        const auto *p = py::cast<const mz::conjunctions *>(self);
+
+        // Fetch the span.
+        const auto aabbs_span = p->get_aabbs();
+
+        // Turn into an array.
+        auto ret = py::array_t<float>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(aabbs_span.extent(0)),
+                                                                boost::numeric_cast<py::ssize_t>(aabbs_span.extent(1)),
+                                                                boost::numeric_cast<py::ssize_t>(aabbs_span.extent(2)),
+                                                                boost::numeric_cast<py::ssize_t>(aabbs_span.extent(3))},
+                                      aabbs_span.data_handle(), self);
+
+        // Ensure the returned array is read-only.
+        ret.attr("flags").attr("writeable") = false;
+
+        return ret;
+    });
 }

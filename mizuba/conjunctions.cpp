@@ -156,6 +156,11 @@ std::array<double, 2> conjunctions::get_cd_begin_end(double maxT, std::size_t cd
     return {cbegin, cend};
 }
 
+conjunctions::aabbs_span_t conjunctions::get_aabbs() const noexcept
+{
+    return aabbs_span_t{m_impl->m_aabbs_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs() + 1u};
+}
+
 } // namespace mizuba
 
 #if defined(__GNUC__)
