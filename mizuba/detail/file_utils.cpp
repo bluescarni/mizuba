@@ -49,9 +49,8 @@ boost::filesystem::path create_temp_dir(const char *tplt)
     return tmp_dir_path;
 }
 
-// Create a file at the input path with the given size.
-// The file will **not** be opened.
-// If the file exists already, an error will be thrown.
+// Create a file at the input path with the given size. If the file exists already, an error will be thrown.
+// NOTE: when this function returns, the file will **not** be open.
 void create_sized_file(const boost::filesystem::path &path, std::size_t size)
 {
     // LCOV_EXCL_START
