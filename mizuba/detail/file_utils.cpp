@@ -75,9 +75,7 @@ void mark_file_read_only(const boost::filesystem::path &path)
 {
     assert(boost::filesystem::is_regular_file(path));
 
-    boost::filesystem::permissions(path, boost::filesystem::perms::remove_perms | boost::filesystem::perms::owner_write
-                                             | boost::filesystem::perms::others_write
-                                             | boost::filesystem::perms::group_write);
+    boost::filesystem::permissions(path, boost::filesystem::perms::owner_read);
 }
 
 } // namespace mizuba::detail
