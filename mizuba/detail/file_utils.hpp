@@ -20,6 +20,8 @@ boost::filesystem::path create_temp_dir(const char *);
 
 void create_sized_file(const boost::filesystem::path &, std::size_t);
 
+void mark_file_read_only(const boost::filesystem::path &);
+
 } // namespace mizuba::detail
 
 #endif

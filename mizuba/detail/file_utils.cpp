@@ -6,6 +6,7 @@
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+#include <cassert>
 #include <cstddef>
 #include <fstream>
 #include <ios>
@@ -68,6 +69,16 @@ void create_sized_file(const boost::filesystem::path &path, std::size_t size)
 
     // Resize it.
     boost::filesystem::resize_file(path, boost::numeric_cast<boost::uintmax_t>(size));
+}
+
+// Mark the file at the input path as read-only.
+void mark_file_read_only(const boost::filesystem::path &path)
+{
+    assert(boost::filesystem::is_regular_file(path));
+
+    boost::filesystem::permissions(path, boost::filesystem::perms::remove_perms | boost::filesystem::perms::owner_write
+                                             | boost::filesystem::perms::others_write
+                                             | boost::filesystem::perms::group_write);
 }
 
 } // namespace mizuba::detail

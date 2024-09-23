@@ -309,8 +309,7 @@ polyjectory::polyjectory(ptag,
         file.close();
 
         // Mark it as read-only.
-        boost::filesystem::permissions(storage_path,
-                                       boost::filesystem::perms::remove_perms | boost::filesystem::perms::owner_write);
+        detail::mark_file_read_only(storage_path);
 
         // Create the impl.
         // NOTE: here make_shared() first allocates, and then constructs. If there are no exceptions, the assignment
