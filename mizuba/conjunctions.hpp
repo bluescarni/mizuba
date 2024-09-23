@@ -9,6 +9,7 @@
 #ifndef MIZUBA_CONJUNCTIONS_HPP
 #define MIZUBA_CONJUNCTIONS_HPP
 
+#include <array>
 #include <concepts>
 #include <cstddef>
 #include <initializer_list>
@@ -18,6 +19,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/filesystem/path.hpp>
 #include <boost/numeric/conversion/cast.hpp>
 
 #include "polyjectory.hpp"
@@ -60,6 +62,9 @@ class conjunctions
             return retval;
         }
     }
+
+    [[nodiscard]] std::array<double, 2> get_cd_begin_end(double, std::size_t, double, std::size_t) const;
+    void compute_aabbs(const polyjectory &, const boost::filesystem::path &, std::size_t, double, double) const;
 
 public:
     template <typename WRange = std::vector<std::size_t>>

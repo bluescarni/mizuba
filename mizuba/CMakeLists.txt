@@ -17,6 +17,7 @@ set(_MIZUBA_CORE_SOURCES
     polyjectory.cpp
     sgp4_polyjectory.cpp
     conjunctions.cpp
+    conjunctions_compute_aabbs.cpp
     detail/file_utils.cpp
 )
 
