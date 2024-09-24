@@ -10,12 +10,13 @@ import unittest as _ut
 
 
 class conjunctions_test_case(_ut.TestCase):
-    # Helper to verify that in a conjunctions instance
-    # the computed aabbs are consistent with the positions
-    # of the objects.
+    # Helper to verify that the aabbs are consistent
+    # with the positions of the objects computed via
+    # polynomial evaluation.
     def _verify_conj_aabbs(self, c, rng):
         import numpy as np
 
+        # Fetch the polyjectory.
         pj = c.polyjectory
 
         # For every conjunction step, pick random times within,
@@ -35,10 +36,20 @@ class conjunctions_test_case(_ut.TestCase):
                 # Fetch the AABB of the object.
                 aabb = c.aabbs[cd_idx, obj_idx]
 
+                if begin_time >= traj_times[-1]:
+                    # The trajectory data for the current object
+                    # ends before the beginning of the current conjunction
+                    # step. Skip the current object and assert that its
+                    # aabb is infinite.
+                    self.assertTrue(np.all(np.isinf(aabb)))
+                    continue
+                else:
+                    self.assertTrue(np.all(np.isfinite(aabb)))
+
                 # Iterate over the random times.
                 for time in random_times:
                     # Look for the trajectory step which ends at
-                    # or after the end time.
+                    # or after 'time'.
                     step_idx = np.searchsorted(traj_times, time)
 
                     # Skip the current time if there's no corresponding
@@ -51,6 +62,8 @@ class conjunctions_test_case(_ut.TestCase):
                     traj_polys = traj[step_idx]
 
                     # Compute the poly evaluation interval.
+                    # This is the time elapsed since the beginning
+                    # of the trajectory step.
                     h = time - (0.0 if step_idx == 0 else traj_times[step_idx - 1])
 
                     # Evaluate the polynomials and check that
@@ -128,3 +141,39 @@ class conjunctions_test_case(_ut.TestCase):
 
             # Verify the aabbs.
             self._verify_conj_aabbs(c, rng)
+
+        # Test with sgp4 propagations, if possible.
+        try:
+            from skyfield.api import load
+            from skyfield.iokit import parse_tle_file
+        except ImportError:
+            return
+
+        from .. import sgp4_polyjectory
+        from ._sgp4_test_data_202407 import sgp4_test_tle
+
+        # Load the test TLEs.
+        ts = load.timescale()
+        sat_list = list(
+            parse_tle_file(
+                (bytes(_, "ascii") for _ in sgp4_test_tle.split("\n")),
+                ts,
+            )
+        )
+
+        # Use only some of the satellites.
+        # NOTE: we manually include an object for which the
+        # trajectory data terminates early.
+        sat_list = sat_list[::2000] + [sat_list[220]]
+
+        begin_jd = 2460496.5
+
+        # Build the polyjectory.
+        pt, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 0.25)
+
+        # Build the conjunctions object. Keep a small threshold not to interfere
+        # with aabb checking.
+        c = conj(pt, conj_thresh=1e-8, conj_det_interval=1.0)
+
+        # Verify the aabbs.
+        self._verify_conj_aabbs(c, rng)
