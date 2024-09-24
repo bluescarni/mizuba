@@ -74,6 +74,7 @@ class conjunctions_test_case(_ut.TestCase):
                         self.assertLess(pval, aabb[1][aabb_idx])
 
     def test_basics(self):
+        import sys
         from .. import conjunctions as conj, polyjectory
         from ._planar_circ import _planar_circ_tcs, _planar_circ_times
 
@@ -107,6 +108,34 @@ class conjunctions_test_case(_ut.TestCase):
             "The conjunction detection interval must be finite and positive,"
             in str(cm.exception)
         )
+
+        # Test accessors.
+        c = conj(pj, conj_thresh=1.0, conj_det_interval=0.1)
+
+        # aabbs.
+        rc = sys.getrefcount(c)
+        aabbs = c.aabbs
+        self.assertEqual(sys.getrefcount(c), rc + 1)
+        with self.assertRaises(ValueError) as cm:
+            aabbs[:] = aabbs
+        with self.assertRaises(AttributeError) as cm:
+            c.aabbs = aabbs
+
+        # cd_end_times.
+        rc = sys.getrefcount(c)
+        cd_end_times = c.cd_end_times
+        self.assertEqual(sys.getrefcount(c), rc + 1)
+        with self.assertRaises(ValueError) as cm:
+            cd_end_times[:] = cd_end_times
+        with self.assertRaises(AttributeError) as cm:
+            c.cd_end_times = cd_end_times
+
+        # polyjectory.
+        rc = sys.getrefcount(c)
+        pj = c.polyjectory
+        self.assertEqual(sys.getrefcount(c), rc + 1)
+        with self.assertRaises(AttributeError) as cm:
+            c.polyjectory = pj
 
     def test_aabbs(self):
         import numpy as np

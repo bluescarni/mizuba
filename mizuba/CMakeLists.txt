@@ -10,6 +10,7 @@ set(MIZUBA_PYTHON_FILES
     test/_sgp4_test_data_202409.py
     test/test_conjunctions.py
     test/_planar_circ.py
+    test/test_polyjectory.py
 )
 
 # Core module.
