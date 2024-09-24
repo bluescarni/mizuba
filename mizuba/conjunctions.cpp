@@ -52,16 +52,21 @@ struct conjunctions::impl {
     std::size_t m_n_cd_steps = 0;
     // The whitelist.
     boost::unordered_flat_set<std::size_t> m_whitelist;
+    // End times of the conjunction steps.
+    // NOTE: if needed, this one can also be turned into
+    // a memory-mapped file.
+    std::vector<double> m_cd_end_times;
     // The memory-mapped file for the aabbs.
     boost::iostreams::mapped_file_source m_file_aabbs;
     // Pointer to the beginning of m_file_aabbs, cast to float.
     const float *m_aabbs_base_ptr = nullptr;
 
     explicit impl(boost::filesystem::path temp_dir_path, polyjectory pj, double conj_thresh, double conj_det_interval,
-                  std::size_t n_cd_steps, boost::unordered_flat_set<std::size_t> whitelist)
+                  std::size_t n_cd_steps, boost::unordered_flat_set<std::size_t> whitelist,
+                  std::vector<double> cd_end_times)
         : m_temp_dir_path(std::move(temp_dir_path)), m_pj(std::move(pj)), m_conj_thresh(conj_thresh),
           m_conj_det_interval(conj_det_interval), m_n_cd_steps(n_cd_steps), m_whitelist(std::move(whitelist)),
-          m_file_aabbs((m_temp_dir_path / "aabbs").string())
+          m_cd_end_times(std::move(cd_end_times)), m_file_aabbs((m_temp_dir_path / "aabbs").string())
     {
         // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
         // https://en.cppreference.com/w/cpp/memory/start_lifetime_as
@@ -110,12 +115,12 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
         boost::filesystem::permissions(tmp_dir_path, boost::filesystem::owner_all);
 
         // Run the computation of the aabbs.
-        compute_aabbs(pj, tmp_dir_path, n_cd_steps, conj_thresh, conj_det_interval);
+        auto cd_end_times = compute_aabbs(pj, tmp_dir_path, n_cd_steps, conj_thresh, conj_det_interval);
 
         // Create the impl.
-        m_impl
-            = std::make_shared<const impl>(tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps,
-                                           boost::unordered_flat_set<std::size_t>(whitelist.begin(), whitelist.end()));
+        m_impl = std::make_shared<const impl>(
+            tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps,
+            boost::unordered_flat_set<std::size_t>(whitelist.begin(), whitelist.end()), std::move(cd_end_times));
 
         // LCOV_EXCL_START
     } catch (...) {
@@ -159,6 +164,16 @@ std::array<double, 2> conjunctions::get_cd_begin_end(double maxT, std::size_t cd
 conjunctions::aabbs_span_t conjunctions::get_aabbs() const noexcept
 {
     return aabbs_span_t{m_impl->m_aabbs_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs() + 1u};
+}
+
+conjunctions::cd_end_times_span_t conjunctions::get_cd_end_times() const noexcept
+{
+    return cd_end_times_span_t{m_impl->m_cd_end_times.data(), m_impl->m_n_cd_steps};
+}
+
+const polyjectory &conjunctions::get_polyjectory() const noexcept
+{
+    return m_impl->m_pj;
 }
 
 } // namespace mizuba

@@ -66,19 +66,10 @@ class conjunctions
     }
 
     [[nodiscard]] std::array<double, 2> get_cd_begin_end(double, std::size_t, double, std::size_t) const;
-    void compute_aabbs(const polyjectory &, const boost::filesystem::path &, std::size_t, double, double) const;
+    std::vector<double> compute_aabbs(const polyjectory &, const boost::filesystem::path &, std::size_t, double,
+                                      double) const;
 
 public:
-    // NOTE: the four dimensions here are, respectively:
-    // - the total number of conjunction steps,
-    // - the total number of objects + 1 (the +1 is for the global
-    //   aabb for the conjunction step),
-    // - the lower/upper bounds (always 2),
-    // - the number of elements in the bounds (which is
-    //   always 4).
-    using aabbs_span_t
-        = heyoka::mdspan<const float, heyoka::extents<std::size_t, std::dynamic_extent, std::dynamic_extent, 2, 4>>;
-
     template <typename WRange = std::vector<std::size_t>>
         requires std::ranges::input_range<WRange>
                  && std::integral<std::remove_cvref_t<std::ranges::range_reference_t<WRange>>>
@@ -101,7 +92,19 @@ public:
     conjunctions &operator=(conjunctions &&) noexcept;
     ~conjunctions();
 
+    // NOTE: the four dimensions here are, respectively:
+    // - the total number of conjunction steps,
+    // - the total number of objects + 1 (the +1 is for the global
+    //   aabb for the conjunction step),
+    // - the lower/upper bounds (always 2),
+    // - the number of elements in the bounds (which is
+    //   always 4).
+    using aabbs_span_t
+        = heyoka::mdspan<const float, heyoka::extents<std::size_t, std::dynamic_extent, std::dynamic_extent, 2, 4>>;
     [[nodiscard]] aabbs_span_t get_aabbs() const noexcept;
+    using cd_end_times_span_t = heyoka::mdspan<const double, heyoka::dextents<std::size_t, 1>>;
+    [[nodiscard]] cd_end_times_span_t get_cd_end_times() const noexcept;
+    [[nodiscard]] const polyjectory &get_polyjectory() const noexcept;
 };
 
 } // namespace mizuba

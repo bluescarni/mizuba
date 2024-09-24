@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cassert>
 #include <cstddef>
 #include <limits>
 #include <stdexcept>
@@ -245,13 +246,14 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
 
 } // namespace detail
 
-// Function to compute the AABBs for all particles in all conjunction steps.
+// Function to compute the AABBs for all objects in all conjunction steps.
 //
 // pj is the polyjectory, tmp_dir_path the temporary dir storing all conjunction data,
 // n_cd_steps the number of conjunction steps, conj_thresh the conjunction threshold,
 // conj_det_interval the conjunction detection interval.
-void conjunctions::compute_aabbs(const polyjectory &pj, const boost::filesystem::path &tmp_dir_path,
-                                 std::size_t n_cd_steps, double conj_thresh, double conj_det_interval) const
+std::vector<double> conjunctions::compute_aabbs(const polyjectory &pj, const boost::filesystem::path &tmp_dir_path,
+                                                std::size_t n_cd_steps, double conj_thresh,
+                                                double conj_det_interval) const
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
 
@@ -281,71 +283,82 @@ void conjunctions::compute_aabbs(const polyjectory &pj, const boost::filesystem:
     auto *base_ptr = reinterpret_cast<float *>(file.data());
     assert(boost::alignment::is_aligned(base_ptr, alignof(float)));
 
+    // Construct the vector to store the end times of the conjunction steps.
+    std::vector<double> cd_end_times;
+    cd_end_times.resize(boost::numeric_cast<decltype(cd_end_times.size())>(n_cd_steps));
+
     // Compute the AABBs in parallel over all the conjunction steps.
-    oneapi::tbb::parallel_for(
-        oneapi::tbb::blocked_range<std::size_t>(0, n_cd_steps),
-        [this, maxT, conj_det_interval, n_cd_steps, base_ptr, nobjs, &pj, conj_thresh](const auto &cd_range) {
-            for (auto cd_idx = cd_range.begin(); cd_idx != cd_range.end(); ++cd_idx) {
-                // Prepare the global AABB for the current conjunction step.
-                constexpr auto finf = std::numeric_limits<float>::infinity();
-                // NOTE: the global AABB needs to be updated atomically.
-                std::array<std::atomic<float>, 4> cur_global_lb{{finf, finf, finf, finf}};
-                std::array<std::atomic<float>, 4> cur_global_ub{{-finf, -finf, -finf, -finf}};
+    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, n_cd_steps), [this, maxT, conj_det_interval,
+                                                                                       n_cd_steps, base_ptr, nobjs, &pj,
+                                                                                       conj_thresh, &cd_end_times](
+                                                                                          const auto &cd_range) {
+        for (auto cd_idx = cd_range.begin(); cd_idx != cd_range.end(); ++cd_idx) {
+            // Prepare the global AABB for the current conjunction step.
+            constexpr auto finf = std::numeric_limits<float>::infinity();
+            // NOTE: the global AABB needs to be updated atomically.
+            std::array<std::atomic<float>, 4> cur_global_lb{{finf, finf, finf, finf}};
+            std::array<std::atomic<float>, 4> cur_global_ub{{-finf, -finf, -finf, -finf}};
 
-                // Fetch the begin/end times for the current conjunction step.
-                const auto [cd_begin, cd_end] = get_cd_begin_end(maxT, cd_idx, conj_det_interval, n_cd_steps);
+            // Fetch the begin/end times for the current conjunction step.
+            const auto [cd_begin, cd_end] = get_cd_begin_end(maxT, cd_idx, conj_det_interval, n_cd_steps);
 
-                // Iterate over all objects to determine their AABBs for the current conjunction step.
-                oneapi::tbb::parallel_for(
-                    oneapi::tbb::blocked_range<std::size_t>(0, nobjs),
-                    [cd_idx, base_ptr, nobjs, &pj, cd_begin, cd_end, conj_thresh, &cur_global_lb,
-                     &cur_global_ub](const auto &obj_range) {
-                        // Init the local AABB for the current obj range.
-                        std::array<float, 4> cur_local_lb{{finf, finf, finf, finf}};
-                        std::array<float, 4> cur_local_ub{{-finf, -finf, -finf, -finf}};
+            // Iterate over all objects to determine their AABBs for the current conjunction step.
+            oneapi::tbb::parallel_for(
+                oneapi::tbb::blocked_range<std::size_t>(0, nobjs),
+                [cd_idx, base_ptr, nobjs, &pj, cd_begin, cd_end, conj_thresh, &cur_global_lb,
+                 &cur_global_ub](const auto &obj_range) {
+                    // Init the local AABB for the current obj range.
+                    std::array<float, 4> cur_local_lb{{finf, finf, finf, finf}};
+                    std::array<float, 4> cur_local_ub{{-finf, -finf, -finf, -finf}};
 
-                        for (auto obj_idx = obj_range.begin(); obj_idx != obj_range.end(); ++obj_idx) {
-                            // Compute the AABB for the current object.
-                            const auto [lb, ub]
-                                = detail::compute_object_aabb(pj, obj_idx, cd_begin, cd_end, conj_thresh);
+                    for (auto obj_idx = obj_range.begin(); obj_idx != obj_range.end(); ++obj_idx) {
+                        // Compute the AABB for the current object.
+                        const auto [lb, ub] = detail::compute_object_aabb(pj, obj_idx, cd_begin, cd_end, conj_thresh);
 
-                            // Update the local AABB.
-                            // NOTE: min/max usage is safe, because compute_object_aabb()
-                            // ensures that the bounding boxes are finite.
-                            for (auto i = 0u; i < 4u; ++i) {
-                                cur_local_lb[i] = std::min(cur_local_lb[i], lb[i]);
-                                cur_local_ub[i] = std::max(cur_local_ub[i], ub[i]);
-                            }
-
-                            // Compute the pointer on disk to the AABB for the current conjunction step and object.
-                            auto *aabb_ptr = base_ptr + (cd_idx * (nobjs + 1u) + obj_idx) * 8u;
-
-                            // Write the AABB to disk.
-                            std::ranges::copy(lb, aabb_ptr);
-                            std::ranges::copy(ub, aabb_ptr + 4);
-                        }
-
-                        // Atomically update the global AABB for the current chunk.
+                        // Update the local AABB.
+                        // NOTE: min/max usage is safe, because compute_object_aabb()
+                        // ensures that the bounding boxes are finite.
                         for (auto i = 0u; i < 4u; ++i) {
-                            detail::lb_atomic_update(cur_global_lb[i], cur_local_lb[i]);
-                            detail::ub_atomic_update(cur_global_ub[i], cur_local_ub[i]);
+                            cur_local_lb[i] = std::min(cur_local_lb[i], lb[i]);
+                            cur_local_ub[i] = std::max(cur_local_ub[i], ub[i]);
                         }
-                    });
 
-                // Write out the global AABB for the current conjunction step to disk.
-                auto *aabb_ptr = base_ptr + (cd_idx * (nobjs + 1u) + nobjs) * 8u;
-                for (auto i = 0u; i < 4u; ++i) {
-                    aabb_ptr[i] = cur_global_lb[i].load(std::memory_order_relaxed);
-                    aabb_ptr[i + 4u] = cur_global_ub[i].load(std::memory_order_relaxed);
-                }
+                        // Compute the pointer on disk to the AABB for the current conjunction step and object.
+                        auto *aabb_ptr = base_ptr + (cd_idx * (nobjs + 1u) + obj_idx) * 8u;
+
+                        // Write the AABB to disk.
+                        std::ranges::copy(lb, aabb_ptr);
+                        std::ranges::copy(ub, aabb_ptr + 4);
+                    }
+
+                    // Atomically update the global AABB for the current chunk.
+                    for (auto i = 0u; i < 4u; ++i) {
+                        detail::lb_atomic_update(cur_global_lb[i], cur_local_lb[i]);
+                        detail::ub_atomic_update(cur_global_ub[i], cur_local_ub[i]);
+                    }
+                });
+
+            // Write out the global AABB for the current conjunction step to disk.
+            auto *aabb_ptr = base_ptr + (cd_idx * (nobjs + 1u) + nobjs) * 8u;
+            for (auto i = 0u; i < 4u; ++i) {
+                aabb_ptr[i] = cur_global_lb[i].load(std::memory_order_relaxed);
+                aabb_ptr[i + 4u] = cur_global_ub[i].load(std::memory_order_relaxed);
             }
-        });
+
+            // Write cd_end into cd_end_times.
+            cd_end_times[cd_idx] = cd_end;
+        }
+    });
 
     // Close the storage file.
     file.close();
 
     // Mark it as read-only.
     detail::mark_file_read_only(storage_path);
+
+    // Return the end times of the conjunction steps.
+    assert(cd_end_times.size() == n_cd_steps);
+    return cd_end_times;
 }
 
 } // namespace mizuba

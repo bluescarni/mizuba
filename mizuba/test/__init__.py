@@ -10,14 +10,16 @@
 def run_test_suite():
     import unittest as _ut
 
-    from . import test_sgp4_polyjectory
+    from . import test_sgp4_polyjectory, test_conjunctions
 
     retval = 0
 
     tl = _ut.TestLoader()
 
-    suite = tl.loadTestsFromTestCase(test_sgp4_polyjectory.sgp4_polyjectory_test_case)
-
+    suite = tl.loadTestsFromTestCase(test_conjunctions.conjunctions_test_case)
+    suite.addTest(
+        tl.loadTestsFromTestCase(test_sgp4_polyjectory.sgp4_polyjectory_test_case)
+    )
     test_result = _ut.TextTestRunner(verbosity=2).run(suite)
 
     if len(test_result.failures) > 0 or len(test_result.errors) > 0:

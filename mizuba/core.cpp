@@ -201,4 +201,21 @@ PYBIND11_MODULE(core, m)
 
         return ret;
     });
+    conj_cl.def_property_readonly("cd_end_times", [](const py::object &self) {
+        const auto *p = py::cast<const mz::conjunctions *>(self);
+
+        // Fetch the span.
+        const auto cd_end_times_span = p->get_cd_end_times();
+
+        // Turn into an array.
+        auto ret = py::array_t<double>(
+            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(cd_end_times_span.extent(0))},
+            cd_end_times_span.data_handle(), self);
+
+        // Ensure the returned array is read-only.
+        ret.attr("flags").attr("writeable") = false;
+
+        return ret;
+    });
+    conj_cl.def_property_readonly("polyjectory", &mz::conjunctions::get_polyjectory);
 }
