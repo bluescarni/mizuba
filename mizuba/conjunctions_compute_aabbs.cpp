@@ -338,7 +338,7 @@ std::vector<double> conjunctions::compute_aabbs(const polyjectory &pj, const boo
                         std::ranges::copy(ub, aabb_ptr + 4);
                     }
 
-                    // Atomically update the global AABB for the current chunk.
+                    // Atomically update the global AABB for the current conjunction step.
                     for (auto i = 0u; i < 4u; ++i) {
                         detail::lb_atomic_update(cur_global_lb[i], cur_local_lb[i]);
                         detail::ub_atomic_update(cur_global_ub[i], cur_local_ub[i]);
