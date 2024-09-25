@@ -217,3 +217,44 @@ class conjunctions_test_case(_ut.TestCase):
 
         # Verify the aabbs.
         self._verify_conj_aabbs(c, rng)
+
+    def test_zero_aabbs(self):
+        # Test to check behaviour with aabbs of zero size.
+        import numpy as np
+        from .. import conjunctions as conj, polyjectory
+
+        # Trajectory data for a single step.
+        tdata = np.zeros((7, 6))
+        # Make the object fixed in Cartesian space with x,y,z coordinates all 1.
+        tdata[:3, 0] = 1.0
+        # Set the radius.
+        tdata[6, 0] = np.sqrt(3.0)
+
+        pj = polyjectory([[tdata, tdata, tdata]], [[1.0, 2.0, 3.0]], [0])
+
+        # Use epsilon as conj thresh so that it does not influence
+        # the computation of the aabb.
+        c = conj(pj, conj_thresh=np.finfo(float).eps, conj_det_interval=0.1)
+
+        self.assertTrue(
+            np.all(
+                c.aabbs[:, :, 0, :3] == np.nextafter(np.single(1), np.single("-inf"))
+            )
+        )
+        self.assertTrue(
+            np.all(
+                c.aabbs[:, :, 1, :3] == np.nextafter(np.single(1), np.single("+inf"))
+            )
+        )
+        self.assertTrue(
+            np.all(
+                c.aabbs[:, :, 0, 3]
+                == np.nextafter(np.single(np.sqrt(3.0)), np.single("-inf"))
+            )
+        )
+        self.assertTrue(
+            np.all(
+                c.aabbs[:, :, 1, 3]
+                == np.nextafter(np.single(np.sqrt(3.0)), np.single("+inf"))
+            )
+        )
