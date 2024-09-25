@@ -187,7 +187,7 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
         // a 7-arguments cfunc which ignores arguments 3,4,5.
         auto horner_eval = [order, h_int = ival(h_int_lb, h_int_ub)](const double *ptr) {
             auto acc = ival(ptr[order]);
-            for (auto o = 1u; o <= order; ++o) {
+            for (std::uint32_t o = 1; o <= order; ++o) {
                 acc = ival(ptr[order - o]) + acc * h_int;
             }
 

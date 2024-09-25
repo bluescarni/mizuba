@@ -82,7 +82,7 @@ class conjunctions_test_case(_ut.TestCase):
         pj = polyjectory([_planar_circ_tcs], [_planar_circ_times], [0])
 
         with self.assertRaises(ValueError) as cm:
-            conj(pj, conj_thresh=0.0, conj_det_interval=0.0)
+            conj(conj_det_interval=0.0, pj=pj, conj_thresh=0.0)
         self.assertTrue(
             "The conjunction threshold must be finite and positive, but instead a value of"
             in str(cm.exception)

@@ -212,9 +212,9 @@ class polyjectory_test_case(_ut.TestCase):
 
         with self.assertRaises(ValueError) as cm:
             polyjectory(
-                trajs=[two_state_data, two_state_data],
-                times=[np.array([1.0, 2.0]), np.array([1.0, 0.5])],
                 status=np.array([0, 0], dtype=np.int32),
+                times=[np.array([1.0, 2.0]), np.array([1.0, 0.5])],
+                trajs=[two_state_data, two_state_data],
             )
         self.assertTrue(
             "The sequence of times for the object at index 1 is not monotonically increasing"
