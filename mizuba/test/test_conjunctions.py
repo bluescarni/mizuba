@@ -155,6 +155,10 @@ class conjunctions_test_case(_ut.TestCase):
             # Check shapes.
             self.assertEqual(c.aabbs.shape[0], c.cd_end_times.shape[0])
 
+            # The conjunction detection end time must coincide
+            # with the trajectory end time.
+            self.assertEqual(c.cd_end_times[-1], pj[0][1][-1])
+
             # The global aabbs must all coincide
             # exactly with the only object's aabbs.
             self.assertTrue(np.all(c.aabbs[:, 0] == c.aabbs[:, 1]))
@@ -170,6 +174,13 @@ class conjunctions_test_case(_ut.TestCase):
 
             # Verify the aabbs.
             self._verify_conj_aabbs(c, rng)
+
+        # Test that if we specify a conjunction detection interval
+        # larger than maxT, the time data in the conjunctions object
+        # is correctly clamped.
+        c = conj(pj, conj_thresh=0.1, conj_det_interval=42.0)
+        self.assertEqual(len(c.cd_end_times), 1)
+        self.assertEqual(c.cd_end_times[0], pj[0][1][-1])
 
         # Test with sgp4 propagations, if possible.
         try:
