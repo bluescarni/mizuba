@@ -69,7 +69,7 @@ class conjunctions
     [[nodiscard]] std::array<double, 2> get_cd_begin_end(double, std::size_t, double, std::size_t) const;
     std::vector<double> compute_aabbs(const polyjectory &, const boost::filesystem::path &, std::size_t, double,
                                       double) const;
-    void morton_encode_sort_parallel() const;
+    void morton_encode_sort_parallel(const polyjectory &, const boost::filesystem::path &, std::size_t) const;
 
 public:
     template <typename WRange = std::vector<std::size_t>>
@@ -107,6 +107,12 @@ public:
     using cd_end_times_span_t = heyoka::mdspan<const double, heyoka::dextents<std::size_t, 1>>;
     [[nodiscard]] cd_end_times_span_t get_cd_end_times() const noexcept;
     [[nodiscard]] const polyjectory &get_polyjectory() const noexcept;
+    [[nodiscard]] aabbs_span_t get_srt_aabbs() const noexcept;
+    using mcodes_span_t = heyoka::mdspan<const std::uint64_t, heyoka::dextents<std::size_t, 2>>;
+    [[nodiscard]] mcodes_span_t get_mcodes() const noexcept;
+    [[nodiscard]] mcodes_span_t get_srt_mcodes() const noexcept;
+    using srt_idx_span_t = heyoka::mdspan<const std::size_t, heyoka::dextents<std::size_t, 2>>;
+    [[nodiscard]] srt_idx_span_t get_srt_idx() const noexcept;
 };
 
 } // namespace mizuba

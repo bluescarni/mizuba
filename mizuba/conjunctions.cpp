@@ -10,6 +10,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <utility>
@@ -58,20 +59,52 @@ struct conjunctions::impl {
     std::vector<double> m_cd_end_times;
     // The memory-mapped file for the aabbs.
     boost::iostreams::mapped_file_source m_file_aabbs;
+    // The memory-mapped file for the sorted aabbs.
+    boost::iostreams::mapped_file_source m_file_srt_aabbs;
+    // The memory-mapped file for the mcodes.
+    boost::iostreams::mapped_file_source m_file_mcodes;
+    // The memory-mapped file for the sorted mcodes.
+    boost::iostreams::mapped_file_source m_file_srt_mcodes;
+    // The memory-mapped file for the sorted indices.
+    boost::iostreams::mapped_file_source m_file_srt_idx;
     // Pointer to the beginning of m_file_aabbs, cast to float.
     const float *m_aabbs_base_ptr = nullptr;
+    // Pointer to the beginning of m_file_srt_aabbs, cast to float.
+    const float *m_srt_aabbs_base_ptr = nullptr;
+    // Pointer to the beginning of m_file_mcodes, cast to std::uint64_t.
+    const std::uint64_t *m_mcodes_base_ptr = nullptr;
+    // Pointer to the beginning of m_file_srt_mcodes, cast to std::uint64_t.
+    const std::uint64_t *m_srt_mcodes_base_ptr = nullptr;
+    // Pointer to the beginning of m_file_srt_idx, cast to std::size_t.
+    const std::size_t *m_srt_idx_base_ptr = nullptr;
 
     explicit impl(boost::filesystem::path temp_dir_path, polyjectory pj, double conj_thresh, double conj_det_interval,
                   std::size_t n_cd_steps, boost::unordered_flat_set<std::size_t> whitelist,
                   std::vector<double> cd_end_times)
         : m_temp_dir_path(std::move(temp_dir_path)), m_pj(std::move(pj)), m_conj_thresh(conj_thresh),
           m_conj_det_interval(conj_det_interval), m_n_cd_steps(n_cd_steps), m_whitelist(std::move(whitelist)),
-          m_cd_end_times(std::move(cd_end_times)), m_file_aabbs((m_temp_dir_path / "aabbs").string())
+          m_cd_end_times(std::move(cd_end_times)), m_file_aabbs((m_temp_dir_path / "aabbs").string()),
+          m_file_srt_aabbs((m_temp_dir_path / "srt_aabbs").string()),
+          m_file_mcodes((m_temp_dir_path / "mcodes").string()),
+          m_file_srt_mcodes((m_temp_dir_path / "srt_mcodes").string()),
+          m_file_srt_idx((m_temp_dir_path / "vidx").string())
     {
         // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
         // https://en.cppreference.com/w/cpp/memory/start_lifetime_as
         m_aabbs_base_ptr = reinterpret_cast<const float *>(m_file_aabbs.data());
         assert(boost::alignment::is_aligned(m_aabbs_base_ptr, alignof(float)));
+
+        m_srt_aabbs_base_ptr = reinterpret_cast<const float *>(m_file_srt_aabbs.data());
+        assert(boost::alignment::is_aligned(m_srt_aabbs_base_ptr, alignof(float)));
+
+        m_mcodes_base_ptr = reinterpret_cast<const std::uint64_t *>(m_file_mcodes.data());
+        assert(boost::alignment::is_aligned(m_mcodes_base_ptr, alignof(std::uint64_t)));
+
+        m_srt_mcodes_base_ptr = reinterpret_cast<const std::uint64_t *>(m_file_srt_mcodes.data());
+        assert(boost::alignment::is_aligned(m_srt_mcodes_base_ptr, alignof(std::uint64_t)));
+
+        m_srt_idx_base_ptr = reinterpret_cast<const std::size_t *>(m_file_srt_idx.data());
+        assert(boost::alignment::is_aligned(m_srt_idx_base_ptr, alignof(std::size_t)));
     }
 
     ~impl()
@@ -118,7 +151,7 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
         auto cd_end_times = compute_aabbs(pj, tmp_dir_path, n_cd_steps, conj_thresh, conj_det_interval);
 
         // Morton encoding and indirect sorting.
-        morton_encode_sort_parallel();
+        morton_encode_sort_parallel(pj, tmp_dir_path, n_cd_steps);
 
         // Create the impl.
         m_impl = std::make_shared<const impl>(
@@ -177,6 +210,26 @@ conjunctions::cd_end_times_span_t conjunctions::get_cd_end_times() const noexcep
 const polyjectory &conjunctions::get_polyjectory() const noexcept
 {
     return m_impl->m_pj;
+}
+
+conjunctions::aabbs_span_t conjunctions::get_srt_aabbs() const noexcept
+{
+    return aabbs_span_t{m_impl->m_srt_aabbs_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs() + 1u};
+}
+
+conjunctions::mcodes_span_t conjunctions::get_mcodes() const noexcept
+{
+    return mcodes_span_t{m_impl->m_mcodes_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs()};
+}
+
+conjunctions::mcodes_span_t conjunctions::get_srt_mcodes() const noexcept
+{
+    return mcodes_span_t{m_impl->m_srt_mcodes_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs()};
+}
+
+conjunctions::srt_idx_span_t conjunctions::get_srt_idx() const noexcept
+{
+    return srt_idx_span_t{m_impl->m_srt_idx_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs()};
 }
 
 } // namespace mizuba
