@@ -128,6 +128,9 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
     const auto ts_begin = std::upper_bound(t_begin, t_end, cd_begin);
     // Then, we locate the first trajectory step whose end is *greater than or
     // equal to* the end of the conjunction step.
+    // NOTE: instead of this, perhaps we can just iterate below until
+    // t_end or until the first trajectory step whose end is *greater than or
+    // equal to* the end of the conjunction step, whichever comes first.
     auto ts_end = std::lower_bound(ts_begin, t_end, cd_end);
     // Bump it up by one to define a half-open range.
     // NOTE: don't bump it if it is already at the end.
@@ -288,6 +291,10 @@ std::vector<double> conjunctions::compute_aabbs(const polyjectory &pj, const boo
     cd_end_times.resize(boost::numeric_cast<decltype(cd_end_times.size())>(n_cd_steps));
 
     // Compute the AABBs in parallel over all the conjunction steps.
+    // NOTE: consider inverting the parallel for loop nesting order here, or even using the 2d blocked range.
+    // The rationale is that typically the polyjectory data will be much larger than the aabb data, and for
+    // locality reasons it might be better to process the trajectory data first by object and then by
+    // conjunction step.
     oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, n_cd_steps), [this, maxT, conj_det_interval,
                                                                                        n_cd_steps, base_ptr, nobjs, &pj,
                                                                                        conj_thresh, &cd_end_times](
