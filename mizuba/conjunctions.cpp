@@ -117,6 +117,9 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
         // Run the computation of the aabbs.
         auto cd_end_times = compute_aabbs(pj, tmp_dir_path, n_cd_steps, conj_thresh, conj_det_interval);
 
+        // Morton encoding and indirect sorting.
+        morton_encode_sort_parallel();
+
         // Create the impl.
         m_impl = std::make_shared<const impl>(
             tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps,
