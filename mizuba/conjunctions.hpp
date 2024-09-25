@@ -15,6 +15,7 @@
 #include <initializer_list>
 #include <memory>
 #include <ranges>
+#include <span>
 #include <type_traits>
 #include <utility>
 #include <vector>
