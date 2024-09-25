@@ -190,7 +190,7 @@ class polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             polyjectory(
                 trajs=[state_data, state_data],
-                times=[np.array([-1.0]), np.array([float("nan")])],
+                times=[np.array([-1.0]), np.array([1.0])],
                 status=np.array([0, 0], dtype=np.int32),
             )
         self.assertTrue(
