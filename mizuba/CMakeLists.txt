@@ -8,6 +8,9 @@ set(MIZUBA_PYTHON_FILES
     test/test_sgp4_polyjectory.py
     test/_sgp4_test_data_202407.py
     test/_sgp4_test_data_202409.py
+    test/test_conjunctions.py
+    test/_planar_circ.py
+    test/test_polyjectory.py
 )
 
 # Core module.
@@ -16,6 +19,9 @@ set(_MIZUBA_CORE_SOURCES
     common_utils.cpp
     polyjectory.cpp
     sgp4_polyjectory.cpp
+    conjunctions.cpp
+    conjunctions_compute_aabbs.cpp
+    detail/file_utils.cpp
 )
 
 Python3_add_library(core MODULE WITH_SOABI ${_MIZUBA_CORE_SOURCES})

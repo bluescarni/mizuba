@@ -11,8 +11,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
-#include <ios>
+#include <filesystem>
 #include <memory>
 #include <stdexcept>
 #include <tuple>
@@ -20,7 +19,6 @@
 #include <vector>
 
 #include <boost/align.hpp>
-#include <boost/filesystem/file_status.hpp>
 #include <boost/filesystem/operations.hpp>
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <boost/numeric/conversion/cast.hpp>
@@ -31,6 +29,7 @@
 #include <oneapi/tbb/blocked_range.h>
 #include <oneapi/tbb/parallel_for.h>
 
+#include "detail/file_utils.hpp"
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -50,7 +49,7 @@ struct polyjectory::impl {
     // - the total number of steps in the trajectory data.
     using traj_offset_vec_t = std::vector<std::tuple<std::size_t, std::size_t>>;
 
-    // Path to the mapped file.
+    // Path to the memory-mapped file.
     boost::filesystem::path m_file_path;
     // Offsets for the trajectory data.
     traj_offset_vec_t m_traj_offset_vec;
@@ -62,7 +61,10 @@ struct polyjectory::impl {
     double m_maxT = 0;
     // Vector of trajectory statuses.
     std::vector<std::int32_t> m_status;
+    // The memory-mapped file.
     boost::iostreams::mapped_file_source m_file;
+    // Pointer to the beginning of m_file, cast to double.
+    const double *m_base_ptr = nullptr;
 
     explicit impl(boost::filesystem::path file_path, traj_offset_vec_t traj_offset_vec,
                   std::vector<std::size_t> time_offset_vec, std::uint32_t poly_op1, double maxT,
@@ -71,18 +73,10 @@ struct polyjectory::impl {
           m_time_offset_vec(std::move(time_offset_vec)), m_poly_op1(poly_op1), m_maxT(maxT),
           m_status(std::move(status)), m_file(m_file_path.string())
     {
-        assert(boost::alignment::is_aligned(m_file.data(), alignof(double)));
-    }
-
-    // Fetch a pointer to the beginning of the data.
-    [[nodiscard]] const double *base_ptr() const noexcept
-    {
         // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
         // https://en.cppreference.com/w/cpp/memory/start_lifetime_as
-        const auto *base_ptr = reinterpret_cast<const double *>(m_file.data());
-        assert(boost::alignment::is_aligned(base_ptr, alignof(double)));
-
-        return base_ptr;
+        m_base_ptr = reinterpret_cast<const double *>(m_file.data());
+        assert(boost::alignment::is_aligned(m_base_ptr, alignof(double)));
     }
 
     impl(impl &&) noexcept = delete;
@@ -128,17 +122,7 @@ polyjectory::polyjectory(ptag,
     }
 
     // Assemble a "unique" dir path into the system temp dir.
-    const auto tmp_dir_path
-        = boost::filesystem::temp_directory_path() / boost::filesystem::unique_path("mizuba-%%%%-%%%%-%%%%-%%%%");
-
-    // Attempt to create it.
-    // LCOV_EXCL_START
-    if (!boost::filesystem::create_directory(tmp_dir_path)) [[unlikely]] {
-        throw std::runtime_error(
-            fmt::format("Error while creating a unique temporary directory: the directory '{}' already exists",
-                        tmp_dir_path.string()));
-    }
-    // LCOV_EXCL_STOP
+    const auto tmp_dir_path = detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
 
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the temp dir in case of exceptions.
@@ -242,26 +226,10 @@ polyjectory::polyjectory(ptag,
 
         // Init the storage file.
         auto storage_path = tmp_dir_path / "storage";
-        // LCOV_EXCL_START
-        if (boost::filesystem::exists(storage_path)) [[unlikely]] {
-            throw std::runtime_error(
-                fmt::format("Cannot create the storage file '{}', as it exists already", storage_path.string()));
-        }
-        // LCOV_EXCL_STOP
-        {
-            // NOTE: here we just create the file and close it immediately, so that it will
-            // have a size of zero. Then, we will resize it to the necessary size.
-            std::ofstream storage_file(storage_path.string(), std::ios::binary | std::ios::out);
-            // Make sure we throw on errors.
-            storage_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
-        }
-
-        // Resize it.
-        boost::filesystem::resize_file(storage_path, cur_offset * sizeof(double));
+        detail::create_sized_file(storage_path, cur_offset * sizeof(double));
 
         // Memory-map it.
         boost::iostreams::mapped_file_sink file(storage_path.string());
-        assert(boost::alignment::is_aligned(file.data(), alignof(double)));
 
         // Fetch a pointer to the beginning of the data.
         // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
@@ -340,18 +308,24 @@ polyjectory::polyjectory(ptag,
         // Close the storage file.
         file.close();
 
+        // Mark it as read-only.
+        detail::mark_file_read_only(storage_path);
+
         // Create the impl.
         // NOTE: here make_shared() first allocates, and then constructs. If there are no exceptions, the assignment
         // to m_impl is noexcept and the dtor of impl takes charge of cleaning up the tmp_dir_path upon destruction.
         // If an exception is thrown (e.g., from memory allocation or from the impl ctor throwing), the impl has not
         // been fully constructed and thus its dtor will not be invoked, and the cleanup of tmp_dir_path will be
         // performed in the catch block below.
-        m_impl = std::make_shared<impl>(std::move(storage_path), std::move(traj_offset_vec), std::move(time_offset_vec),
-                                        poly_op1, maxT, std::move(status));
+        m_impl = std::make_shared<const impl>(std::move(storage_path), std::move(traj_offset_vec),
+                                              std::move(time_offset_vec), poly_op1, maxT, std::move(status));
+
+        // LCOV_EXCL_START
     } catch (...) {
         boost::filesystem::remove_all(tmp_dir_path);
         throw;
     }
+    // LCOV_EXCL_STOP
 }
 
 // NOTE: the polyjectory class will have shallow copy semantics - this is ok
@@ -379,7 +353,7 @@ polyjectory::operator[](std::size_t i) const
     }
 
     // Fetch the base pointer.
-    const auto *base_ptr = m_impl->base_ptr();
+    const auto *base_ptr = m_impl->m_base_ptr;
 
     // Fetch the traj offset and nsteps.
     const auto [traj_offset, nsteps] = m_impl->m_traj_offset_vec[i];
@@ -401,6 +375,25 @@ polyjectory::operator[](std::size_t i) const
 std::size_t polyjectory::get_nobjs() const noexcept
 {
     return static_cast<std::size_t>(m_impl->m_traj_offset_vec.size());
+}
+
+std::filesystem::path polyjectory::get_file_path() const
+{
+    // NOTE: need to convert from Boost::filesystem to std::filesystem.
+    // NOTE: m_impl->m_file_path should already be canonical, since the
+    // path is somewhere inside a temp dir created via create_temp_dir().
+    return std::filesystem::path(m_impl->m_file_path.string());
+}
+
+double polyjectory::get_maxT() const noexcept
+{
+    return m_impl->m_maxT;
+}
+
+std::uint32_t polyjectory::get_poly_order() const noexcept
+{
+    assert(m_impl->m_poly_op1 > 0u);
+    return m_impl->m_poly_op1 - 1u;
 }
 
 } // namespace mizuba

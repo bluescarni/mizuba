@@ -45,6 +45,7 @@
 #include <heyoka/model/sgp4.hpp>
 #include <heyoka/taylor.hpp>
 
+#include "detail/file_utils.hpp"
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -683,26 +684,10 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
 
     // Create the storage file.
     const auto storage_path = tmp_dir_path / "storage";
-    // LCOV_EXCL_START
-    if (boost::filesystem::exists(storage_path)) [[unlikely]] {
-        throw std::runtime_error(
-            fmt::format("Cannot create the storage file '{}', as it exists already", storage_path.string()));
-    }
-    // LCOV_EXCL_STOP
-    {
-        // NOTE: here we just create the file and close it immediately, so that it will
-        // have a size of zero. Then, we will resize it to the necessary size.
-        std::ofstream storage_file(storage_path.string(), std::ios::binary | std::ios::out);
-        // Make sure we throw on errors.
-        storage_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
-    }
-
-    // Resize it.
-    boost::filesystem::resize_file(storage_path, cur_offset * sizeof(double));
+    detail::create_sized_file(storage_path, cur_offset * sizeof(double));
 
     // Memory-map it.
     boost::iostreams::mapped_file_sink file(storage_path.string());
-    assert(boost::alignment::is_aligned(file.data(), alignof(double)));
 
     // Fetch a pointer to the beginning of the data.
     // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
@@ -837,17 +822,7 @@ sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, st
     const auto ta = detail::construct_sgp4_ode_integrator(sgp4_ode, exit_radius, reentry_radius);
 
     // Assemble a "unique" dir path into the system temp dir.
-    const auto tmp_dir_path = boost::filesystem::temp_directory_path()
-                              / boost::filesystem::unique_path("mizuba_sgp4_polyjectory-%%%%-%%%%-%%%%-%%%%");
-
-    // Attempt to create it.
-    // LCOV_EXCL_START
-    if (!boost::filesystem::create_directory(tmp_dir_path)) [[unlikely]] {
-        throw std::runtime_error(
-            fmt::format("Error while creating a unique temporary directory: the directory '{}' already exists",
-                        tmp_dir_path.string()));
-    }
-    // LCOV_EXCL_STOP
+    const auto tmp_dir_path = detail::create_temp_dir("mizuba_sgp4_polyjectory-%%%%-%%%%-%%%%-%%%%");
 
     // NOTE: from now on, we need to ensure that the temp dir is automatically
     // cleaned up, even in case of exceptions. We use this little RAII helper

@@ -12,6 +12,8 @@
 #include <ranges>
 #include <span>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include <boost/numeric/conversion/cast.hpp>
 
@@ -19,12 +21,15 @@
 
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+#include <pybind11/stl/filesystem.h>
 
 #include <Python.h>
 
 #include <heyoka/mdspan.hpp>
 
 #include "common_utils.hpp"
+#include "conjunctions.hpp"
 #include "polyjectory.hpp"
 #include "sgp4_polyjectory.hpp"
 
@@ -106,6 +111,10 @@ PYBIND11_MODULE(core, m)
                                    std::ranges::subrange(status_ptr, status_ptr + status.shape(0)));
         }),
         "trajs"_a.noconvert(), "times"_a.noconvert(), "status"_a.noconvert());
+    pt_cl.def_property_readonly("nobjs", &mz::polyjectory::get_nobjs);
+    pt_cl.def_property_readonly("file_path", &mz::polyjectory::get_file_path);
+    pt_cl.def_property_readonly("maxT", &mz::polyjectory::get_maxT);
+    pt_cl.def_property_readonly("poly_order", &mz::polyjectory::get_poly_order);
     pt_cl.def(
         "__getitem__",
         [](const py::object &self, std::size_t i) {
@@ -135,7 +144,6 @@ PYBIND11_MODULE(core, m)
             return py::make_tuple(std::move(traj_ret), std::move(time_ret), status);
         },
         "i"_a.noconvert());
-    pt_cl.def_property_readonly("nobjs", &mz::polyjectory::get_nobjs);
 
     // sgp4 polyjectory.
     m.def(
@@ -166,4 +174,48 @@ PYBIND11_MODULE(core, m)
         },
         "sat_list"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert(),
         "exit_radius"_a.noconvert() = mz::sgp4_exit_radius, "reentry_radius"_a.noconvert() = mz::sgp4_reentry_radius);
+
+    // Conjunctions.
+    py::class_<mz::conjunctions> conj_cl(m, "conjunctions", py::dynamic_attr{});
+    conj_cl.def(py::init([](mz::polyjectory pj, double conj_thresh, double conj_det_interval,
+                            std::vector<std::size_t> whitelist) {
+                    return mz::conjunctions(std::move(pj), conj_thresh, conj_det_interval, std::move(whitelist));
+                }),
+                "pj"_a.noconvert(), "conj_thresh"_a.noconvert(), "conj_det_interval"_a.noconvert(),
+                "whitelist"_a.noconvert() = std::vector<std::size_t>{});
+    conj_cl.def_property_readonly("aabbs", [](const py::object &self) {
+        const auto *p = py::cast<const mz::conjunctions *>(self);
+
+        // Fetch the span.
+        const auto aabbs_span = p->get_aabbs();
+
+        // Turn into an array.
+        auto ret = py::array_t<float>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(aabbs_span.extent(0)),
+                                                                boost::numeric_cast<py::ssize_t>(aabbs_span.extent(1)),
+                                                                boost::numeric_cast<py::ssize_t>(aabbs_span.extent(2)),
+                                                                boost::numeric_cast<py::ssize_t>(aabbs_span.extent(3))},
+                                      aabbs_span.data_handle(), self);
+
+        // Ensure the returned array is read-only.
+        ret.attr("flags").attr("writeable") = false;
+
+        return ret;
+    });
+    conj_cl.def_property_readonly("cd_end_times", [](const py::object &self) {
+        const auto *p = py::cast<const mz::conjunctions *>(self);
+
+        // Fetch the span.
+        const auto cd_end_times_span = p->get_cd_end_times();
+
+        // Turn into an array.
+        auto ret = py::array_t<double>(
+            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(cd_end_times_span.extent(0))},
+            cd_end_times_span.data_handle(), self);
+
+        // Ensure the returned array is read-only.
+        ret.attr("flags").attr("writeable") = false;
+
+        return ret;
+    });
+    conj_cl.def_property_readonly("polyjectory", &mz::conjunctions::get_polyjectory);
 }
