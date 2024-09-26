@@ -113,6 +113,11 @@ constexpr auto morton_enc = mortonnd::MortonNDLutEncoder<4, 16, 8>();
 
 } // namespace detail
 
+// Compute the morton codes for all objects in each conjunction step, and sort the aabbs
+// data according to the morton codes.
+//
+// pj is the polyjectory, tmp_dir_path the temporary dir storing all conjunction data,
+// n_cd_steps the number of conjunction steps.
 void conjunctions::morton_encode_sort_parallel(const polyjectory &pj, const boost::filesystem::path &tmp_dir_path,
                                                std::size_t n_cd_steps) const
 {
