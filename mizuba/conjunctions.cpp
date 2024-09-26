@@ -111,6 +111,10 @@ struct conjunctions::impl {
     {
         // Close all memory-mapped files.
         m_file_aabbs.close();
+        m_file_srt_aabbs.close();
+        m_file_mcodes.close();
+        m_file_srt_mcodes.close();
+        m_file_srt_idx.close();
 
         // Remove the temp dir and everything within.
         boost::filesystem::remove_all(m_temp_dir_path);
