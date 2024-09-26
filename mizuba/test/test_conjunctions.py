@@ -145,6 +145,42 @@ class conjunctions_test_case(_ut.TestCase):
         with self.assertRaises(AttributeError) as cm:
             c.polyjectory = pj
 
+        # srt_aabbs.
+        rc = sys.getrefcount(c)
+        srt_aabbs = c.srt_aabbs
+        self.assertEqual(sys.getrefcount(c), rc + 1)
+        with self.assertRaises(ValueError) as cm:
+            srt_aabbs[:] = srt_aabbs
+        with self.assertRaises(AttributeError) as cm:
+            c.srt_aabbs = srt_aabbs
+
+        # mcodes.
+        rc = sys.getrefcount(c)
+        mcodes = c.mcodes
+        self.assertEqual(sys.getrefcount(c), rc + 1)
+        with self.assertRaises(ValueError) as cm:
+            mcodes[:] = mcodes
+        with self.assertRaises(AttributeError) as cm:
+            c.mcodes = mcodes
+
+        # srt_mcodes.
+        rc = sys.getrefcount(c)
+        srt_mcodes = c.srt_mcodes
+        self.assertEqual(sys.getrefcount(c), rc + 1)
+        with self.assertRaises(ValueError) as cm:
+            srt_mcodes[:] = srt_mcodes
+        with self.assertRaises(AttributeError) as cm:
+            c.srt_mcodes = srt_mcodes
+
+        # srt_idx.
+        rc = sys.getrefcount(c)
+        srt_idx = c.srt_idx
+        self.assertEqual(sys.getrefcount(c), rc + 1)
+        with self.assertRaises(ValueError) as cm:
+            srt_idx[:] = srt_idx
+        with self.assertRaises(AttributeError) as cm:
+            c.srt_idx = srt_idx
+
     def test_main(self):
         import numpy as np
         from .. import conjunctions as conj, polyjectory
