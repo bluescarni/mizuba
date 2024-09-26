@@ -273,6 +273,13 @@ class conjunctions_test_case(_ut.TestCase):
                 np.all(c.mcodes[cd_idx, c.srt_idx[cd_idx]] == c.srt_mcodes[cd_idx])
             )
 
+        # The last satellite's trajectory data terminates
+        # early. After termination, the morton codes must be -1.
+        last_aabbs = c.aabbs[:, c.polyjectory.nobjs - 1, :, :]
+        self.assertFalse(np.all(np.isfinite(last_aabbs)))
+        inf_idx = np.isinf(last_aabbs).nonzero()[0]
+        self.assertTrue(np.all(c.mcodes[inf_idx, -1] == ((1 << 64) - 1)))
+
     def test_zero_aabbs(self):
         # Test to check behaviour with aabbs of zero size.
         import numpy as np
