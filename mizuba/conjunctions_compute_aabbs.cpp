@@ -338,7 +338,7 @@ std::vector<double> conjunctions::compute_aabbs(const polyjectory &pj, const boo
                         std::ranges::copy(ub, aabb_ptr + 4);
                     }
 
-                    // Atomically update the global AABB for the current chunk.
+                    // Atomically update the global AABB for the current conjunction step.
                     for (auto i = 0u; i < 4u; ++i) {
                         detail::lb_atomic_update(cur_global_lb[i], cur_local_lb[i]);
                         detail::ub_atomic_update(cur_global_ub[i], cur_local_ub[i]);
@@ -348,8 +348,23 @@ std::vector<double> conjunctions::compute_aabbs(const polyjectory &pj, const boo
             // Write out the global AABB for the current conjunction step to disk.
             auto *aabb_ptr = base_ptr + (cd_idx * (nobjs + 1u) + nobjs) * 8u;
             for (auto i = 0u; i < 4u; ++i) {
-                aabb_ptr[i] = cur_global_lb[i].load(std::memory_order_relaxed);
-                aabb_ptr[i + 4u] = cur_global_ub[i].load(std::memory_order_relaxed);
+                const auto cur_lb = cur_global_lb[i].load(std::memory_order_relaxed);
+                const auto cur_ub = cur_global_ub[i].load(std::memory_order_relaxed);
+
+                // NOTE: this is ensured by the safety margins we added when converting
+                // the double-precision AABB to single-precision. That is, even if the original
+                // double-precision AABB has a size of zero in any dimension, the conversion
+                // to single precision resulted in a small but nonzero size in every dimension.
+                assert(cur_ub > cur_lb);
+
+                // Check that we can safely compute the difference between ub and lb. This is
+                // needed when computing Morton codes.
+                if (!std::isfinite(cur_ub - cur_lb)) [[unlikely]] {
+                    throw std::invalid_argument("A global bounding box with non-finite size was generated");
+                }
+
+                aabb_ptr[i] = cur_lb;
+                aabb_ptr[i + 4u] = cur_ub;
             }
 
             // Write cd_end into cd_end_times.

@@ -28,6 +28,10 @@ class conjunctions_test_case(_ut.TestCase):
             # Pick 5 random times.
             random_times = rng.uniform(begin_time, end_time, (5,))
 
+            # Fetch the global aabb for this conjunction step.
+            global_lb = c.aabbs[cd_idx, pj.nobjs, 0]
+            global_ub = c.aabbs[cd_idx, pj.nobjs, 1]
+
             # Iterate over all objects.
             for obj_idx in range(pj.nobjs):
                 # Fetch the polyjectory data for the current object.
@@ -45,6 +49,10 @@ class conjunctions_test_case(_ut.TestCase):
                     continue
                 else:
                     self.assertTrue(np.all(np.isfinite(aabb)))
+
+                # The aabb must be included in the global one.
+                self.assertTrue(np.all(aabb[0] >= global_lb))
+                self.assertTrue(np.all(aabb[1] <= global_ub))
 
                 # Iterate over the random times.
                 for time in random_times:
@@ -137,7 +145,43 @@ class conjunctions_test_case(_ut.TestCase):
         with self.assertRaises(AttributeError) as cm:
             c.polyjectory = pj
 
-    def test_aabbs(self):
+        # srt_aabbs.
+        rc = sys.getrefcount(c)
+        srt_aabbs = c.srt_aabbs
+        self.assertEqual(sys.getrefcount(c), rc + 1)
+        with self.assertRaises(ValueError) as cm:
+            srt_aabbs[:] = srt_aabbs
+        with self.assertRaises(AttributeError) as cm:
+            c.srt_aabbs = srt_aabbs
+
+        # mcodes.
+        rc = sys.getrefcount(c)
+        mcodes = c.mcodes
+        self.assertEqual(sys.getrefcount(c), rc + 1)
+        with self.assertRaises(ValueError) as cm:
+            mcodes[:] = mcodes
+        with self.assertRaises(AttributeError) as cm:
+            c.mcodes = mcodes
+
+        # srt_mcodes.
+        rc = sys.getrefcount(c)
+        srt_mcodes = c.srt_mcodes
+        self.assertEqual(sys.getrefcount(c), rc + 1)
+        with self.assertRaises(ValueError) as cm:
+            srt_mcodes[:] = srt_mcodes
+        with self.assertRaises(AttributeError) as cm:
+            c.srt_mcodes = srt_mcodes
+
+        # srt_idx.
+        rc = sys.getrefcount(c)
+        srt_idx = c.srt_idx
+        self.assertEqual(sys.getrefcount(c), rc + 1)
+        with self.assertRaises(ValueError) as cm:
+            srt_idx[:] = srt_idx
+        with self.assertRaises(AttributeError) as cm:
+            c.srt_idx = srt_idx
+
+    def test_main(self):
         import numpy as np
         from .. import conjunctions as conj, polyjectory
         from ._planar_circ import _planar_circ_tcs, _planar_circ_times
@@ -152,12 +196,23 @@ class conjunctions_test_case(_ut.TestCase):
         for conj_det_interval in [0.01, 0.1, 0.5, 2.0, 5.0, 7.0]:
             c = conj(pj, conj_thresh=0.1, conj_det_interval=conj_det_interval)
 
-            # Check shapes.
+            # Shape checks.
             self.assertEqual(c.aabbs.shape[0], c.cd_end_times.shape[0])
+            self.assertEqual(c.srt_aabbs.shape[0], c.cd_end_times.shape[0])
+            self.assertEqual(c.srt_aabbs.shape, c.aabbs.shape)
+            self.assertEqual(c.mcodes.shape[0], c.cd_end_times.shape[0])
+            self.assertEqual(c.srt_mcodes.shape[0], c.cd_end_times.shape[0])
+            self.assertEqual(c.srt_idx.shape[0], c.cd_end_times.shape[0])
+
+            # The conjunction detection end time must coincide
+            # with the trajectory end time.
+            self.assertEqual(c.cd_end_times[-1], pj[0][1][-1])
 
             # The global aabbs must all coincide
             # exactly with the only object's aabbs.
             self.assertTrue(np.all(c.aabbs[:, 0] == c.aabbs[:, 1]))
+            # With only one object, aabbs and srt_aabbs must be identical.
+            self.assertTrue(np.all(c.aabbs == c.srt_aabbs))
 
             # In the z and r coordinates, all aabbs
             # should be of size circa 0.1 accounting for the
@@ -170,6 +225,13 @@ class conjunctions_test_case(_ut.TestCase):
 
             # Verify the aabbs.
             self._verify_conj_aabbs(c, rng)
+
+        # Test that if we specify a conjunction detection interval
+        # larger than maxT, the time data in the conjunctions object
+        # is correctly clamped.
+        c = conj(pj, conj_thresh=0.1, conj_det_interval=42.0)
+        self.assertEqual(len(c.cd_end_times), 1)
+        self.assertEqual(c.cd_end_times[0], pj[0][1][-1])
 
         # Test with sgp4 propagations, if possible.
         try:
@@ -206,3 +268,99 @@ class conjunctions_test_case(_ut.TestCase):
 
         # Verify the aabbs.
         self._verify_conj_aabbs(c, rng)
+
+        # Shape checks.
+        self.assertEqual(c.aabbs.shape, c.srt_aabbs.shape)
+        self.assertEqual(c.mcodes.shape, c.srt_mcodes.shape)
+        self.assertEqual(c.srt_idx.shape, (len(c.cd_end_times), c.polyjectory.nobjs))
+
+        # The global aabbs must be the same in srt_aabbs.
+        self.assertTrue(
+            np.all(
+                c.aabbs[:, c.polyjectory.nobjs, :, :]
+                == c.srt_aabbs[:, c.polyjectory.nobjs, :, :]
+            )
+        )
+
+        # The individual aabbs for the objects will differ.
+        self.assertFalse(
+            np.all(
+                c.aabbs[:, : c.polyjectory.nobjs, :, :]
+                == c.srt_aabbs[:, : c.polyjectory.nobjs, :, :]
+            )
+        )
+
+        # The morton codes won't be sorted.
+        self.assertFalse(np.all(np.diff(c.mcodes.astype(object)) >= 0))
+
+        # The sorted morton codes must be sorted.
+        self.assertTrue(np.all(np.diff(c.srt_mcodes.astype(object)) >= 0))
+
+        # srt_idx is not sorted.
+        self.assertFalse(np.all(np.diff(c.srt_idx.astype(object)) >= 0))
+
+        # Indexing into aabbs and mcodes via srt_idx must produce
+        # srt_abbs and srt_mcodes.
+        for cd_idx in range(len(c.cd_end_times)):
+            self.assertEqual(
+                sorted(c.srt_idx[cd_idx]), list(range(c.polyjectory.nobjs))
+            )
+
+            self.assertTrue(
+                np.all(
+                    c.aabbs[cd_idx, c.srt_idx[cd_idx], :, :]
+                    == c.srt_aabbs[cd_idx, : c.polyjectory.nobjs, :, :]
+                )
+            )
+
+            self.assertTrue(
+                np.all(c.mcodes[cd_idx, c.srt_idx[cd_idx]] == c.srt_mcodes[cd_idx])
+            )
+
+        # The last satellite's trajectory data terminates
+        # early. After termination, the morton codes must be -1.
+        last_aabbs = c.aabbs[:, c.polyjectory.nobjs - 1, :, :]
+        self.assertFalse(np.all(np.isfinite(last_aabbs)))
+        inf_idx = np.isinf(last_aabbs).nonzero()[0]
+        self.assertTrue(np.all(c.mcodes[inf_idx, -1] == ((1 << 64) - 1)))
+
+    def test_zero_aabbs(self):
+        # Test to check behaviour with aabbs of zero size.
+        import numpy as np
+        from .. import conjunctions as conj, polyjectory
+
+        # Trajectory data for a single step.
+        tdata = np.zeros((7, 6))
+        # Make the object fixed in Cartesian space with x,y,z coordinates all 1.
+        tdata[:3, 0] = 1.0
+        # Set the radius.
+        tdata[6, 0] = np.sqrt(3.0)
+
+        pj = polyjectory([[tdata, tdata, tdata]], [[1.0, 2.0, 3.0]], [0])
+
+        # Use epsilon as conj thresh so that it does not influence
+        # the computation of the aabb.
+        c = conj(pj, conj_thresh=np.finfo(float).eps, conj_det_interval=0.1)
+
+        self.assertTrue(
+            np.all(
+                c.aabbs[:, :, 0, :3] == np.nextafter(np.single(1), np.single("-inf"))
+            )
+        )
+        self.assertTrue(
+            np.all(
+                c.aabbs[:, :, 1, :3] == np.nextafter(np.single(1), np.single("+inf"))
+            )
+        )
+        self.assertTrue(
+            np.all(
+                c.aabbs[:, :, 0, 3]
+                == np.nextafter(np.single(np.sqrt(3.0)), np.single("-inf"))
+            )
+        )
+        self.assertTrue(
+            np.all(
+                c.aabbs[:, :, 1, 3]
+                == np.nextafter(np.single(np.sqrt(3.0)), np.single("+inf"))
+            )
+        )

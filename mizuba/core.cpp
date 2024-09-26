@@ -218,4 +218,74 @@ PYBIND11_MODULE(core, m)
         return ret;
     });
     conj_cl.def_property_readonly("polyjectory", &mz::conjunctions::get_polyjectory);
+    conj_cl.def_property_readonly("srt_aabbs", [](const py::object &self) {
+        const auto *p = py::cast<const mz::conjunctions *>(self);
+
+        // Fetch the span.
+        const auto srt_aabbs_span = p->get_srt_aabbs();
+
+        // Turn into an array.
+        auto ret
+            = py::array_t<float>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(0)),
+                                                           boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(1)),
+                                                           boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(2)),
+                                                           boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(3))},
+                                 srt_aabbs_span.data_handle(), self);
+
+        // Ensure the returned array is read-only.
+        ret.attr("flags").attr("writeable") = false;
+
+        return ret;
+    });
+    conj_cl.def_property_readonly("mcodes", [](const py::object &self) {
+        const auto *p = py::cast<const mz::conjunctions *>(self);
+
+        // Fetch the span.
+        const auto mcodes_span = p->get_mcodes();
+
+        // Turn into an array.
+        auto ret = py::array_t<std::uint64_t>(
+            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(mcodes_span.extent(0)),
+                                      boost::numeric_cast<py::ssize_t>(mcodes_span.extent(1))},
+            mcodes_span.data_handle(), self);
+
+        // Ensure the returned array is read-only.
+        ret.attr("flags").attr("writeable") = false;
+
+        return ret;
+    });
+    conj_cl.def_property_readonly("srt_mcodes", [](const py::object &self) {
+        const auto *p = py::cast<const mz::conjunctions *>(self);
+
+        // Fetch the span.
+        const auto srt_mcodes_span = p->get_srt_mcodes();
+
+        // Turn into an array.
+        auto ret = py::array_t<std::uint64_t>(
+            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(srt_mcodes_span.extent(0)),
+                                      boost::numeric_cast<py::ssize_t>(srt_mcodes_span.extent(1))},
+            srt_mcodes_span.data_handle(), self);
+
+        // Ensure the returned array is read-only.
+        ret.attr("flags").attr("writeable") = false;
+
+        return ret;
+    });
+    conj_cl.def_property_readonly("srt_idx", [](const py::object &self) {
+        const auto *p = py::cast<const mz::conjunctions *>(self);
+
+        // Fetch the span.
+        const auto srt_idx_span = p->get_srt_idx();
+
+        // Turn into an array.
+        auto ret = py::array_t<std::size_t>(
+            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(srt_idx_span.extent(0)),
+                                      boost::numeric_cast<py::ssize_t>(srt_idx_span.extent(1))},
+            srt_idx_span.data_handle(), self);
+
+        // Ensure the returned array is read-only.
+        ret.attr("flags").attr("writeable") = false;
+
+        return ret;
+    });
 }
