@@ -28,6 +28,10 @@ class conjunctions_test_case(_ut.TestCase):
             # Pick 5 random times.
             random_times = rng.uniform(begin_time, end_time, (5,))
 
+            # Fetch the global aabb for this conjunction step.
+            global_lb = c.aabbs[cd_idx, pj.nobjs, 0]
+            global_ub = c.aabbs[cd_idx, pj.nobjs, 1]
+
             # Iterate over all objects.
             for obj_idx in range(pj.nobjs):
                 # Fetch the polyjectory data for the current object.
@@ -45,6 +49,10 @@ class conjunctions_test_case(_ut.TestCase):
                     continue
                 else:
                     self.assertTrue(np.all(np.isfinite(aabb)))
+
+                # The aabb must be included in the global one.
+                self.assertTrue(np.all(aabb[0] >= global_lb))
+                self.assertTrue(np.all(aabb[1] <= global_ub))
 
                 # Iterate over the random times.
                 for time in random_times:
