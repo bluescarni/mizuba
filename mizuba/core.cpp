@@ -53,11 +53,8 @@ PYBIND11_MODULE(core, m)
     // polyjectory.
     py::class_<mz::polyjectory> pt_cl(m, "polyjectory", py::dynamic_attr{});
     pt_cl.def(
-        py::init([](py::iterable trajs, py::iterable times, py::iterable status_) {
-            auto traj_trans = [](const auto &o) {
-                // Cast o to a NumPy array.
-                auto arr = o.template cast<py::array_t<double>>();
-
+        py::init([](py::iterable trajs_, py::iterable times_, py::iterable status_) {
+            auto traj_trans = [](const py::array_t<double> &arr) {
                 // Check shape/dimension.
                 if (arr.ndim() != 3) [[unlikely]] {
                     throw std::invalid_argument(fmt::format(
@@ -73,14 +70,11 @@ PYBIND11_MODULE(core, m)
                 // Check contiguousness/alignment.
                 mzpy::check_array_cc_aligned(arr, "All trajectory arrays must be C contiguous and properly aligned");
 
-                return mz::polyjectory::traj_span_t(arr.data(), boost::numeric_cast<py::ssize_t>(arr.shape(0)),
-                                                    boost::numeric_cast<py::ssize_t>(arr.shape(2)));
+                return mz::polyjectory::traj_span_t(arr.data(), boost::numeric_cast<std::size_t>(arr.shape(0)),
+                                                    boost::numeric_cast<std::size_t>(arr.shape(2)));
             };
 
-            auto time_trans = [](const auto &o) {
-                // Cast o to a NumPy array.
-                auto arr = o.template cast<py::array_t<double>>();
-
+            auto time_trans = [](const py::array_t<double> &arr) {
                 // Check dimensions.
                 if (arr.ndim() != 1) [[unlikely]] {
                     throw std::invalid_argument(fmt::format(
@@ -90,7 +84,7 @@ PYBIND11_MODULE(core, m)
                 // Check contiguousness/alignment.
                 mzpy::check_array_cc_aligned(arr, "All time arrays must be C contiguous and properly aligned");
 
-                return mz::polyjectory::time_span_t(arr.data(), boost::numeric_cast<py::ssize_t>(arr.shape(0)));
+                return mz::polyjectory::time_span_t(arr.data(), boost::numeric_cast<std::size_t>(arr.shape(0)));
             };
 
             // Cast status to a NumPy array.
@@ -106,6 +100,20 @@ PYBIND11_MODULE(core, m)
             mzpy::check_array_cc_aligned(status, "The status array must be C contiguous and properly aligned");
 
             const auto *status_ptr = status.data();
+
+            // NOTE: we need to pre-convert all the objects in traj_ and times_
+            // into arrays. By doing this, we ensure that the spans we create in
+            // traj/time_trans are referring to memory that stays alive during the
+            // construction of the polyjectory.
+            std::vector<py::array_t<double>> trajs;
+            for (auto o : trajs_) {
+                trajs.push_back(o.cast<py::array_t<double>>());
+            }
+
+            std::vector<py::array_t<double>> times;
+            for (auto o : times_) {
+                times.push_back(o.cast<py::array_t<double>>());
+            }
 
             return mz::polyjectory(trajs | std::views::transform(traj_trans), times | std::views::transform(time_trans),
                                    std::ranges::subrange(status_ptr, status_ptr + status.shape(0)));

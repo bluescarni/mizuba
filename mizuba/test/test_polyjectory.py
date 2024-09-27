@@ -257,3 +257,72 @@ class polyjectory_test_case(_ut.TestCase):
 
         with self.assertRaises(IndexError) as cm:
             pj[2]
+
+    def test_bug_traj_init(self):
+        # This is a test about a bug in the implementation
+        # of the polyjectory constructor where we would
+        # read from dangling memory due to returning pointers
+        # to temporary arrays,
+        import numpy as np
+        from .. import polyjectory
+
+        tdata0 = np.zeros((7, 6))
+        tdata0[0, 0] = 1.0
+        tdata1 = np.zeros((7, 6))
+        tdata1[0, 0] = -1.0
+
+        tdata2 = np.zeros((7, 6))
+        tdata2[1, 0] = 1.0
+        tdata3 = np.zeros((7, 6))
+        tdata3[1, 0] = -1.0
+
+        tdata4 = np.zeros((7, 6))
+        tdata4[2, 0] = 1.0
+        tdata5 = np.zeros((7, 6))
+        tdata5[2, 0] = -1.0
+
+        tdata6 = np.zeros((7, 6))
+
+        tdata7 = np.zeros((7, 6))
+        tdata7[:, 0] = 1
+
+        # NOTE: the first 10 objects will have traj
+        # data only for the first step, not the second.
+        pj = polyjectory(
+            [
+                [tdata0] * 2,
+                [tdata1] * 2,
+                [tdata2] * 2,
+                [tdata3] * 2,
+                [tdata4] * 2,
+                [tdata5] * 2,
+                [tdata6] * 2,
+                [tdata7] * 2,
+            ],
+            [[1.0, 2.0]] * 8,
+            [0] * 8,
+        )
+
+        self.assertTrue(np.all(pj[0][0][0] == tdata0))
+        self.assertTrue(np.all(pj[0][0][1] == tdata0))
+
+        self.assertTrue(np.all(pj[1][0][0] == tdata1))
+        self.assertTrue(np.all(pj[1][0][1] == tdata1))
+
+        self.assertTrue(np.all(pj[2][0][0] == tdata2))
+        self.assertTrue(np.all(pj[2][0][1] == tdata2))
+
+        self.assertTrue(np.all(pj[3][0][0] == tdata3))
+        self.assertTrue(np.all(pj[3][0][1] == tdata3))
+
+        self.assertTrue(np.all(pj[4][0][0] == tdata4))
+        self.assertTrue(np.all(pj[4][0][1] == tdata4))
+
+        self.assertTrue(np.all(pj[5][0][0] == tdata5))
+        self.assertTrue(np.all(pj[5][0][1] == tdata5))
+
+        self.assertTrue(np.all(pj[6][0][0] == tdata6))
+        self.assertTrue(np.all(pj[6][0][1] == tdata6))
+
+        self.assertTrue(np.all(pj[7][0][0] == tdata7))
+        self.assertTrue(np.all(pj[7][0][1] == tdata7))
