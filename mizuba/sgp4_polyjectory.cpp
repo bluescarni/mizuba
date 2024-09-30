@@ -212,6 +212,10 @@ auto construct_sgp4_ode_integrator(const ODESys &sys, double exit_radius, double
 
 // Run the ODE integration according to the sgp4 dynamics, storing the Taylor coefficients
 // and the step end times step-by-step.
+// NOTE: an obvious improvement here would be to split the dynamics of sgp4 into init part and
+// time-dependent part. Not sure how much more complicated the implementation becomes though,
+// and also the implications are not clear if we put coordinate transformations in the dynamics
+// (e.g., for producing the dynamics in ICRF instead of TEME one day).
 template <typename TA, typename Path, typename SatData, typename InitStates>
 auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatData sat_data, double jd_begin,
                              double jd_end, InitStates init_states)
