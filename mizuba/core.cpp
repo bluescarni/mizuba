@@ -105,6 +105,13 @@ PYBIND11_MODULE(core, m)
             // into arrays. By doing this, we ensure that the spans we create in
             // traj/time_trans are referring to memory that stays alive during the
             // construction of the polyjectory.
+            // NOTE: here it would be better to convert all objects to py::buffer
+            // instead, which is more generic than numpy arrays. For instance, via
+            // py::buffer we could ingest memory-mapped arrays without having to copy them.
+            // The challenge seems to be in allowing for a good degree of flexibility: lists, for
+            // instance, cannot be converted to py::buffer, so perhaps we should first
+            // try a py::buffer conversion, and, if it fails, convert to py::array_t<double>
+            // (to be stored in a separate vector) and then to py::buffer.
             std::vector<py::array_t<double>> trajs;
             for (auto o : trajs_) {
                 trajs.push_back(o.cast<py::array_t<double>>());
