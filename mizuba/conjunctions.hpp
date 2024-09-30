@@ -17,6 +17,7 @@
 #include <memory>
 #include <ranges>
 #include <span>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -71,7 +72,8 @@ class conjunctions
     std::vector<double> compute_aabbs(const polyjectory &, const boost::filesystem::path &, std::size_t, double,
                                       double) const;
     void morton_encode_sort_parallel(const polyjectory &, const boost::filesystem::path &, std::size_t) const;
-    void construct_bvh_trees_parallel(const polyjectory &, const boost::filesystem::path &, std::size_t) const;
+    std::vector<std::tuple<std::size_t, std::size_t>>
+    construct_bvh_trees_parallel(const polyjectory &, const boost::filesystem::path &, std::size_t) const;
 
 public:
     // The BVH node struct.
@@ -125,6 +127,8 @@ public:
     [[nodiscard]] mcodes_span_t get_srt_mcodes() const noexcept;
     using srt_idx_span_t = heyoka::mdspan<const std::size_t, heyoka::dextents<std::size_t, 2>>;
     [[nodiscard]] srt_idx_span_t get_srt_idx() const noexcept;
+    using tree_span_t = heyoka::mdspan<const bvh_node, heyoka::dextents<std::size_t, 1>>;
+    [[nodiscard]] tree_span_t get_tree(std::size_t) const;
 };
 
 } // namespace mizuba

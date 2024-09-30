@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -57,6 +58,13 @@ struct conjunctions::impl {
     // NOTE: if needed, this one can also be turned into
     // a memory-mapped file.
     std::vector<double> m_cd_end_times;
+    // Vector of offsets and sizes for the tree data
+    // stored in m_file_bvh_trees.
+    //
+    // The first element of the pair is the offset at which tree data begins,
+    // the second element of the pair is the tree size. The size of
+    // this vector is equal to the number of conjunction steps.
+    std::vector<std::tuple<std::size_t, std::size_t>> m_tree_offsets;
     // The memory-mapped file for the aabbs.
     boost::iostreams::mapped_file_source m_file_aabbs;
     // The memory-mapped file for the sorted aabbs.
@@ -67,6 +75,8 @@ struct conjunctions::impl {
     boost::iostreams::mapped_file_source m_file_srt_mcodes;
     // The memory-mapped file for the sorted indices.
     boost::iostreams::mapped_file_source m_file_srt_idx;
+    // The memory-mapped file for the bvh trees.
+    boost::iostreams::mapped_file_source m_file_bvh_trees;
     // Pointer to the beginning of m_file_aabbs, cast to float.
     const float *m_aabbs_base_ptr = nullptr;
     // Pointer to the beginning of m_file_srt_aabbs, cast to float.
@@ -77,18 +87,24 @@ struct conjunctions::impl {
     const std::uint64_t *m_srt_mcodes_base_ptr = nullptr;
     // Pointer to the beginning of m_file_srt_idx, cast to std::size_t.
     const std::size_t *m_srt_idx_base_ptr = nullptr;
+    // Pointer to the beginning of m_file_bvh_trees, cast to bvh_node.
+    const bvh_node *m_bvh_trees_ptr = nullptr;
 
     explicit impl(boost::filesystem::path temp_dir_path, polyjectory pj, double conj_thresh, double conj_det_interval,
                   std::size_t n_cd_steps, boost::unordered_flat_set<std::size_t> whitelist,
-                  std::vector<double> cd_end_times)
+                  std::vector<double> cd_end_times, std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets)
         : m_temp_dir_path(std::move(temp_dir_path)), m_pj(std::move(pj)), m_conj_thresh(conj_thresh),
           m_conj_det_interval(conj_det_interval), m_n_cd_steps(n_cd_steps), m_whitelist(std::move(whitelist)),
-          m_cd_end_times(std::move(cd_end_times)), m_file_aabbs((m_temp_dir_path / "aabbs").string()),
+          m_cd_end_times(std::move(cd_end_times)), m_tree_offsets(std::move(tree_offsets)),
+          m_file_aabbs((m_temp_dir_path / "aabbs").string()),
           m_file_srt_aabbs((m_temp_dir_path / "srt_aabbs").string()),
           m_file_mcodes((m_temp_dir_path / "mcodes").string()),
           m_file_srt_mcodes((m_temp_dir_path / "srt_mcodes").string()),
           m_file_srt_idx((m_temp_dir_path / "vidx").string())
     {
+        // Sanity check.
+        assert(m_cd_end_times.size() == m_tree_offsets.size());
+
         // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
         // https://en.cppreference.com/w/cpp/memory/start_lifetime_as
         m_aabbs_base_ptr = reinterpret_cast<const float *>(m_file_aabbs.data());
@@ -105,6 +121,9 @@ struct conjunctions::impl {
 
         m_srt_idx_base_ptr = reinterpret_cast<const std::size_t *>(m_file_srt_idx.data());
         assert(boost::alignment::is_aligned(m_srt_idx_base_ptr, alignof(std::size_t)));
+
+        m_bvh_trees_ptr = reinterpret_cast<const bvh_node *>(m_file_bvh_trees.data());
+        assert(boost::alignment::is_aligned(m_bvh_trees_ptr, alignof(bvh_node)));
     }
 
     ~impl()
@@ -115,6 +134,7 @@ struct conjunctions::impl {
         m_file_mcodes.close();
         m_file_srt_mcodes.close();
         m_file_srt_idx.close();
+        m_file_bvh_trees.close();
 
         // Remove the temp dir and everything within.
         boost::filesystem::remove_all(m_temp_dir_path);
@@ -158,12 +178,13 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
         morton_encode_sort_parallel(pj, tmp_dir_path, n_cd_steps);
 
         // Construct the bvh trees.
-        construct_bvh_trees_parallel(pj, tmp_dir_path, n_cd_steps);
+        auto tree_offsets = construct_bvh_trees_parallel(pj, tmp_dir_path, n_cd_steps);
 
         // Create the impl.
-        m_impl = std::make_shared<const impl>(
-            tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps,
-            boost::unordered_flat_set<std::size_t>(whitelist.begin(), whitelist.end()), std::move(cd_end_times));
+        m_impl
+            = std::make_shared<const impl>(tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps,
+                                           boost::unordered_flat_set<std::size_t>(whitelist.begin(), whitelist.end()),
+                                           std::move(cd_end_times), std::move(tree_offsets));
 
         // LCOV_EXCL_START
     } catch (...) {
@@ -237,6 +258,23 @@ conjunctions::mcodes_span_t conjunctions::get_srt_mcodes() const noexcept
 conjunctions::srt_idx_span_t conjunctions::get_srt_idx() const noexcept
 {
     return srt_idx_span_t{m_impl->m_srt_idx_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs()};
+}
+
+conjunctions::tree_span_t conjunctions::get_tree(std::size_t i) const
+{
+    if (i >= m_impl->m_tree_offsets.size()) [[unlikely]] {
+        throw std::out_of_range(fmt::format("Invalid tree index {} specified - the total number of trees is only {}", i,
+                                            m_impl->m_tree_offsets.size()));
+    }
+
+    // Fetch the offset and size of the desired tree.
+    const auto [tree_offset, tree_size] = m_impl->m_tree_offsets[i];
+
+    // Compute the pointer to the desired tree.
+    const auto *tree_ptr = m_impl->m_bvh_trees_ptr + tree_offset;
+
+    // Return the span.
+    return conjunctions::tree_span_t{tree_ptr, tree_size};
 }
 
 } // namespace mizuba
