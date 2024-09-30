@@ -100,7 +100,7 @@ struct conjunctions::impl {
           m_file_srt_aabbs((m_temp_dir_path / "srt_aabbs").string()),
           m_file_mcodes((m_temp_dir_path / "mcodes").string()),
           m_file_srt_mcodes((m_temp_dir_path / "srt_mcodes").string()),
-          m_file_srt_idx((m_temp_dir_path / "vidx").string())
+          m_file_srt_idx((m_temp_dir_path / "vidx").string()), m_file_bvh_trees((m_temp_dir_path / "bvh").string())
     {
         // Sanity check.
         assert(m_cd_end_times.size() == m_tree_offsets.size());

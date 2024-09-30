@@ -300,4 +300,20 @@ PYBIND11_MODULE(core, m)
 
         return ret;
     });
+    conj_cl.def("get_tree", [](const py::object &self, std::size_t i) {
+        const auto *p = py::cast<const mz::conjunctions *>(self);
+
+        // Fetch the tree span.
+        const auto tree_span = p->get_tree(i);
+
+        // Turn into an array.
+        auto ret = py::array_t<mz::conjunctions::bvh_node>(
+            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(tree_span.extent(0))}, tree_span.data_handle(),
+            self);
+
+        // Ensure the returned array is read-only.
+        ret.attr("flags").attr("writeable") = false;
+
+        return ret;
+    });
 }
