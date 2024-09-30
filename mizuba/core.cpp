@@ -314,9 +314,9 @@ PYBIND11_MODULE(core, m)
         const auto tree_span = p->get_bvh_tree(i);
 
         // Turn into an array.
-        auto ret = py::array_t<mz::conjunctions::bvh_node>(
-            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(tree_span.extent(0))}, tree_span.data_handle(),
-            self);
+        auto ret
+            = py::array_t<bvh_node>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(tree_span.extent(0))},
+                                    tree_span.data_handle(), self);
 
         // Ensure the returned array is read-only.
         ret.attr("flags").attr("writeable") = false;

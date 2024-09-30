@@ -391,6 +391,18 @@ auto consolidate_tree_data(const auto &tmp_dir_path, const auto &tree_sizes)
 
 } // namespace detail
 
+// Construct the bvh trees, one per each conjunction step.
+//
+// The algorithm is taken from this paper:
+//
+// https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1467-8659.2009.01377.x
+//
+// NOTE: here we have implemented the general idea outlined in §3.1.
+// The algorithm explained in §3.2 may be faster, and we can consider
+// experimenting with it in case we need to improve performance.
+//
+// pj is the polyjectory, tmp_dir_path the temporary dir storing all conjunction data,
+// n_cd_steps the number of conjunction steps.
 std::vector<std::tuple<std::size_t, std::size_t>>
 conjunctions::construct_bvh_trees_parallel(const polyjectory &pj, const boost::filesystem::path &tmp_dir_path,
                                            std::size_t n_cd_steps) const
