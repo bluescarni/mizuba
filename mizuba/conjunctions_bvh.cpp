@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
 #include <functional>
 #include <limits>
 #include <ranges>
@@ -739,29 +740,28 @@ void conjunctions::construct_bvh_trees_parallel(const polyjectory &pj, const boo
                     n_end = new_n_end;
 
                     while (true) {
-                        oneapi::tbb::parallel_for(oneapi::tbb::blocked_range(n_begin, n_end),
-                                                  [&tree, cd_idx, srt_aabbs](const auto &node_range) {
-                                                      for (auto node_idx = node_range.begin();
-                                                           node_idx != node_range.end(); ++node_idx) {
-                                                          auto &cur_node = tree[node_idx];
+                        oneapi::tbb::parallel_for(
+                            oneapi::tbb::blocked_range(n_begin, n_end), [&tree](const auto &node_range) {
+                                for (auto node_idx = node_range.begin(); node_idx != node_range.end(); ++node_idx) {
+                                    auto &cur_node = tree[node_idx];
 
-                                                          if (cur_node.left == -1) {
-                                                              // Leaf node, the bounding box was computed earlier.
-                                                              assert(cur_node.right == -1);
-                                                          } else {
-                                                              // Internal node, compute its AABB from the children.
-                                                              auto &lc = tree[cur_node.left];
-                                                              auto &rc = tree[cur_node.right];
+                                    if (cur_node.left == -1) {
+                                        // Leaf node, the bounding box was computed earlier.
+                                        assert(cur_node.right == -1);
+                                    } else {
+                                        // Internal node, compute its AABB from the children.
+                                        auto &lc = tree[static_cast<std::uint32_t>(cur_node.left)];
+                                        auto &rc = tree[static_cast<std::uint32_t>(cur_node.right)];
 
-                                                              for (auto j = 0u; j < 4u; ++j) {
-                                                                  // NOTE: min/max is fine here, we already checked
-                                                                  // that all AABBs are finite.
-                                                                  cur_node.lb[j] = std::min(lc.lb[j], rc.lb[j]);
-                                                                  cur_node.ub[j] = std::max(lc.ub[j], rc.ub[j]);
-                                                              }
-                                                          }
-                                                      }
-                                                  });
+                                        for (auto j = 0u; j < 4u; ++j) {
+                                            // NOTE: min/max is fine here, we already checked
+                                            // that all AABBs are finite.
+                                            cur_node.lb[j] = std::min(lc.lb[j], rc.lb[j]);
+                                            cur_node.ub[j] = std::max(lc.ub[j], rc.ub[j]);
+                                        }
+                                    }
+                                }
+                            });
 
                         if (n_begin == 0u) {
                             // We reached the root node, break out.
