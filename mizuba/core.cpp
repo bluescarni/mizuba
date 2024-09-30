@@ -183,6 +183,10 @@ PYBIND11_MODULE(core, m)
         "sat_list"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert(),
         "exit_radius"_a.noconvert() = mz::sgp4_exit_radius, "reentry_radius"_a.noconvert() = mz::sgp4_reentry_radius);
 
+    // Register conjunctions::bvh_node as a structured NumPy datatype.
+    using bvh_node = mz::conjunctions::bvh_node;
+    PYBIND11_NUMPY_DTYPE(bvh_node, begin, end, parent, left, right, lb, ub);
+
     // Conjunctions.
     py::class_<mz::conjunctions> conj_cl(m, "conjunctions", py::dynamic_attr{});
     conj_cl.def(py::init([](mz::polyjectory pj, double conj_thresh, double conj_det_interval,

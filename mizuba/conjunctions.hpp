@@ -71,8 +71,19 @@ class conjunctions
     std::vector<double> compute_aabbs(const polyjectory &, const boost::filesystem::path &, std::size_t, double,
                                       double) const;
     void morton_encode_sort_parallel(const polyjectory &, const boost::filesystem::path &, std::size_t) const;
+    void construct_bvh_trees_parallel(const polyjectory &, const boost::filesystem::path &, std::size_t) const;
 
 public:
+    // The BVH node struct.
+    struct bvh_node {
+        // Object range.
+        std::uint32_t begin, end;
+        // Pointers to parent and children nodes.
+        std::int32_t parent, left, right;
+        // AABB.
+        std::array<float, 4> lb, ub;
+    };
+
     template <typename WRange = std::vector<std::size_t>>
         requires std::ranges::input_range<WRange>
                  && std::integral<std::remove_cvref_t<std::ranges::range_reference_t<WRange>>>

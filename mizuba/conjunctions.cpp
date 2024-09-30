@@ -157,6 +157,9 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
         // Morton encoding and indirect sorting.
         morton_encode_sort_parallel(pj, tmp_dir_path, n_cd_steps);
 
+        // Construct the bvh trees.
+        construct_bvh_trees_parallel(pj, tmp_dir_path, n_cd_steps);
+
         // Create the impl.
         m_impl = std::make_shared<const impl>(
             tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps,
