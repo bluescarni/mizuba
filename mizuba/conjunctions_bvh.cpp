@@ -9,7 +9,6 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <bits/ranges_algo.h>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
