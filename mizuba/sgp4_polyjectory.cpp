@@ -712,6 +712,7 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
                                       // Build the file path.
                                       const auto tc_path = tmp_dir_path / fmt::format("tc_{}", i);
                                       assert(boost::filesystem::exists(tc_path));
+                                      assert(boost::filesystem::file_size(tc_path) == tc_size);
 
                                       // Open it.
                                       std::ifstream tc_file(tc_path.string(), std::ios::binary | std::ios::in);
@@ -735,6 +736,7 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
                                       // Build the file path.
                                       const auto time_path = tmp_dir_path / fmt::format("time_{}", i);
                                       assert(boost::filesystem::exists(time_path));
+                                      assert(boost::filesystem::file_size(time_path) == time_size);
 
                                       // Open it.
                                       std::ifstream time_file(time_path.string(), std::ios::binary | std::ios::in);
