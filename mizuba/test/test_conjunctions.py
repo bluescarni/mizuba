@@ -395,10 +395,10 @@ class conjunctions_test_case(_ut.TestCase):
         tdata5 = np.zeros((7, 6))
         tdata5[2, 0] = -1.0
 
-        # center.
+        # Center.
         tdata6 = np.zeros((7, 6))
 
-        # bogus.
+        # All ones.
         tdata7 = np.zeros((7, 6))
         tdata7[:, 0] = 1
 
@@ -430,3 +430,91 @@ class conjunctions_test_case(_ut.TestCase):
         self.assertTrue(np.all(conjs.mcodes[1, :10] == (2**64 - 1)))
         self.assertTrue(conjs.mcodes[1:, -1] == (2**64 - 1))
         self.assertTrue(np.all(conjs.srt_mcodes[1, -11:] == (2**64 - 1)))
+
+    def test_bvh(self):
+        # NOTE: most of the validation of bvh
+        # trees is done within the C++ code
+        # during construction in debug mode.
+        # Here we instantiate several corner cases.
+        import numpy as np
+        from .. import conjunctions, polyjectory
+
+        # Polyjectory with a single object.
+        tdata = np.zeros((7, 6))
+        tdata[:, 1] = 0.1
+
+        pj = polyjectory([[tdata]], [[1.0]], [0])
+        conjs = conjunctions(pj, 1e-16, 1.0)
+
+        with self.assertRaises(IndexError) as cm:
+            conjs.get_bvh_tree(1)
+        self.assertTrue(
+            "Invalid tree index 1 specified - the total number of trees is only 1"
+            in str(cm.exception)
+        )
+
+        t = conjs.get_bvh_tree(0)
+        self.assertEqual(len(t), 1)
+
+        # Polyjectory with two identical objects.
+        # This will result in exhausting all bits
+        # in the morton codes for splitting.
+        pj = polyjectory([[tdata], [tdata]], [[1.0], [1.0]], [0, 0])
+        conjs = conjunctions(pj, 1e-16, 1.0)
+        t = conjs.get_bvh_tree(0)
+        self.assertEqual(len(t), 1)
+
+        # Polyjectory in which the morton codes
+        # of two objects differ at the last bit.
+        # x.
+        tdata0 = np.zeros((7, 6))
+        tdata0[0, 0] = 1.0
+        tdata1 = np.zeros((7, 6))
+        tdata1[0, 0] = -1.0
+
+        # y.
+        tdata2 = np.zeros((7, 6))
+        tdata2[1, 0] = 1.0
+        tdata3 = np.zeros((7, 6))
+        tdata3[1, 0] = -1.0
+
+        # z.
+        tdata4 = np.zeros((7, 6))
+        tdata4[2, 0] = 1.0
+        tdata5 = np.zeros((7, 6))
+        tdata5[2, 0] = -1.0
+
+        # Center.
+        tdata6 = np.zeros((7, 6))
+
+        # All ones.
+        tdata7 = np.zeros((7, 6))
+        tdata7[:, 0] = 1
+
+        # All ones but last.
+        tdata8 = np.zeros((7, 6))
+        tdata8[:, 0] = 1
+        tdata8[0, 0] = 1.0 - 2.1 / 2**16
+
+        pj = polyjectory(
+            [
+                [tdata0],
+                [tdata1],
+                [tdata2],
+                [tdata3],
+                [tdata4],
+                [tdata5],
+                [tdata6],
+                [tdata7],
+                [tdata8],
+            ],
+            [[1.0]] * 9,
+            [0] * 9,
+        )
+
+        conjs = conjunctions(pj, 1e-16, 1.0)
+        self.assertEqual(conjs.mcodes[0, -2], 2**64 - 1)
+        self.assertEqual(conjs.mcodes[0, -1], 2**64 - 2)
+        t = conjs.get_bvh_tree(0)
+        self.assertEqual(conjs.srt_idx[0, -1], 7)
+        self.assertEqual(conjs.srt_idx[0, -2], 8)

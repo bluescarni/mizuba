@@ -307,11 +307,11 @@ PYBIND11_MODULE(core, m)
 
         return ret;
     });
-    conj_cl.def("get_tree", [](const py::object &self, std::size_t i) {
+    conj_cl.def("get_bvh_tree", [](const py::object &self, std::size_t i) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
 
         // Fetch the tree span.
-        const auto tree_span = p->get_tree(i);
+        const auto tree_span = p->get_bvh_tree(i);
 
         // Turn into an array.
         auto ret = py::array_t<mz::conjunctions::bvh_node>(

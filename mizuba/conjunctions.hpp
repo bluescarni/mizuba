@@ -128,7 +128,7 @@ public:
     using srt_idx_span_t = heyoka::mdspan<const std::size_t, heyoka::dextents<std::size_t, 2>>;
     [[nodiscard]] srt_idx_span_t get_srt_idx() const noexcept;
     using tree_span_t = heyoka::mdspan<const bvh_node, heyoka::dextents<std::size_t, 1>>;
-    [[nodiscard]] tree_span_t get_tree(std::size_t) const;
+    [[nodiscard]] tree_span_t get_bvh_tree(std::size_t) const;
 };
 
 } // namespace mizuba

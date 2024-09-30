@@ -260,7 +260,7 @@ conjunctions::srt_idx_span_t conjunctions::get_srt_idx() const noexcept
     return srt_idx_span_t{m_impl->m_srt_idx_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs()};
 }
 
-conjunctions::tree_span_t conjunctions::get_tree(std::size_t i) const
+conjunctions::tree_span_t conjunctions::get_bvh_tree(std::size_t i) const
 {
     if (i >= m_impl->m_tree_offsets.size()) [[unlikely]] {
         throw std::out_of_range(fmt::format("Invalid tree index {} specified - the total number of trees is only {}", i,
