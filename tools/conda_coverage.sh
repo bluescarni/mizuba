@@ -43,6 +43,7 @@ cd install
 python -c "from mizuba.test import run_test_suite; run_test_suite()"
 
 # Create lcov report
+cd ..
 lcov --capture --directory . --output-file coverage.info
 
 set +e

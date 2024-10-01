@@ -30,7 +30,6 @@ jobs:
           fail_ci_if_error: true
           files: ./build/install/coverage.info
           token: ${{ secrets.CODECOV_TOKEN }}
-          verbose: true
   osx_13_x86:
     runs-on: macos-13
     env:
