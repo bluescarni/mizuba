@@ -65,6 +65,8 @@ struct conjunctions::impl {
     // the second element of the pair is the tree size. The size of
     // this vector is equal to the number of conjunction steps.
     std::vector<std::tuple<std::size_t, std::size_t>> m_tree_offsets;
+    // Vector of flags to signal which objects are active for conjunction tracking.
+    std::vector<bool> m_conj_active;
     // The memory-mapped file for the aabbs.
     boost::iostreams::mapped_file_source m_file_aabbs;
     // The memory-mapped file for the sorted aabbs.
@@ -124,6 +126,25 @@ struct conjunctions::impl {
 
         m_bvh_trees_ptr = reinterpret_cast<const bvh_node *>(m_file_bvh_trees.data());
         assert(boost::alignment::is_aligned(m_bvh_trees_ptr, alignof(bvh_node)));
+
+        // Check the whitelist and setup m_conj_active.
+        const auto nobjs = m_pj.get_nobjs();
+        if (m_whitelist.empty()) {
+            m_conj_active.resize(boost::numeric_cast<decltype(m_conj_active.size())>(nobjs), true);
+        } else {
+            m_conj_active.resize(boost::numeric_cast<decltype(m_conj_active.size())>(nobjs), false);
+
+            for (const auto obj_idx : m_whitelist) {
+                if (obj_idx >= nobjs) [[unlikely]] {
+                    throw std::invalid_argument(
+                        fmt::format("Invalid whitelist detected: the whitelist contains the object index {}, but the "
+                                    "total number of objects is only {}",
+                                    obj_idx, nobjs));
+                }
+
+                m_conj_active[obj_idx] = true;
+            }
+        }
     }
 
     ~impl()
