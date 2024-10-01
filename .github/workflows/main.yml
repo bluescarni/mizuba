@@ -28,7 +28,7 @@ jobs:
       - uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: true
-          files: ./build/install/coverage.info
+          files: ./build/coverage.info
           token: ${{ secrets.CODECOV_TOKEN }}
   osx_13_x86:
     runs-on: macos-13
