@@ -42,5 +42,8 @@ ninja -v install
 cd install
 python -c "from mizuba.test import run_test_suite; run_test_suite()"
 
+# Create lcov report
+lcov --capture --directory . --output-file coverage.info
+
 set +e
 set +x
