@@ -364,3 +364,157 @@ class conjunctions_test_case(_ut.TestCase):
                 == np.nextafter(np.single(np.sqrt(3.0)), np.single("+inf"))
             )
         )
+
+    def test_no_traj_data(self):
+        # This is a test to verify that when an object lacks
+        # trajectory data it is always placed at the end of
+        # the srt_* data.
+        import numpy as np
+        from .. import conjunctions, polyjectory
+
+        # The goal here is to generate trajectory
+        # data for which the aabb centre's morton code
+        # is all ones (this will be tdata7). This will allow
+        # us to verify that missing traj data is placed
+        # after tdata7.
+        # x.
+        tdata0 = np.zeros((7, 6))
+        tdata0[0, 0] = 1.0
+        tdata1 = np.zeros((7, 6))
+        tdata1[0, 0] = -1.0
+
+        # y.
+        tdata2 = np.zeros((7, 6))
+        tdata2[1, 0] = 1.0
+        tdata3 = np.zeros((7, 6))
+        tdata3[1, 0] = -1.0
+
+        # z.
+        tdata4 = np.zeros((7, 6))
+        tdata4[2, 0] = 1.0
+        tdata5 = np.zeros((7, 6))
+        tdata5[2, 0] = -1.0
+
+        # Center.
+        tdata6 = np.zeros((7, 6))
+
+        # All ones.
+        tdata7 = np.zeros((7, 6))
+        tdata7[:, 0] = 1
+
+        # NOTE: the first 10 objects will have traj
+        # data only for the first step, not the second.
+        pj = polyjectory(
+            [[tdata0]] * 10
+            + [
+                [tdata0] * 2,
+                [tdata1] * 2,
+                [tdata2] * 2,
+                [tdata3] * 2,
+                [tdata4] * 2,
+                [tdata5] * 2,
+                [tdata6] * 2,
+                [tdata7] * 2,
+            ],
+            [[1.0]] * 10 + [[1.0, 2.0]] * 8,
+            [0] * 18,
+        )
+
+        conjs = conjunctions(pj, 1e-16, 1.0)
+
+        # Verify that at the second step all
+        # inf aabbs are at the end of srt_aabbs
+        # and the morton codes are all -1.
+        self.assertTrue(np.all(np.isinf(conjs.aabbs[1, :10])))
+        self.assertTrue(np.all(np.isinf(conjs.srt_aabbs[1, -11:-1])))
+        self.assertTrue(np.all(conjs.mcodes[1, :10] == (2**64 - 1)))
+        self.assertTrue(conjs.mcodes[1:, -1] == (2**64 - 1))
+        self.assertTrue(np.all(conjs.srt_mcodes[1, -11:] == (2**64 - 1)))
+
+    def test_bvh(self):
+        # NOTE: most of the validation of bvh
+        # trees is done within the C++ code
+        # during construction in debug mode.
+        # Here we instantiate several corner cases.
+        import numpy as np
+        from .. import conjunctions, polyjectory
+
+        # Polyjectory with a single object.
+        tdata = np.zeros((7, 6))
+        tdata[:, 1] = 0.1
+
+        pj = polyjectory([[tdata]], [[1.0]], [0])
+        conjs = conjunctions(pj, 1e-16, 1.0)
+
+        with self.assertRaises(IndexError) as cm:
+            conjs.get_bvh_tree(1)
+        self.assertTrue(
+            "Invalid tree index 1 specified - the total number of trees is only 1"
+            in str(cm.exception)
+        )
+
+        t = conjs.get_bvh_tree(0)
+        self.assertEqual(len(t), 1)
+
+        # Polyjectory with two identical objects.
+        # This will result in exhausting all bits
+        # in the morton codes for splitting.
+        pj = polyjectory([[tdata], [tdata]], [[1.0], [1.0]], [0, 0])
+        conjs = conjunctions(pj, 1e-16, 1.0)
+        t = conjs.get_bvh_tree(0)
+        self.assertEqual(len(t), 1)
+
+        # Polyjectory in which the morton codes
+        # of two objects differ at the last bit.
+        # x.
+        tdata0 = np.zeros((7, 6))
+        tdata0[0, 0] = 1.0
+        tdata1 = np.zeros((7, 6))
+        tdata1[0, 0] = -1.0
+
+        # y.
+        tdata2 = np.zeros((7, 6))
+        tdata2[1, 0] = 1.0
+        tdata3 = np.zeros((7, 6))
+        tdata3[1, 0] = -1.0
+
+        # z.
+        tdata4 = np.zeros((7, 6))
+        tdata4[2, 0] = 1.0
+        tdata5 = np.zeros((7, 6))
+        tdata5[2, 0] = -1.0
+
+        # Center.
+        tdata6 = np.zeros((7, 6))
+
+        # All ones.
+        tdata7 = np.zeros((7, 6))
+        tdata7[:, 0] = 1
+
+        # All ones but last.
+        tdata8 = np.zeros((7, 6))
+        tdata8[:, 0] = 1
+        tdata8[0, 0] = 1.0 - 2.1 / 2**16
+
+        pj = polyjectory(
+            [
+                [tdata0],
+                [tdata1],
+                [tdata2],
+                [tdata3],
+                [tdata4],
+                [tdata5],
+                [tdata6],
+                [tdata7],
+                [tdata8],
+            ],
+            [[1.0]] * 9,
+            [0] * 9,
+        )
+
+        conjs = conjunctions(pj, 1e-16, 1.0)
+        self.assertEqual(conjs.mcodes[0, -2], 2**64 - 1)
+        self.assertEqual(conjs.mcodes[0, -1], 2**64 - 2)
+        t = conjs.get_bvh_tree(0)
+        self.assertEqual(conjs.srt_idx[0, -1], 7)
+        self.assertEqual(conjs.srt_idx[0, -2], 8)

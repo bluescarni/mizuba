@@ -22,6 +22,7 @@ set(_MIZUBA_CORE_SOURCES
     conjunctions.cpp
     conjunctions_compute_aabbs.cpp
     conjunctions_morton.cpp
+    conjunctions_bvh.cpp
     detail/file_utils.cpp
 )
 

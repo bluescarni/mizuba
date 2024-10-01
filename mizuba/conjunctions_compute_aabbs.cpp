@@ -358,7 +358,7 @@ std::vector<double> conjunctions::compute_aabbs(const polyjectory &pj, const boo
                 assert(cur_ub > cur_lb);
 
                 // Check that we can safely compute the difference between ub and lb. This is
-                // needed when computing Morton codes.
+                // needed when computing morton codes.
                 if (!std::isfinite(cur_ub - cur_lb)) [[unlikely]] {
                     throw std::invalid_argument("A global bounding box with non-finite size was generated");
                 }
