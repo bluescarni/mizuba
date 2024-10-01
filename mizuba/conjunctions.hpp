@@ -12,10 +12,12 @@
 #include <array>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <initializer_list>
 #include <memory>
 #include <ranges>
 #include <span>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -70,8 +72,20 @@ class conjunctions
     std::vector<double> compute_aabbs(const polyjectory &, const boost::filesystem::path &, std::size_t, double,
                                       double) const;
     void morton_encode_sort_parallel(const polyjectory &, const boost::filesystem::path &, std::size_t) const;
+    std::vector<std::tuple<std::size_t, std::size_t>>
+    construct_bvh_trees_parallel(const polyjectory &, const boost::filesystem::path &, std::size_t) const;
 
 public:
+    // The BVH node struct.
+    struct bvh_node {
+        // Object range.
+        std::uint32_t begin, end;
+        // Pointers to parent and children nodes.
+        std::int32_t parent, left, right;
+        // AABB.
+        std::array<float, 4> lb, ub;
+    };
+
     template <typename WRange = std::vector<std::size_t>>
         requires std::ranges::input_range<WRange>
                  && std::integral<std::remove_cvref_t<std::ranges::range_reference_t<WRange>>>
@@ -113,6 +127,8 @@ public:
     [[nodiscard]] mcodes_span_t get_srt_mcodes() const noexcept;
     using srt_idx_span_t = heyoka::mdspan<const std::size_t, heyoka::dextents<std::size_t, 2>>;
     [[nodiscard]] srt_idx_span_t get_srt_idx() const noexcept;
+    using tree_span_t = heyoka::mdspan<const bvh_node, heyoka::dextents<std::size_t, 1>>;
+    [[nodiscard]] tree_span_t get_bvh_tree(std::size_t) const;
 };
 
 } // namespace mizuba

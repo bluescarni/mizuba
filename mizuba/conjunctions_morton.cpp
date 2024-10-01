@@ -113,6 +113,11 @@ constexpr auto morton_enc = mortonnd::MortonNDLutEncoder<4, 16, 8>();
 
 } // namespace detail
 
+// Compute the morton codes for all objects in each conjunction step, and sort the aabbs
+// data according to the morton codes.
+//
+// pj is the polyjectory, tmp_dir_path the temporary dir storing all conjunction data,
+// n_cd_steps the number of conjunction steps.
 void conjunctions::morton_encode_sort_parallel(const polyjectory &pj, const boost::filesystem::path &tmp_dir_path,
                                                std::size_t n_cd_steps) const
 {
@@ -236,10 +241,27 @@ void conjunctions::morton_encode_sort_parallel(const polyjectory &pj, const boos
                         }
                     });
 
-                // Indirect sorting of local_vidx according to the morton codes.
-                oneapi::tbb::parallel_sort(local_vidx.begin(), local_vidx.end(), [&local_mcodes](auto idx1, auto idx2) {
-                    return local_mcodes[idx1] < local_mcodes[idx2];
-                });
+                // Sort the object indices in local_vidx according to the morton codes, also ensuring that objects
+                // without trajectory data are placed at the very end.
+                oneapi::tbb::parallel_sort(local_vidx.begin(), local_vidx.end(),
+                                           [&local_mcodes, cd_idx, aabbs](auto idx1, auto idx2) {
+                                               if (std::isinf(aabbs(cd_idx, idx1, 0, 0))) {
+                                                   // The first object has no trajectory data, it cannot
+                                                   // be less than any other object.
+                                                   assert(local_mcodes[idx1] == static_cast<std::uint64_t>(-1));
+                                                   return false;
+                                               }
+
+                                               if (std::isinf(aabbs(cd_idx, idx2, 0, 0))) {
+                                                   // The first object has trajectory data, while the
+                                                   // second one does not.
+                                                   assert(local_mcodes[idx2] == static_cast<std::uint64_t>(-1));
+                                                   return true;
+                                               }
+
+                                               // Both objects have trajectory data, compare the codes.
+                                               return local_mcodes[idx1] < local_mcodes[idx2];
+                                           });
 
                 // Apply the indirect sorting defined in local_vidx to aabbs and mcodes,
                 // writing the sorted data to the the srt_* counterparts on disk.
