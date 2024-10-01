@@ -17,6 +17,20 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build
         run: bash tools/conda_asan.sh
+  conda_coverage:
+    runs-on: ubuntu-latest
+    env:
+      CONDA_INSTALLER_ARCH: Linux-x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: bash tools/conda_coverage.sh
+      - uses: codecov/codecov-action@v4
+        with:
+          fail_ci_if_error: true
+          files: ./build/install/coverage.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
   osx_13_x86:
     runs-on: macos-13
     env:
