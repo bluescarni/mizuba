@@ -197,11 +197,11 @@ PYBIND11_MODULE(core, m)
     // Conjunctions.
     py::class_<mz::conjunctions> conj_cl(m, "conjunctions", py::dynamic_attr{});
     conj_cl.def(py::init([](mz::polyjectory pj, double conj_thresh, double conj_det_interval,
-                            std::vector<std::size_t> whitelist) {
+                            std::vector<std::uint32_t> whitelist) {
                     return mz::conjunctions(std::move(pj), conj_thresh, conj_det_interval, std::move(whitelist));
                 }),
                 "pj"_a.noconvert(), "conj_thresh"_a.noconvert(), "conj_det_interval"_a.noconvert(),
-                "whitelist"_a.noconvert() = std::vector<std::size_t>{});
+                "whitelist"_a.noconvert() = std::vector<std::uint32_t>{});
     conj_cl.def_property_readonly("aabbs", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
 
@@ -297,7 +297,7 @@ PYBIND11_MODULE(core, m)
         const auto srt_idx_span = p->get_srt_idx();
 
         // Turn into an array.
-        auto ret = py::array_t<std::size_t>(
+        auto ret = py::array_t<std::uint32_t>(
             py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(srt_idx_span.extent(0)),
                                       boost::numeric_cast<py::ssize_t>(srt_idx_span.extent(1))},
             srt_idx_span.data_handle(), self);

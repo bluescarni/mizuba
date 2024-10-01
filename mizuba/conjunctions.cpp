@@ -53,7 +53,7 @@ struct conjunctions::impl {
     // The total number of conjunction detection steps.
     std::size_t m_n_cd_steps = 0;
     // The whitelist.
-    boost::unordered_flat_set<std::size_t> m_whitelist;
+    boost::unordered_flat_set<std::uint32_t> m_whitelist;
     // End times of the conjunction steps.
     // NOTE: if needed, this one can also be turned into
     // a memory-mapped file.
@@ -65,6 +65,8 @@ struct conjunctions::impl {
     // the second element of the pair is the tree size. The size of
     // this vector is equal to the number of conjunction steps.
     std::vector<std::tuple<std::size_t, std::size_t>> m_tree_offsets;
+    // Vector of flags to signal which objects are active for conjunction tracking.
+    std::vector<bool> m_conj_active;
     // The memory-mapped file for the aabbs.
     boost::iostreams::mapped_file_source m_file_aabbs;
     // The memory-mapped file for the sorted aabbs.
@@ -85,13 +87,13 @@ struct conjunctions::impl {
     const std::uint64_t *m_mcodes_base_ptr = nullptr;
     // Pointer to the beginning of m_file_srt_mcodes, cast to std::uint64_t.
     const std::uint64_t *m_srt_mcodes_base_ptr = nullptr;
-    // Pointer to the beginning of m_file_srt_idx, cast to std::size_t.
-    const std::size_t *m_srt_idx_base_ptr = nullptr;
+    // Pointer to the beginning of m_file_srt_idx, cast to std::uint32_t.
+    const std::uint32_t *m_srt_idx_base_ptr = nullptr;
     // Pointer to the beginning of m_file_bvh_trees, cast to bvh_node.
     const bvh_node *m_bvh_trees_ptr = nullptr;
 
     explicit impl(boost::filesystem::path temp_dir_path, polyjectory pj, double conj_thresh, double conj_det_interval,
-                  std::size_t n_cd_steps, boost::unordered_flat_set<std::size_t> whitelist,
+                  std::size_t n_cd_steps, boost::unordered_flat_set<std::uint32_t> whitelist,
                   std::vector<double> cd_end_times, std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets)
         : m_temp_dir_path(std::move(temp_dir_path)), m_pj(std::move(pj)), m_conj_thresh(conj_thresh),
           m_conj_det_interval(conj_det_interval), m_n_cd_steps(n_cd_steps), m_whitelist(std::move(whitelist)),
@@ -119,11 +121,30 @@ struct conjunctions::impl {
         m_srt_mcodes_base_ptr = reinterpret_cast<const std::uint64_t *>(m_file_srt_mcodes.data());
         assert(boost::alignment::is_aligned(m_srt_mcodes_base_ptr, alignof(std::uint64_t)));
 
-        m_srt_idx_base_ptr = reinterpret_cast<const std::size_t *>(m_file_srt_idx.data());
-        assert(boost::alignment::is_aligned(m_srt_idx_base_ptr, alignof(std::size_t)));
+        m_srt_idx_base_ptr = reinterpret_cast<const std::uint32_t *>(m_file_srt_idx.data());
+        assert(boost::alignment::is_aligned(m_srt_idx_base_ptr, alignof(std::uint32_t)));
 
         m_bvh_trees_ptr = reinterpret_cast<const bvh_node *>(m_file_bvh_trees.data());
         assert(boost::alignment::is_aligned(m_bvh_trees_ptr, alignof(bvh_node)));
+
+        // Check the whitelist and setup m_conj_active.
+        const auto nobjs = m_pj.get_nobjs();
+        if (m_whitelist.empty()) {
+            m_conj_active.resize(boost::numeric_cast<decltype(m_conj_active.size())>(nobjs), true);
+        } else {
+            m_conj_active.resize(boost::numeric_cast<decltype(m_conj_active.size())>(nobjs), false);
+
+            for (const auto obj_idx : m_whitelist) {
+                if (obj_idx >= nobjs) [[unlikely]] {
+                    throw std::invalid_argument(
+                        fmt::format("Invalid whitelist detected: the whitelist contains the object index {}, but the "
+                                    "total number of objects is only {}",
+                                    obj_idx, nobjs));
+                }
+
+                m_conj_active[obj_idx] = true;
+            }
+        }
     }
 
     ~impl()
@@ -142,7 +163,7 @@ struct conjunctions::impl {
 };
 
 conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj_det_interval,
-                           std::vector<std::size_t> whitelist)
+                           std::vector<std::uint32_t> whitelist)
 {
     // Check conj_thresh.
     if (!std::isfinite(conj_thresh) || conj_thresh <= 0) [[unlikely]] {
@@ -183,7 +204,7 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
         // Create the impl.
         m_impl
             = std::make_shared<const impl>(tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps,
-                                           boost::unordered_flat_set<std::size_t>(whitelist.begin(), whitelist.end()),
+                                           boost::unordered_flat_set<std::uint32_t>(whitelist.begin(), whitelist.end()),
                                            std::move(cd_end_times), std::move(tree_offsets));
 
         // LCOV_EXCL_START
@@ -274,7 +295,7 @@ conjunctions::tree_span_t conjunctions::get_bvh_tree(std::size_t i) const
     const auto *tree_ptr = m_impl->m_bvh_trees_ptr + tree_offset;
 
     // Return the span.
-    return conjunctions::tree_span_t{tree_ptr, tree_size};
+    return tree_span_t{tree_ptr, tree_size};
 }
 
 } // namespace mizuba

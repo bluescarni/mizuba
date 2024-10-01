@@ -194,7 +194,9 @@ class conjunctions_test_case(_ut.TestCase):
 
         # Run the test for several conjunction detection intervals.
         for conj_det_interval in [0.01, 0.1, 0.5, 2.0, 5.0, 7.0]:
-            c = conj(pj, conj_thresh=0.1, conj_det_interval=conj_det_interval)
+            c = conj(
+                pj, conj_thresh=0.1, conj_det_interval=conj_det_interval, whitelist=[]
+            )
 
             # Shape checks.
             self.assertEqual(c.aabbs.shape[0], c.cd_end_times.shape[0])
@@ -225,6 +227,23 @@ class conjunctions_test_case(_ut.TestCase):
 
             # Verify the aabbs.
             self._verify_conj_aabbs(c, rng)
+
+            # Test whitelist initialisation.
+            c = conj(
+                pj, conj_thresh=0.1, conj_det_interval=conj_det_interval, whitelist=[0]
+            )
+
+            with self.assertRaises(ValueError) as cm:
+                conj(
+                    pj,
+                    conj_thresh=0.1,
+                    conj_det_interval=conj_det_interval,
+                    whitelist=[1],
+                )
+            self.assertTrue(
+                "Invalid whitelist detected: the whitelist contains the object index 1, but the total number of objects is only 1"
+                in str(cm.exception)
+            )
 
         # Test that if we specify a conjunction detection interval
         # larger than maxT, the time data in the conjunctions object

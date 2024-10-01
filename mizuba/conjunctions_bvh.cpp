@@ -10,7 +10,6 @@
 #include <array>
 #include <atomic>
 #include <cassert>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -41,6 +40,7 @@
 
 #include "conjunctions.hpp"
 #include "detail/file_utils.hpp"
+#include "detail/get_n_effective_objects.hpp"
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -458,47 +458,9 @@ conjunctions::construct_bvh_trees_parallel(const polyjectory &pj, const boost::f
         oneapi::tbb::blocked_range<std::size_t>(0, n_cd_steps),
         [&ets, tot_nobjs, srt_aabbs, srt_mcodes, &tmp_dir_path, &tree_sizes](const auto &cd_range) {
             for (auto cd_idx = cd_range.begin(); cd_idx != cd_range.end(); ++cd_idx) {
-                // Some objects may have no trajectory data for the current conjunction step
-                // and thus they can (and must) not be included in the bvh tree.
-                //
-                // The aabbs of these objects will contain infinities, and they will be placed
-                // at the tail end of srt_aabbs - we make sure of this when morton-sorting
-                // the data.
-                //
-                // Thus, we can look for the first infinite aabb in srt_aabbs in order to
-                // determine how many objects with trajectory data we have in the
-                // current conjunction step.
-
-                // This is a view that transforms the sorted aabbs in the current conjunction
-                // step in something like [false, false, ..., false, true, true, ...], where
-                // "true" begins with the first infinite aabb.
-                // NOTE: it is important we iota up to tot_nobjs here, even though the aabbs data
-                // goes up to tot_nobjs + 1 - the last slot is the global aabb for the current
+                // Fetch the number of objects with trajectory data for the current
                 // conjunction step.
-                const auto isinf_view = std::views::iota(static_cast<std::size_t>(0), tot_nobjs)
-                                        | std::views::transform([srt_aabbs, cd_idx](std::size_t n) {
-                                              return std::isinf(srt_aabbs(cd_idx, n, 0, 0));
-                                          });
-                assert(std::ranges::is_sorted(isinf_view));
-                static_assert(std::ranges::random_access_range<decltype(isinf_view)>);
-
-                // Overflow check.
-                try {
-                    // Make sure the difference type of isinf_view can represent tot_nobjs.
-                    static_cast<void>(
-                        boost::numeric_cast<std::ranges::range_difference_t<decltype(isinf_view)>>(tot_nobjs));
-                    // LCOV_EXCL_START
-                } catch (...) {
-                    throw std::overflow_error("Overflow detected during the construction of a BVH tree");
-                }
-                // LCOV_EXCL_STOP
-
-                // Determine the position of the first infinite aabb.
-                const auto it_inf = std::ranges::lower_bound(isinf_view, true);
-                // Compute the total number of objects with trajectory data.
-                const auto nobjs = boost::numeric_cast<std::uint32_t>(it_inf - std::ranges::begin(isinf_view));
-                // NOTE: we cannot have conjunction steps without trajectory data.
-                assert(nobjs > 0u);
+                const auto nobjs = detail::get_n_effective_objects(tot_nobjs, srt_aabbs, cd_idx);
 
                 // Fetch the thread-local data.
                 auto &[tree, aux_data, l_buffer] = ets.local();

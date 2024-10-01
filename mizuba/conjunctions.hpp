@@ -41,16 +41,16 @@ class conjunctions
     // Private ctor.
     struct ptag {
     };
-    explicit conjunctions(ptag, polyjectory, double, double, std::vector<std::size_t>);
+    explicit conjunctions(ptag, polyjectory, double, double, std::vector<std::uint32_t>);
 
     // Helper to convert an input whitelist range into a vector of indices.
     template <typename WRange>
     static auto wrange_to_vec(WRange &&whitelist)
     {
-        if constexpr (std::same_as<std::vector<std::size_t>, std::remove_cvref_t<WRange>>) {
+        if constexpr (std::same_as<std::vector<std::uint32_t>, std::remove_cvref_t<WRange>>) {
             return std::forward<WRange>(whitelist);
         } else {
-            std::vector<std::size_t> retval;
+            std::vector<std::uint32_t> retval;
             // Prepare the appropriate size if WRange is a sized range
             // with an integral size type.
             if constexpr (requires {
@@ -61,7 +61,7 @@ class conjunctions
             }
 
             for (auto idx : whitelist) {
-                retval.push_back(boost::numeric_cast<std::size_t>(idx));
+                retval.push_back(boost::numeric_cast<std::uint32_t>(idx));
             }
 
             return retval;
@@ -86,7 +86,7 @@ public:
         std::array<float, 4> lb, ub;
     };
 
-    template <typename WRange = std::vector<std::size_t>>
+    template <typename WRange = std::vector<std::uint32_t>>
         requires std::ranges::input_range<WRange>
                  && std::integral<std::remove_cvref_t<std::ranges::range_reference_t<WRange>>>
     explicit conjunctions(polyjectory pj, double conj_thresh, double conj_det_interval, WRange &&whitelist = {})
@@ -125,7 +125,7 @@ public:
     using mcodes_span_t = heyoka::mdspan<const std::uint64_t, heyoka::dextents<std::size_t, 2>>;
     [[nodiscard]] mcodes_span_t get_mcodes() const noexcept;
     [[nodiscard]] mcodes_span_t get_srt_mcodes() const noexcept;
-    using srt_idx_span_t = heyoka::mdspan<const std::size_t, heyoka::dextents<std::size_t, 2>>;
+    using srt_idx_span_t = heyoka::mdspan<const std::uint32_t, heyoka::dextents<std::size_t, 2>>;
     [[nodiscard]] srt_idx_span_t get_srt_idx() const noexcept;
     using tree_span_t = heyoka::mdspan<const bvh_node, heyoka::dextents<std::size_t, 1>>;
     [[nodiscard]] tree_span_t get_bvh_tree(std::size_t) const;

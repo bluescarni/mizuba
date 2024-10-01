@@ -157,11 +157,15 @@ void conjunctions::morton_encode_sort_parallel(const polyjectory &pj, const boos
     const mut_mcodes_span_t srt_mcodes{srt_mcodes_base_ptr, n_cd_steps, nobjs};
 
     // Construct the indices file and fetch a span to it.
-    using mut_vidx_span_t = heyoka::mdspan<std::size_t, heyoka::dextents<std::size_t, 2>>;
-    detail::create_sized_file(tmp_dir_path / "vidx", safe_size_t(nobjs) * n_cd_steps * sizeof(std::size_t));
+    // NOTE: from now on, we use std::uint32_t to index into the objects, even though in principle
+    // a polyjectory could contain more than 2**32-1 objects. std::uint32_t gives us ample room to run large
+    // simulations if ever needed, while at the same time reducing memory utilisation wrt 64-bit indices
+    // (especially in the representation of bvh trees).
+    using mut_vidx_span_t = heyoka::mdspan<std::uint32_t, heyoka::dextents<std::size_t, 2>>;
+    detail::create_sized_file(tmp_dir_path / "vidx", safe_size_t(nobjs) * n_cd_steps * sizeof(std::uint32_t));
     boost::iostreams::mapped_file_sink file_vidx((tmp_dir_path / "vidx").string());
-    auto *vidx_base_ptr = reinterpret_cast<std::size_t *>(file_vidx.data());
-    assert(boost::alignment::is_aligned(vidx_base_ptr, alignof(std::size_t)));
+    auto *vidx_base_ptr = reinterpret_cast<std::uint32_t *>(file_vidx.data());
+    assert(boost::alignment::is_aligned(vidx_base_ptr, alignof(std::uint32_t)));
     const mut_vidx_span_t vidx{vidx_base_ptr, n_cd_steps, nobjs};
 
     // We will be using thread-specific data to store the results of intermediate
@@ -170,7 +174,7 @@ void conjunctions::morton_encode_sort_parallel(const polyjectory &pj, const boos
         // Morton codes.
         std::vector<std::uint64_t> mcodes;
         // Indices vector.
-        std::vector<std::size_t> vidx;
+        std::vector<std::uint32_t> vidx;
     };
     using ets_t = oneapi::tbb::enumerable_thread_specific<ets_data, oneapi::tbb::cache_aligned_allocator<ets_data>,
                                                           oneapi::tbb::ets_key_usage_type::ets_key_per_instance>;
@@ -180,7 +184,7 @@ void conjunctions::morton_encode_sort_parallel(const polyjectory &pj, const boos
         mcodes.resize(boost::numeric_cast<decltype(mcodes.size())>(nobjs));
 
         // Setup vidx.
-        std::vector<std::size_t> vidx;
+        std::vector<std::uint32_t> vidx;
         vidx.resize(boost::numeric_cast<decltype(vidx.size())>(nobjs));
 
         return ets_data{.mcodes = std::move(mcodes), .vidx = std::move(vidx)};
@@ -237,7 +241,7 @@ void conjunctions::morton_encode_sort_parallel(const polyjectory &pj, const boos
                             }
 
                             // Init local_vidx.
-                            local_vidx[obj_idx] = obj_idx;
+                            local_vidx[obj_idx] = boost::numeric_cast<std::uint32_t>(obj_idx);
                         }
                     });
 
