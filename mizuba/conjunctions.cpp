@@ -295,7 +295,7 @@ conjunctions::tree_span_t conjunctions::get_bvh_tree(std::size_t i) const
     const auto *tree_ptr = m_impl->m_bvh_trees_ptr + tree_offset;
 
     // Return the span.
-    return conjunctions::tree_span_t{tree_ptr, tree_size};
+    return tree_span_t{tree_ptr, tree_size};
 }
 
 } // namespace mizuba
