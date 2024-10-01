@@ -53,7 +53,7 @@ struct conjunctions::impl {
     // The total number of conjunction detection steps.
     std::size_t m_n_cd_steps = 0;
     // The whitelist.
-    boost::unordered_flat_set<std::size_t> m_whitelist;
+    boost::unordered_flat_set<std::uint32_t> m_whitelist;
     // End times of the conjunction steps.
     // NOTE: if needed, this one can also be turned into
     // a memory-mapped file.
@@ -93,7 +93,7 @@ struct conjunctions::impl {
     const bvh_node *m_bvh_trees_ptr = nullptr;
 
     explicit impl(boost::filesystem::path temp_dir_path, polyjectory pj, double conj_thresh, double conj_det_interval,
-                  std::size_t n_cd_steps, boost::unordered_flat_set<std::size_t> whitelist,
+                  std::size_t n_cd_steps, boost::unordered_flat_set<std::uint32_t> whitelist,
                   std::vector<double> cd_end_times, std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets)
         : m_temp_dir_path(std::move(temp_dir_path)), m_pj(std::move(pj)), m_conj_thresh(conj_thresh),
           m_conj_det_interval(conj_det_interval), m_n_cd_steps(n_cd_steps), m_whitelist(std::move(whitelist)),
@@ -163,7 +163,7 @@ struct conjunctions::impl {
 };
 
 conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj_det_interval,
-                           std::vector<std::size_t> whitelist)
+                           std::vector<std::uint32_t> whitelist)
 {
     // Check conj_thresh.
     if (!std::isfinite(conj_thresh) || conj_thresh <= 0) [[unlikely]] {
@@ -204,7 +204,7 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
         // Create the impl.
         m_impl
             = std::make_shared<const impl>(tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps,
-                                           boost::unordered_flat_set<std::size_t>(whitelist.begin(), whitelist.end()),
+                                           boost::unordered_flat_set<std::uint32_t>(whitelist.begin(), whitelist.end()),
                                            std::move(cd_end_times), std::move(tree_offsets));
 
         // LCOV_EXCL_START

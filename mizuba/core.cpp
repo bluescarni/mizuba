@@ -197,11 +197,11 @@ PYBIND11_MODULE(core, m)
     // Conjunctions.
     py::class_<mz::conjunctions> conj_cl(m, "conjunctions", py::dynamic_attr{});
     conj_cl.def(py::init([](mz::polyjectory pj, double conj_thresh, double conj_det_interval,
-                            std::vector<std::size_t> whitelist) {
+                            std::vector<std::uint32_t> whitelist) {
                     return mz::conjunctions(std::move(pj), conj_thresh, conj_det_interval, std::move(whitelist));
                 }),
                 "pj"_a.noconvert(), "conj_thresh"_a.noconvert(), "conj_det_interval"_a.noconvert(),
-                "whitelist"_a.noconvert() = std::vector<std::size_t>{});
+                "whitelist"_a.noconvert() = std::vector<std::uint32_t>{});
     conj_cl.def_property_readonly("aabbs", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
 
