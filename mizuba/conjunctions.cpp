@@ -94,11 +94,12 @@ struct conjunctions::impl {
 
     explicit impl(boost::filesystem::path temp_dir_path, polyjectory pj, double conj_thresh, double conj_det_interval,
                   std::size_t n_cd_steps, boost::unordered_flat_set<std::uint32_t> whitelist,
-                  std::vector<double> cd_end_times, std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets)
+                  std::vector<double> cd_end_times, std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets,
+                  std::vector<bool> conj_active)
         : m_temp_dir_path(std::move(temp_dir_path)), m_pj(std::move(pj)), m_conj_thresh(conj_thresh),
           m_conj_det_interval(conj_det_interval), m_n_cd_steps(n_cd_steps), m_whitelist(std::move(whitelist)),
           m_cd_end_times(std::move(cd_end_times)), m_tree_offsets(std::move(tree_offsets)),
-          m_file_aabbs((m_temp_dir_path / "aabbs").string()),
+          m_conj_active(std::move(conj_active)), m_file_aabbs((m_temp_dir_path / "aabbs").string()),
           m_file_srt_aabbs((m_temp_dir_path / "srt_aabbs").string()),
           m_file_mcodes((m_temp_dir_path / "mcodes").string()),
           m_file_srt_mcodes((m_temp_dir_path / "srt_mcodes").string()),
@@ -126,25 +127,6 @@ struct conjunctions::impl {
 
         m_bvh_trees_ptr = reinterpret_cast<const bvh_node *>(m_file_bvh_trees.data());
         assert(boost::alignment::is_aligned(m_bvh_trees_ptr, alignof(bvh_node)));
-
-        // Check the whitelist and setup m_conj_active.
-        const auto nobjs = m_pj.get_nobjs();
-        if (m_whitelist.empty()) {
-            m_conj_active.resize(boost::numeric_cast<decltype(m_conj_active.size())>(nobjs), true);
-        } else {
-            m_conj_active.resize(boost::numeric_cast<decltype(m_conj_active.size())>(nobjs), false);
-
-            for (const auto obj_idx : m_whitelist) {
-                if (obj_idx >= nobjs) [[unlikely]] {
-                    throw std::invalid_argument(
-                        fmt::format("Invalid whitelist detected: the whitelist contains the object index {}, but the "
-                                    "total number of objects is only {}",
-                                    obj_idx, nobjs));
-                }
-
-                m_conj_active[obj_idx] = true;
-            }
-        }
     }
 
     ~impl()
@@ -182,6 +164,31 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
     // Determine the number of conjunction detection steps.
     const auto n_cd_steps = boost::numeric_cast<std::size_t>(std::ceil(pj.get_maxT() / conj_det_interval));
 
+    // Build the set version of whitelist.
+    boost::unordered_flat_set<std::uint32_t> wl_set(whitelist.begin(), whitelist.end());
+
+    // Check the whitelist and setup the conj_active vector.
+    // This is a vector of flags establishing which objects are active
+    // for conjunction detection.
+    const auto nobjs = pj.get_nobjs();
+    std::vector<bool> conj_active;
+    if (wl_set.empty()) {
+        conj_active.resize(boost::numeric_cast<decltype(conj_active.size())>(nobjs), true);
+    } else {
+        conj_active.resize(boost::numeric_cast<decltype(conj_active.size())>(nobjs), false);
+
+        for (const auto obj_idx : wl_set) {
+            if (obj_idx >= nobjs) [[unlikely]] {
+                throw std::invalid_argument(
+                    fmt::format("Invalid whitelist detected: the whitelist contains the object index {}, but the "
+                                "total number of objects is only {}",
+                                obj_idx, nobjs));
+            }
+
+            conj_active[obj_idx] = true;
+        }
+    }
+
     // Assemble a "unique" dir path into the system temp dir. This will be the root dir
     // for all conjunctions data.
     const auto tmp_dir_path = detail::create_temp_dir("mizuba_conjunctions-%%%%-%%%%-%%%%-%%%%");
@@ -202,10 +209,9 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
         auto tree_offsets = construct_bvh_trees_parallel(pj, tmp_dir_path, n_cd_steps);
 
         // Create the impl.
-        m_impl
-            = std::make_shared<const impl>(tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps,
-                                           boost::unordered_flat_set<std::uint32_t>(whitelist.begin(), whitelist.end()),
-                                           std::move(cd_end_times), std::move(tree_offsets));
+        m_impl = std::make_shared<const impl>(tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps,
+                                              std::move(wl_set), std::move(cd_end_times), std::move(tree_offsets),
+                                              std::move(conj_active));
 
         // LCOV_EXCL_START
     } catch (...) {
