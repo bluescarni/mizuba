@@ -87,8 +87,8 @@ struct conjunctions::impl {
     const std::uint64_t *m_mcodes_base_ptr = nullptr;
     // Pointer to the beginning of m_file_srt_mcodes, cast to std::uint64_t.
     const std::uint64_t *m_srt_mcodes_base_ptr = nullptr;
-    // Pointer to the beginning of m_file_srt_idx, cast to std::size_t.
-    const std::size_t *m_srt_idx_base_ptr = nullptr;
+    // Pointer to the beginning of m_file_srt_idx, cast to std::uint32_t.
+    const std::uint32_t *m_srt_idx_base_ptr = nullptr;
     // Pointer to the beginning of m_file_bvh_trees, cast to bvh_node.
     const bvh_node *m_bvh_trees_ptr = nullptr;
 
@@ -121,8 +121,8 @@ struct conjunctions::impl {
         m_srt_mcodes_base_ptr = reinterpret_cast<const std::uint64_t *>(m_file_srt_mcodes.data());
         assert(boost::alignment::is_aligned(m_srt_mcodes_base_ptr, alignof(std::uint64_t)));
 
-        m_srt_idx_base_ptr = reinterpret_cast<const std::size_t *>(m_file_srt_idx.data());
-        assert(boost::alignment::is_aligned(m_srt_idx_base_ptr, alignof(std::size_t)));
+        m_srt_idx_base_ptr = reinterpret_cast<const std::uint32_t *>(m_file_srt_idx.data());
+        assert(boost::alignment::is_aligned(m_srt_idx_base_ptr, alignof(std::uint32_t)));
 
         m_bvh_trees_ptr = reinterpret_cast<const bvh_node *>(m_file_bvh_trees.data());
         assert(boost::alignment::is_aligned(m_bvh_trees_ptr, alignof(bvh_node)));

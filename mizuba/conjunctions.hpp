@@ -125,7 +125,7 @@ public:
     using mcodes_span_t = heyoka::mdspan<const std::uint64_t, heyoka::dextents<std::size_t, 2>>;
     [[nodiscard]] mcodes_span_t get_mcodes() const noexcept;
     [[nodiscard]] mcodes_span_t get_srt_mcodes() const noexcept;
-    using srt_idx_span_t = heyoka::mdspan<const std::size_t, heyoka::dextents<std::size_t, 2>>;
+    using srt_idx_span_t = heyoka::mdspan<const std::uint32_t, heyoka::dextents<std::size_t, 2>>;
     [[nodiscard]] srt_idx_span_t get_srt_idx() const noexcept;
     using tree_span_t = heyoka::mdspan<const bvh_node, heyoka::dextents<std::size_t, 1>>;
     [[nodiscard]] tree_span_t get_bvh_tree(std::size_t) const;

@@ -297,7 +297,7 @@ PYBIND11_MODULE(core, m)
         const auto srt_idx_span = p->get_srt_idx();
 
         // Turn into an array.
-        auto ret = py::array_t<std::size_t>(
+        auto ret = py::array_t<std::uint32_t>(
             py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(srt_idx_span.extent(0)),
                                       boost::numeric_cast<py::ssize_t>(srt_idx_span.extent(1))},
             srt_idx_span.data_handle(), self);
