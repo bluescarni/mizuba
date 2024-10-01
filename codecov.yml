@@ -1,1 +1,5 @@
+coverage:
+  ignore:
+  - "mizuba/detail/mortonND_LUT.h"
+
 comment: off

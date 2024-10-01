@@ -7,13 +7,10 @@
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 #include <stdexcept>
-#include <string>
 #include <vector>
 
 #include <boost/numeric/conversion/cast.hpp>
 #include <boost/safe_numerics/safe_integer.hpp>
-
-#include <fmt/core.h>
 
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
@@ -22,27 +19,6 @@
 
 namespace mizuba_py
 {
-
-void py_throw(PyObject *type, const char *msg)
-{
-    PyErr_SetString(type, msg);
-    throw py::error_already_set();
-}
-
-py::object builtins()
-{
-    return py::module_::import("builtins");
-}
-
-py::object type(const py::handle &o)
-{
-    return builtins().attr("type")(o);
-}
-
-std::string str(const py::handle &o)
-{
-    return py::cast<std::string>(py::str(o));
-}
 
 std::vector<double> sat_list_to_vector(py::list sat_list)
 {

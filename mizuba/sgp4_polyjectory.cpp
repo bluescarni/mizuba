@@ -98,9 +98,11 @@ auto sgp4_compute_initial_sat_states(
     for (std::size_t i = 0; i < out_span.extent(1); ++i) {
         // Check the sgp4 error code first.
         if (out_span(6, i) != 0.) [[unlikely]] {
+            // LCOV_EXCL_START
             throw std::invalid_argument(
                 fmt::format("The sgp4 propagation of the object at index {} at jd_begin generated the error code {}", i,
                             static_cast<int>(out_span(6, i))));
+            // LCOV_EXCL_STOP
         }
 
         // Check finiteness of the state.
@@ -114,16 +116,20 @@ auto sgp4_compute_initial_sat_states(
 
         if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || !std::isfinite(vx) || !std::isfinite(vy)
             || !std::isfinite(vz)) [[unlikely]] {
+            // LCOV_EXCL_START
             throw std::invalid_argument(fmt::format(
                 "The sgp4 propagation of the object at index {} at jd_begin generated a non-finite state vector", i));
+            // LCOV_EXCL_STOP
         }
 
         // Check the distance from the Earth.
         const auto dist = std::sqrt(x * x + y * y + z * z);
         if (!std::isfinite(dist) || dist >= exit_radius || dist <= reentry_radius) [[unlikely]] {
+            // LCOV_EXCL_START
             throw std::invalid_argument(fmt::format("The sgp4 propagation of the object at index {} at jd_begin "
                                                     "generated a position vector with invalid radius {}",
                                                     i, dist));
+            // LCOV_EXCL_STOP
         }
     }
 

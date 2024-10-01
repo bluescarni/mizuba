@@ -32,17 +32,21 @@ struct ival {
     // min/max implementations with nan propagation.
     static double min(double a, double b)
     {
+        // LCOV_EXCL_START
         if (std::isnan(a) || std::isnan(b)) [[unlikely]] {
             return std::numeric_limits<double>::quiet_NaN();
         }
+        // LCOV_EXCL_STOP
 
         return (a < b) ? a : b;
     }
     static double max(double a, double b)
     {
+        // LCOV_EXCL_START
         if (std::isnan(a) || std::isnan(b)) [[unlikely]] {
             return std::numeric_limits<double>::quiet_NaN();
         }
+        // LCOV_EXCL_STOP
 
         return (a > b) ? a : b;
     }
