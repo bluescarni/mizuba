@@ -344,6 +344,14 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
 
         // NOTE: isolate to avoid issues with thread-local data. See:
         // https://oneapi-src.github.io/oneTBB/main/tbb_userguide/work_isolation.html
+        //
+        // NOTE: strictly speaking, I do not think it is necessary at this time
+        // to use work isolation, because we are not employing any
+        // nested TBB parallelism in the isolation region. However, in principle,
+        // heyoka could at one point in the future start using TBB
+        // primitives during numerical integration. So, as an extra precaution and
+        // for future-proofing, let us keep the isolation (it also does not seem to have
+        // any adverse performance impact).
         oneapi::tbb::this_task_arena::isolate([&]() {
             // View on the state variables.
             const auto state_view = heyoka::mdspan<double, heyoka::dextents<std::size_t, 2>>{
