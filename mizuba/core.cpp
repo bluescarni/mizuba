@@ -23,6 +23,7 @@
 
 #include <fmt/core.h>
 
+#include <pybind11/functional.h>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -47,16 +48,36 @@ namespace
 //
 // Python does not guarantee that all objects are garbage-collected at
 // shutdown. This means that we may find ourselves in a situation where
-// the temporary memory-mapped files used internally by polyjectory
+// the temporary memory-mapped files used internally by a polyjectory
 // are not deleted when the program terminates.
 //
 // In order to avoid this, we adopt the following approach:
 //
-// - every time a polyjectory is constructed, we grab a weak pointer
+// - every time a new polyjectory is constructed, we grab a weak pointer
 //   to its implementation and store it in a global vector;
 // - we register a cleanup function that, at shutdown, goes through
-//   the list of weak pointers and, if they are still alive, manually
-//   closes the polyjectory, ensuring that the temporary files are removed.
+//   the unexpired weak pointers and manually closes the polyjectories,
+//   thus ensuring that the temporary files are removed.
+//
+// All newly-created polyjectories which end up exposed as a py::object
+// are affected by this issue. This means that the weak pointer registration
+// should be done every time a new polyjectory is created in C++ before it is
+// wrapped and returned as a py::object.
+//
+// For instance, both the polyjectory __init__() and the sgp4_polyjectory() factory need
+// to register a weak pointer for the new polyjectory they create. OTOH, the
+// 'polyjectory' property getter of a conjunctions object does not, because:
+//
+// - it is returning a reference to an existing polyjectory and not creating a new one, and
+// - the copy it returns originates from a polyjectory that was originally constructed
+//   on the Python side and then passed to the conjunctions' __init__(), which means a weak pointer
+//   to it had already been registered.
+//
+// This all sounds unfortunately complicated, let us hope it does not get too messy :/
+//
+// NOTE: we will have to re-examine this approach if/when we implement des11n, as that
+// results in a creation of a new Python-wrapped polyjectory without any weak pointer
+// registration. Probably we will need to enforce the registration at unpickling time?
 //
 // NOTE: this approach results in unbounded size for the vector of weak pointers.
 // If this ever becomes an issue, we can think about a more sophisticated implementation
@@ -283,11 +304,6 @@ PYBIND11_MODULE(core, m)
             return py::make_tuple(std::move(traj_ret), std::move(time_ret), status);
         },
         "i"_a.noconvert());
-    // NOTE: we add the cleanup function as a class attribute. This should ensure
-    // that the cleanup function is invoked after all polyjectory instances have been collected.
-    //
-    // https://pybind11.readthedocs.io/en/stable/advanced/misc.html#module-destructors
-    m.attr("polyjectory").attr("_cleanup") = py::capsule(mzpy::detail::cleanup_pj_weak_ptrs);
 
     // sgp4 polyjectory.
     m.def(
@@ -313,6 +329,9 @@ PYBIND11_MODULE(core, m)
 
                 return mz::sgp4_polyjectory(in, jd_begin, jd_end, exit_radius, reentry_radius);
             }();
+
+            // Register the polyjectory implementation in the cleanup machinery.
+            mzpy::detail::add_pj_weak_ptr(mz::detail::fetch_pj_impl(poly_ret));
 
             return py::make_tuple(std::move(poly_ret), std::move(mask));
         },
@@ -457,9 +476,11 @@ PYBIND11_MODULE(core, m)
 
         return ret;
     });
-    // NOTE: we add the cleanup function as a class attribute. This should ensure
-    // that the cleanup function is invoked after all conjunctions instances have been collected.
-    //
-    // https://pybind11.readthedocs.io/en/stable/advanced/misc.html#module-destructors
-    m.attr("conjunctions").attr("_cleanup") = py::capsule(mzpy::detail::cleanup_cj_weak_ptrs);
+
+    // Register the polyjectory/conjunctions cleanup machinery.
+    auto atexit = py::module_::import("atexit");
+    atexit.attr("register")(py::cpp_function([]() {
+        mzpy::detail::cleanup_pj_weak_ptrs();
+        mzpy::detail::cleanup_cj_weak_ptrs();
+    }));
 }
