@@ -78,8 +78,6 @@ auto consolidate_bp_data(const auto &tmp_dir_path, const auto &bp_coll_sizes)
 
     // Prepare the global file.
     const auto storage_path = tmp_dir_path / "bp";
-    // NOTE: there may be no bp data, in which case cur_offset is zero. But it is not allowed to
-    // memmap a zero-sized file, hence give it a minimum size of sizeof(aabb_collision).
     create_sized_file(storage_path, cur_offset);
 
     // Memory-map it.
@@ -135,6 +133,15 @@ auto consolidate_bp_data(const auto &tmp_dir_path, const auto &bp_coll_sizes)
 
 } // namespace detail
 
+// Broad-phase conjunction detection.
+//
+// The objective of this phase is to identify collisions (i.e., overlaps) in the aabbs of the
+// objects' trajectories.
+//
+// pj is the polyjectory, tmp_dir_path the temporary dir storing all conjunction data,
+// n_cd_steps the number of conjunction steps, tree_offsets the offsets/sizes to access the
+// bvh tree data, conj_active a vector of flags signalling which objects are active for
+// conjunction detection.
 std::vector<std::tuple<std::size_t, std::size_t>>
 conjunctions::broad_phase(const polyjectory &pj, const boost::filesystem::path &tmp_dir_path, std::size_t n_cd_steps,
                           const std::vector<std::tuple<std::size_t, std::size_t>> &tree_offsets,
@@ -188,6 +195,10 @@ conjunctions::broad_phase(const polyjectory &pj, const boost::filesystem::path &
 
                 // Create the vector for storing the list of aabbs collisions
                 // for the current conjunction step.
+                // NOTE: in principle here we could fetch bp_cv from thread-local
+                // storage, rather than creating it each time ex novo. However, the
+                // code would become more complex and I am not sure it is worth it
+                // performance wise. Something to keep in mind for the future.
                 std::vector<aabb_collision> bp_cv;
 
                 // Mutex for concurrently inserting data into bp_cv.
@@ -200,7 +211,8 @@ conjunctions::broad_phase(const polyjectory &pj, const boost::filesystem::path &
                 const auto nobjs = tree(0).end - tree(0).begin;
                 assert(nobjs <= tot_nobjs);
 
-                // Iterate over all objects with trajectory data for this conjunction step.
+                // For each object with trajectory data for this conjunction step,
+                // identify collisions between its aabb and the aabbs of the other objects.
                 oneapi::tbb::parallel_for(
                     oneapi::tbb::blocked_range<std::uint32_t>(0, nobjs),
                     [&ets, srt_idx, cd_idx, &conj_active, srt_aabbs, tree, &bp_cv,
