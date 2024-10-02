@@ -28,11 +28,24 @@
 namespace mizuba
 {
 
+// Fwd declaration.
+class polyjectory;
+
+namespace detail
+{
+
+struct polyjectory_impl;
+
+void close_pj(std::shared_ptr<polyjectory_impl> &) noexcept;
+[[nodiscard]] const std::shared_ptr<polyjectory_impl> &fetch_pj_impl(const polyjectory &) noexcept;
+
+} // namespace detail
+
 class polyjectory
 {
-    struct impl;
+    std::shared_ptr<detail::polyjectory_impl> m_impl;
 
-    std::shared_ptr<const impl> m_impl;
+    friend const std::shared_ptr<detail::polyjectory_impl> &detail::fetch_pj_impl(const polyjectory &) noexcept;
 
 public:
     // NOTE: the three dimensions here are, respectively:
