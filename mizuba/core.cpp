@@ -326,6 +326,22 @@ PYBIND11_MODULE(core, m)
 
         return ret;
     });
+    conj_cl.def("get_aabb_collisions", [](const py::object &self, std::size_t i) {
+        const auto *p = py::cast<const mz::conjunctions *>(self);
+
+        // Fetch the aabb collisions span.
+        const auto aabb_collision_span = p->get_aabb_collisions(i);
+
+        // Turn into an array.
+        auto ret = py::array_t<aabb_collision>(
+            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(aabb_collision_span.extent(0))},
+            aabb_collision_span.data_handle(), self);
+
+        // Ensure the returned array is read-only.
+        ret.attr("flags").attr("writeable") = false;
+
+        return ret;
+    });
     // Expose static getters for the structured types.
     conj_cl.def_property_readonly_static("bvh_node", [](const py::object &) { return py::dtype::of<bvh_node>(); });
     conj_cl.def_property_readonly_static("aabb_collision",
