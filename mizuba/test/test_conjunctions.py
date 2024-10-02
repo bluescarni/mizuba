@@ -468,7 +468,7 @@ class conjunctions_test_case(_ut.TestCase):
         with self.assertRaises(IndexError) as cm:
             conjs.get_bvh_tree(1)
         self.assertTrue(
-            "Invalid tree index 1 specified - the total number of trees is only 1"
+            "Cannot fetch the BVH tree for the conjunction timestep at index 1: the total number of conjunction steps is only 1"
             in str(cm.exception)
         )
 

@@ -10,6 +10,7 @@
 #define MIZUBA_CONJUNCTIONS_HPP
 
 #include <array>
+#include <compare>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -74,6 +75,9 @@ class conjunctions
     void morton_encode_sort_parallel(const polyjectory &, const boost::filesystem::path &, std::size_t) const;
     std::vector<std::tuple<std::size_t, std::size_t>>
     construct_bvh_trees_parallel(const polyjectory &, const boost::filesystem::path &, std::size_t) const;
+    std::vector<std::tuple<std::size_t, std::size_t>>
+    broad_phase(const polyjectory &, const boost::filesystem::path &, std::size_t,
+                const std::vector<std::tuple<std::size_t, std::size_t>> &, const std::vector<bool> &);
 
 public:
     // The BVH node struct.
@@ -84,6 +88,13 @@ public:
         std::int32_t parent, left, right;
         // AABB.
         std::array<float, 4> lb, ub;
+    };
+
+    // Struct to represent collisions between AABBs.
+    struct aabb_collision {
+        // Indices of the objects whose AABBs collide.
+        std::uint32_t i, j;
+        auto operator<=>(const aabb_collision &) const = default;
     };
 
     template <typename WRange = std::vector<std::uint32_t>>
@@ -129,6 +140,8 @@ public:
     [[nodiscard]] srt_idx_span_t get_srt_idx() const noexcept;
     using tree_span_t = heyoka::mdspan<const bvh_node, heyoka::dextents<std::size_t, 1>>;
     [[nodiscard]] tree_span_t get_bvh_tree(std::size_t) const;
+    using aabb_collision_span_t = heyoka::mdspan<const aabb_collision, heyoka::dextents<std::size_t, 1>>;
+    [[nodiscard]] aabb_collision_span_t get_aabb_collisions(std::size_t) const;
 };
 
 } // namespace mizuba

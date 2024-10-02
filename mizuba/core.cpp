@@ -193,6 +193,9 @@ PYBIND11_MODULE(core, m)
     // Register conjunctions::bvh_node as a structured NumPy datatype.
     using bvh_node = mz::conjunctions::bvh_node;
     PYBIND11_NUMPY_DTYPE(bvh_node, begin, end, parent, left, right, lb, ub);
+    // Same for conjunctions::aabb_collision.
+    using aabb_collision = mz::conjunctions::aabb_collision;
+    PYBIND11_NUMPY_DTYPE(aabb_collision, i, j);
 
     // Conjunctions.
     py::class_<mz::conjunctions> conj_cl(m, "conjunctions", py::dynamic_attr{});
@@ -323,4 +326,8 @@ PYBIND11_MODULE(core, m)
 
         return ret;
     });
+    // Expose static getters for the structured types.
+    conj_cl.def_property_readonly_static("bvh_node", [](const py::object &) { return py::dtype::of<bvh_node>(); });
+    conj_cl.def_property_readonly_static("aabb_collision",
+                                         [](const py::object &) { return py::dtype::of<aabb_collision>(); });
 }
