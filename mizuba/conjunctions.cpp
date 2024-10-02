@@ -188,10 +188,14 @@ struct conjunctions_impl {
     }
 };
 
+// LCOV_EXCL_START
+
 void close_cj(std::shared_ptr<conjunctions_impl> &cj) noexcept
 {
     cj->close();
 }
+
+// LCOV_EXCL_STOP
 
 const std::shared_ptr<conjunctions_impl> &fetch_cj_impl(const conjunctions &cj) noexcept
 {

@@ -113,7 +113,7 @@ void cleanup_pj_weak_ptrs()
     std::unordered_set<std::shared_ptr<mizuba::detail::polyjectory_impl>> ptr_set;
     for (const auto &wptr : pj_weak_ptr_vector) {
         if (auto sptr = wptr.lock()) {
-            assert(ptr_set.insert(sptr).second);
+            assert(ptr_set.insert(sptr).second); // LCOV_EXCL_LINE
         }
     }
     ptr_set.clear();
@@ -122,10 +122,12 @@ void cleanup_pj_weak_ptrs()
 
     for (auto &wptr : pj_weak_ptr_vector) {
         if (auto sptr = wptr.lock()) {
+            // LCOV_EXCL_START
 #if !defined(NDEBUG)
             std::cout << "Cleaning up a polyjectory still alive at shutdown" << std::endl;
 #endif
             mizuba::detail::close_pj(sptr);
+            // LCOV_EXCL_STOP
         }
     }
 }
@@ -151,7 +153,7 @@ void cleanup_cj_weak_ptrs()
     std::unordered_set<std::shared_ptr<mizuba::detail::conjunctions_impl>> ptr_set;
     for (const auto &wptr : cj_weak_ptr_vector) {
         if (auto sptr = wptr.lock()) {
-            assert(ptr_set.insert(sptr).second);
+            assert(ptr_set.insert(sptr).second); // LCOV_EXCL_LINE
         }
     }
     ptr_set.clear();
@@ -160,10 +162,12 @@ void cleanup_cj_weak_ptrs()
 
     for (auto &wptr : cj_weak_ptr_vector) {
         if (auto sptr = wptr.lock()) {
+            // LCOV_EXCL_START
 #if !defined(NDEBUG)
             std::cout << "Cleaning up a conjunctions object still alive at shutdown" << std::endl;
 #endif
             mizuba::detail::close_cj(sptr);
+            // LCOV_EXCL_STOP
         }
     }
 }

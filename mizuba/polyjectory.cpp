@@ -112,10 +112,14 @@ struct polyjectory_impl {
     }
 };
 
+// LCOV_EXCL_START
+
 void close_pj(std::shared_ptr<polyjectory_impl> &pj) noexcept
 {
     pj->close();
 }
+
+// LCOV_EXCL_STOP
 
 const std::shared_ptr<polyjectory_impl> &fetch_pj_impl(const polyjectory &pj) noexcept
 {
