@@ -9,9 +9,13 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <iostream>
+#include <memory>
+#include <mutex>
 #include <ranges>
 #include <span>
 #include <stdexcept>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -32,6 +36,120 @@
 #include "conjunctions.hpp"
 #include "polyjectory.hpp"
 #include "sgp4_polyjectory.hpp"
+
+namespace mizuba_py::detail
+{
+
+namespace
+{
+
+// TLDR: machinery to clean up polyjectories at Python shutdown.
+//
+// Python does not guarantee that all objects are garbage-collected at
+// shutdown. This means that we may find ourselves in a situation where
+// the temporary memory-mapped files used internally by polyjectory
+// are not deleted when the program terminates.
+//
+// In order to avoid this, we adopt the following approach:
+//
+// - every time a polyjectory is constructed, we grab a weak pointer
+//   to its implementation and store it in a global vector;
+// - we register a cleanup function that, at shutdown, goes through
+//   the list of weak pointers and, if they are still alive, manually
+//   closes the polyjectory, ensuring that the temporary files are removed.
+//
+// NOTE: this approach results in unbounded size for the vector of weak pointers.
+// If this ever becomes an issue, we can think about a more sophisticated implementation
+// (which for instance could periodically remove expired weak pointers from the
+// vector).
+
+// Vector of weak pointers plus mutex for safe multithreaded access.
+constinit std::vector<std::weak_ptr<mizuba::detail::polyjectory_impl>> pj_weak_ptr_vector;
+constinit std::mutex pj_weak_ptr_mutex;
+
+// Add a weak pointer to a polyjectory implementation to pj_weak_ptr_vector.
+void add_pj_weak_ptr(const std::shared_ptr<mizuba::detail::polyjectory_impl> &ptr)
+{
+    std::lock_guard lock(pj_weak_ptr_mutex);
+
+    pj_weak_ptr_vector.emplace_back(ptr);
+}
+
+// Cleanup polyjectory implementations that are still alive. This is meant to be run
+// at program shutdown.
+void cleanup_pj_weak_ptrs()
+{
+    std::lock_guard lock(pj_weak_ptr_mutex);
+
+#if !defined(NDEBUG)
+    std::cout << "Running the polyjectory cleanup function" << std::endl;
+
+    // NOTE: we want to make sure that all non-expired weak pointers
+    // are unique, because otherwise we will be closing the same polyjectory
+    // twice, which is not allowed. Uniqueness of the weak pointers should be
+    // guaranteed by the fact that all items added to pj_weak_ptr_vector are
+    // constructed ex-novo.
+    std::unordered_set<std::shared_ptr<mizuba::detail::polyjectory_impl>> ptr_set;
+    for (const auto &wptr : pj_weak_ptr_vector) {
+        if (auto sptr = wptr.lock()) {
+            assert(ptr_set.insert(sptr).second);
+        }
+    }
+    ptr_set.clear();
+
+#endif
+
+    for (auto &wptr : pj_weak_ptr_vector) {
+        if (auto sptr = wptr.lock()) {
+#if !defined(NDEBUG)
+            std::cout << "Cleaning up a polyjectory still alive at shutdown" << std::endl;
+#endif
+            mizuba::detail::close_pj(sptr);
+        }
+    }
+}
+
+// NOTE: same exact scheme for the conjunctions class.
+constinit std::vector<std::weak_ptr<mizuba::detail::conjunctions_impl>> cj_weak_ptr_vector;
+constinit std::mutex cj_weak_ptr_mutex;
+
+void add_cj_weak_ptr(const std::shared_ptr<mizuba::detail::conjunctions_impl> &ptr)
+{
+    std::lock_guard lock(cj_weak_ptr_mutex);
+
+    cj_weak_ptr_vector.emplace_back(ptr);
+}
+
+void cleanup_cj_weak_ptrs()
+{
+    std::lock_guard lock(cj_weak_ptr_mutex);
+
+#if !defined(NDEBUG)
+    std::cout << "Running the conjunctions cleanup function" << std::endl;
+
+    std::unordered_set<std::shared_ptr<mizuba::detail::conjunctions_impl>> ptr_set;
+    for (const auto &wptr : cj_weak_ptr_vector) {
+        if (auto sptr = wptr.lock()) {
+            assert(ptr_set.insert(sptr).second);
+        }
+    }
+    ptr_set.clear();
+
+#endif
+
+    for (auto &wptr : cj_weak_ptr_vector) {
+        if (auto sptr = wptr.lock()) {
+#if !defined(NDEBUG)
+            std::cout << "Cleaning up a conjunctions object still alive at shutdown" << std::endl;
+#endif
+            mizuba::detail::close_cj(sptr);
+        }
+    }
+}
+
+} // namespace
+
+} // namespace mizuba_py::detail
 
 PYBIND11_MODULE(core, m)
 {
@@ -122,8 +240,14 @@ PYBIND11_MODULE(core, m)
                 times.push_back(o.cast<py::array_t<double>>());
             }
 
-            return mz::polyjectory(trajs | std::views::transform(traj_trans), times | std::views::transform(time_trans),
-                                   std::ranges::subrange(status_ptr, status_ptr + status.shape(0)));
+            auto ret
+                = mz::polyjectory(trajs | std::views::transform(traj_trans), times | std::views::transform(time_trans),
+                                  std::ranges::subrange(status_ptr, status_ptr + status.shape(0)));
+
+            // Register the polyjectory implementation in the cleanup machinery.
+            mzpy::detail::add_pj_weak_ptr(mz::detail::fetch_pj_impl(ret));
+
+            return ret;
         }),
         "trajs"_a.noconvert(), "times"_a.noconvert(), "status"_a.noconvert());
     pt_cl.def_property_readonly("nobjs", &mz::polyjectory::get_nobjs);
@@ -159,6 +283,11 @@ PYBIND11_MODULE(core, m)
             return py::make_tuple(std::move(traj_ret), std::move(time_ret), status);
         },
         "i"_a.noconvert());
+    // NOTE: we add the cleanup function as a class attribute. This should ensure
+    // that the cleanup function is invoked after all polyjectory instances have been collected.
+    //
+    // https://pybind11.readthedocs.io/en/stable/advanced/misc.html#module-destructors
+    m.attr("polyjectory").attr("_cleanup") = py::capsule(mzpy::detail::cleanup_pj_weak_ptrs);
 
     // sgp4 polyjectory.
     m.def(
@@ -198,7 +327,12 @@ PYBIND11_MODULE(core, m)
     py::class_<mz::conjunctions> conj_cl(m, "conjunctions", py::dynamic_attr{});
     conj_cl.def(py::init([](mz::polyjectory pj, double conj_thresh, double conj_det_interval,
                             std::vector<std::uint32_t> whitelist) {
-                    return mz::conjunctions(std::move(pj), conj_thresh, conj_det_interval, std::move(whitelist));
+                    auto ret = mz::conjunctions(std::move(pj), conj_thresh, conj_det_interval, std::move(whitelist));
+
+                    // Register the conjunctions implementation in the cleanup machinery.
+                    mzpy::detail::add_cj_weak_ptr(mz::detail::fetch_cj_impl(ret));
+
+                    return ret;
                 }),
                 "pj"_a.noconvert(), "conj_thresh"_a.noconvert(), "conj_det_interval"_a.noconvert(),
                 "whitelist"_a.noconvert() = std::vector<std::uint32_t>{});
@@ -323,4 +457,9 @@ PYBIND11_MODULE(core, m)
 
         return ret;
     });
+    // NOTE: we add the cleanup function as a class attribute. This should ensure
+    // that the cleanup function is invoked after all conjunctions instances have been collected.
+    //
+    // https://pybind11.readthedocs.io/en/stable/advanced/misc.html#module-destructors
+    m.attr("conjunctions").attr("_cleanup") = py::capsule(mzpy::detail::cleanup_cj_weak_ptrs);
 }

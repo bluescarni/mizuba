@@ -42,7 +42,10 @@
 namespace mizuba
 {
 
-struct polyjectory::impl {
+namespace detail
+{
+
+struct polyjectory_impl {
     // This is a vector that will contain:
     // - the offset (in number of double-precision values) in the mmap buffer
     //   at which the trajectory data for an object begins,
@@ -66,9 +69,9 @@ struct polyjectory::impl {
     // Pointer to the beginning of m_file, cast to double.
     const double *m_base_ptr = nullptr;
 
-    explicit impl(boost::filesystem::path file_path, traj_offset_vec_t traj_offset_vec,
-                  std::vector<std::size_t> time_offset_vec, std::uint32_t poly_op1, double maxT,
-                  std::vector<std::int32_t> status)
+    explicit polyjectory_impl(boost::filesystem::path file_path, traj_offset_vec_t traj_offset_vec,
+                              std::vector<std::size_t> time_offset_vec, std::uint32_t poly_op1, double maxT,
+                              std::vector<std::int32_t> status)
         : m_file_path(std::move(file_path)), m_traj_offset_vec(std::move(traj_offset_vec)),
           m_time_offset_vec(std::move(time_offset_vec)), m_poly_op1(poly_op1), m_maxT(maxT),
           m_status(std::move(status)), m_file(m_file_path.string())
@@ -79,19 +82,47 @@ struct polyjectory::impl {
         assert(boost::alignment::is_aligned(m_base_ptr, alignof(double)));
     }
 
-    impl(impl &&) noexcept = delete;
-    impl(const impl &) = delete;
-    impl &operator=(const impl &) = delete;
-    impl &operator=(impl &&) noexcept = delete;
-    ~impl()
+    [[nodiscard]] bool is_open() noexcept
     {
+        return m_file.is_open();
+    }
+
+    void close() noexcept
+    {
+        // NOTE: a polyjectory is not supposed to be closed
+        // more than once.
+        assert(is_open());
+
         // Close the memory mapped file.
         m_file.close();
 
         // Remove the temp dir and everything within.
         boost::filesystem::remove_all(m_file_path.parent_path());
     }
+
+    polyjectory_impl(polyjectory_impl &&) noexcept = delete;
+    polyjectory_impl(const polyjectory_impl &) = delete;
+    polyjectory_impl &operator=(const polyjectory_impl &) = delete;
+    polyjectory_impl &operator=(polyjectory_impl &&) noexcept = delete;
+    ~polyjectory_impl()
+    {
+        if (is_open()) {
+            close();
+        }
+    }
 };
+
+void close_pj(std::shared_ptr<polyjectory_impl> &pj) noexcept
+{
+    pj->close();
+}
+
+const std::shared_ptr<polyjectory_impl> &fetch_pj_impl(const polyjectory &pj) noexcept
+{
+    return pj.m_impl;
+}
+
+} // namespace detail
 
 polyjectory::polyjectory(ptag,
                          std::tuple<std::vector<traj_span_t>, std::vector<time_span_t>, std::vector<std::int32_t>> tup)
@@ -136,7 +167,7 @@ polyjectory::polyjectory(ptag,
         // - the duration of the longest trajectory.
 
         // Init the trajectories offset vector.
-        impl::traj_offset_vec_t traj_offset_vec;
+        detail::polyjectory_impl::traj_offset_vec_t traj_offset_vec;
         traj_offset_vec.reserve(n_objs);
 
         // Keep track of the current offset into the file.
@@ -317,8 +348,9 @@ polyjectory::polyjectory(ptag,
         // If an exception is thrown (e.g., from memory allocation or from the impl ctor throwing), the impl has not
         // been fully constructed and thus its dtor will not be invoked, and the cleanup of tmp_dir_path will be
         // performed in the catch block below.
-        m_impl = std::make_shared<const impl>(std::move(storage_path), std::move(traj_offset_vec),
-                                              std::move(time_offset_vec), poly_op1, maxT, std::move(status));
+        m_impl
+            = std::make_shared<detail::polyjectory_impl>(std::move(storage_path), std::move(traj_offset_vec),
+                                                         std::move(time_offset_vec), poly_op1, maxT, std::move(status));
 
         // LCOV_EXCL_START
     } catch (...) {
