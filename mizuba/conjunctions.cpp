@@ -40,7 +40,13 @@
 namespace mizuba
 {
 
-struct conjunctions::impl {
+namespace detail
+{
+
+struct conjunctions_impl {
+    using bvh_node = conjunctions::bvh_node;
+    using aabb_collision = conjunctions::aabb_collision;
+
     // The path to the temp dir containing all the
     // conjunctions data.
     boost::filesystem::path m_temp_dir_path;
@@ -103,10 +109,12 @@ struct conjunctions::impl {
     // Pointer to the beginning of m_file_bp, cast to aabb_collision.
     const aabb_collision *m_bp_ptr = nullptr;
 
-    explicit impl(boost::filesystem::path temp_dir_path, polyjectory pj, double conj_thresh, double conj_det_interval,
-                  std::size_t n_cd_steps, boost::unordered_flat_set<std::uint32_t> whitelist,
-                  std::vector<double> cd_end_times, std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets,
-                  std::vector<std::tuple<std::size_t, std::size_t>> bp_offsets, std::vector<bool> conj_active)
+    explicit conjunctions_impl(boost::filesystem::path temp_dir_path, polyjectory pj, double conj_thresh,
+                               double conj_det_interval, std::size_t n_cd_steps,
+                               boost::unordered_flat_set<std::uint32_t> whitelist, std::vector<double> cd_end_times,
+                               std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets,
+                               std::vector<std::tuple<std::size_t, std::size_t>> bp_offsets,
+                               std::vector<bool> conj_active)
         : m_temp_dir_path(std::move(temp_dir_path)), m_pj(std::move(pj)), m_conj_thresh(conj_thresh),
           m_conj_det_interval(conj_det_interval), m_n_cd_steps(n_cd_steps), m_whitelist(std::move(whitelist)),
           m_cd_end_times(std::move(cd_end_times)), m_tree_offsets(std::move(tree_offsets)),
@@ -146,8 +154,17 @@ struct conjunctions::impl {
         assert(boost::alignment::is_aligned(m_bp_ptr, alignof(aabb_collision)));
     }
 
-    ~impl()
+    [[nodiscard]] bool is_open() noexcept
     {
+        return m_file_aabbs.is_open();
+    }
+
+    void close() noexcept
+    {
+        // NOTE: a conjunctions object is not supposed to be closed
+        // more than once.
+        assert(is_open());
+
         // Close all memory-mapped files.
         m_file_aabbs.close();
         m_file_srt_aabbs.close();
@@ -160,7 +177,34 @@ struct conjunctions::impl {
         // Remove the temp dir and everything within.
         boost::filesystem::remove_all(m_temp_dir_path);
     }
+
+    conjunctions_impl(conjunctions_impl &&) noexcept = delete;
+    conjunctions_impl(const conjunctions_impl &) = delete;
+    conjunctions_impl &operator=(const conjunctions_impl &) = delete;
+    conjunctions_impl &operator=(conjunctions_impl &&) noexcept = delete;
+    ~conjunctions_impl()
+    {
+        if (is_open()) {
+            close();
+        }
+    }
 };
+
+// LCOV_EXCL_START
+
+void close_cj(std::shared_ptr<conjunctions_impl> &cj) noexcept
+{
+    cj->close();
+}
+
+// LCOV_EXCL_STOP
+
+const std::shared_ptr<conjunctions_impl> &fetch_cj_impl(const conjunctions &cj) noexcept
+{
+    return cj.m_impl;
+}
+
+} // namespace detail
 
 conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj_det_interval,
                            std::vector<std::uint32_t> whitelist)
@@ -230,9 +274,9 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
         auto bp_offsets = broad_phase(pj, tmp_dir_path, n_cd_steps, tree_offsets, conj_active);
 
         // Create the impl.
-        m_impl = std::make_shared<const impl>(tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps,
-                                              std::move(wl_set), std::move(cd_end_times), std::move(tree_offsets),
-                                              std::move(bp_offsets), std::move(conj_active));
+        m_impl = std::make_shared<detail::conjunctions_impl>(
+            tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps, std::move(wl_set),
+            std::move(cd_end_times), std::move(tree_offsets), std::move(bp_offsets), std::move(conj_active));
 
         // LCOV_EXCL_START
     } catch (...) {

@@ -33,11 +33,24 @@
 namespace mizuba
 {
 
+// Fwd declaration.
+class conjunctions;
+
+namespace detail
+{
+
+struct conjunctions_impl;
+
+void close_cj(std::shared_ptr<conjunctions_impl> &) noexcept;
+[[nodiscard]] const std::shared_ptr<conjunctions_impl> &fetch_cj_impl(const conjunctions &) noexcept;
+
+} // namespace detail
+
 class conjunctions
 {
-    struct impl;
+    std::shared_ptr<detail::conjunctions_impl> m_impl;
 
-    std::shared_ptr<const impl> m_impl;
+    friend const std::shared_ptr<detail::conjunctions_impl> &detail::fetch_cj_impl(const conjunctions &) noexcept;
 
     // Private ctor.
     struct ptag {
