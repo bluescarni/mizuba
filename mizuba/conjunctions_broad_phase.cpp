@@ -252,7 +252,9 @@ conjunctions::broad_phase(const polyjectory &pj, const boost::filesystem::path &
                                 const auto &n_ub = cur_node.ub;
 
                                 // Check for overlap with the AABB of the current object.
-                                // TODO add explanation on the use of <= and >=.
+                                // NOTE: as explained during the computation of the AABBs, the
+                                // AABBs we produce via interval arithmetic consist of
+                                // closed intervals, and thus we compare with <= and >=.
                                 const bool overlap
                                     = (x_ub >= n_lb[0] && x_lb <= n_ub[0]) && (y_ub >= n_lb[1] && y_lb <= n_ub[1])
                                       && (z_ub >= n_lb[2] && z_lb <= n_ub[2]) && (r_ub >= n_lb[3] && r_lb <= n_ub[3]);

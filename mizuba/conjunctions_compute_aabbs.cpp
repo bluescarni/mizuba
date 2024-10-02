@@ -185,6 +185,12 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
         // with the conjunction radius? Note also that cfunc requires
         // input data stored in contiguous order, thus we would need
         // a 7-arguments cfunc which ignores arguments 3,4,5.
+        // NOTE: by using interval arithmetic here, we are producing intervals
+        // in the form [a, b] (i.e., closed intervals), even if originally
+        // the time intervals of the trajectory steps are meant to be half-open [a, b).
+        // This is fine, as the end result is a slight enlargement of the aabb,
+        // which is not problematic as the resulting aabb is still guaranteed
+        // to contain the position of the object.
         auto horner_eval = [order, h_int = ival(h_int_lb, h_int_ub)](const double *ptr) {
             auto acc = ival(ptr[order]);
             for (std::uint32_t o = 1; o <= order; ++o) {
