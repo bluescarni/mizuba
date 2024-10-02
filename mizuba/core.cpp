@@ -69,7 +69,7 @@ namespace
 // 'polyjectory' property getter of a conjunctions object does not, because:
 //
 // - it is returning a reference to an existing polyjectory and not creating a new one, and
-// - the copy it returns originates from a polyjectory that was originally constructed
+// - the reference it returns originates from a polyjectory that was originally constructed
 //   on the Python side and then passed to the conjunctions' __init__(), which means a weak pointer
 //   to it had already been registered.
 //
