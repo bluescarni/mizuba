@@ -280,6 +280,7 @@ class conjunctions_test_case(_ut.TestCase):
 
         # Build the polyjectory.
         pt, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 0.25)
+        tot_nobjs = pt.nobjs
 
         # Build the conjunctions object. Keep a small threshold not to interfere
         # with aabb checking.
@@ -342,6 +343,12 @@ class conjunctions_test_case(_ut.TestCase):
         self.assertFalse(np.all(np.isfinite(last_aabbs)))
         inf_idx = np.isinf(last_aabbs).nonzero()[0]
         self.assertTrue(np.all(c.mcodes[inf_idx, -1] == ((1 << 64) - 1)))
+
+        # Similarly, the number of objects reported in the root
+        # node of the bvh trees must be tot_nobjs - 1.
+        for idx in inf_idx:
+            t = c.get_bvh_tree(idx)
+            self.assertEqual(t[0]["end"] - t[0]["begin"], tot_nobjs - 1)
 
     def test_zero_aabbs(self):
         # Test to check behaviour with aabbs of zero size.
@@ -482,6 +489,11 @@ class conjunctions_test_case(_ut.TestCase):
         conjs = conjunctions(pj, 1e-16, 1.0)
         t = conjs.get_bvh_tree(0)
         self.assertEqual(len(t), 1)
+        self.assertEqual(t[0]["begin"], 0)
+        self.assertEqual(t[0]["end"], 2)
+        self.assertEqual(t[0]["parent"], -1)
+        self.assertEqual(t[0]["left"], -1)
+        self.assertEqual(t[0]["right"], -1)
 
         # Polyjectory in which the morton codes
         # of two objects differ at the last bit.
