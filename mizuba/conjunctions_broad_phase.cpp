@@ -301,6 +301,10 @@ conjunctions::broad_phase(const polyjectory &pj, const boost::filesystem::path &
     ](const auto &cd_range) {
         // Create the vector for storing the list of aabbs collisions
         // for the conjunction steps in cd_range.
+        // NOTE: in principle here we could fetch bp_cv from thread-local
+        // storage, rather than creating it each time ex novo. However, the
+        // code would become more complex and I am not sure it is worth it
+        // performance wise. Something to keep in mind for the future.
         std::vector<aabb_collision> bp_cv;
 
         // Mutex for concurrently inserting data into bp_cv while iterating
