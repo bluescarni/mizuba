@@ -58,8 +58,6 @@ struct conjunctions_impl {
     double m_conj_det_interval = 0;
     // The total number of conjunction detection steps.
     std::size_t m_n_cd_steps = 0;
-    // The whitelist.
-    boost::unordered_flat_set<std::uint32_t> m_whitelist;
     // End times of the conjunction steps.
     // NOTE: if needed, this one can also be turned into
     // a memory-mapped file.
@@ -110,16 +108,14 @@ struct conjunctions_impl {
     const aabb_collision *m_bp_ptr = nullptr;
 
     explicit conjunctions_impl(boost::filesystem::path temp_dir_path, polyjectory pj, double conj_thresh,
-                               double conj_det_interval, std::size_t n_cd_steps,
-                               boost::unordered_flat_set<std::uint32_t> whitelist, std::vector<double> cd_end_times,
+                               double conj_det_interval, std::size_t n_cd_steps, std::vector<double> cd_end_times,
                                std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets,
                                std::vector<std::tuple<std::size_t, std::size_t>> bp_offsets,
                                std::vector<bool> conj_active)
         : m_temp_dir_path(std::move(temp_dir_path)), m_pj(std::move(pj)), m_conj_thresh(conj_thresh),
-          m_conj_det_interval(conj_det_interval), m_n_cd_steps(n_cd_steps), m_whitelist(std::move(whitelist)),
-          m_cd_end_times(std::move(cd_end_times)), m_tree_offsets(std::move(tree_offsets)),
-          m_bp_offsets(std::move(bp_offsets)), m_conj_active(std::move(conj_active)),
-          m_file_aabbs((m_temp_dir_path / "aabbs").string()),
+          m_conj_det_interval(conj_det_interval), m_n_cd_steps(n_cd_steps), m_cd_end_times(std::move(cd_end_times)),
+          m_tree_offsets(std::move(tree_offsets)), m_bp_offsets(std::move(bp_offsets)),
+          m_conj_active(std::move(conj_active)), m_file_aabbs((m_temp_dir_path / "aabbs").string()),
           m_file_srt_aabbs((m_temp_dir_path / "srt_aabbs").string()),
           m_file_mcodes((m_temp_dir_path / "mcodes").string()),
           m_file_srt_mcodes((m_temp_dir_path / "srt_mcodes").string()),
@@ -277,8 +273,8 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
 
         // Create the impl.
         m_impl = std::make_shared<detail::conjunctions_impl>(
-            tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps, std::move(wl_set),
-            std::move(cd_end_times), std::move(tree_offsets), std::move(bp_offsets), std::move(conj_active));
+            tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps, std::move(cd_end_times),
+            std::move(tree_offsets), std::move(bp_offsets), std::move(conj_active));
 
         // LCOV_EXCL_START
     } catch (...) {
