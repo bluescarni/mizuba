@@ -33,7 +33,6 @@
 #include <oneapi/tbb/enumerable_thread_specific.h>
 #include <oneapi/tbb/parallel_for.h>
 #include <oneapi/tbb/parallel_sort.h>
-#include <oneapi/tbb/task_arena.h>
 
 #include "conjunctions.hpp"
 #include "detail/file_utils.hpp"
