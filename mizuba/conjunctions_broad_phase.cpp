@@ -137,10 +137,12 @@ auto consolidate_bp_data(const auto &tmp_dir_path, const auto &bp_coll_sizes)
 // n**2 algorithm.
 void verify_broad_phase(auto cd_idx, auto nobjs, const auto &bp_cv, auto aabbs, const auto &conj_active)
 {
+    // LCOV_EXCL_START
     // Don't run the check if there's too many objects.
     if (nobjs > 10000u) {
         return;
     }
+    // LCOV_EXCL_STOP
 
     // Build a set version of the collision list
     // for fast lookup.

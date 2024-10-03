@@ -127,6 +127,8 @@ struct conjunctions_impl {
           m_file_bp((m_temp_dir_path / "bp").string())
     {
         // Sanity checks.
+        assert(n_cd_steps > 0u);
+        assert(m_cd_end_times.size() == n_cd_steps);
         assert(m_cd_end_times.size() == m_tree_offsets.size());
         assert(m_cd_end_times.size() == m_bp_offsets.size());
 

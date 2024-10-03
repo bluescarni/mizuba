@@ -118,6 +118,7 @@ class conjunctions_test_case(_ut.TestCase):
         import sys
         from .. import conjunctions as conj, polyjectory
         from ._planar_circ import _planar_circ_tcs, _planar_circ_times
+        import numpy as np
 
         # Test error handling on construction.
         pj = polyjectory([_planar_circ_tcs], [_planar_circ_times], [0])
@@ -152,6 +153,10 @@ class conjunctions_test_case(_ut.TestCase):
 
         # Test accessors.
         c = conj(pj, conj_thresh=1.0, conj_det_interval=0.1)
+
+        self.assertEqual(c.n_cd_steps, len(c.cd_end_times))
+        self.assertTrue(isinstance(c.bvh_node, np.dtype))
+        self.assertTrue(isinstance(c.aabb_collision, np.dtype))
 
         # aabbs.
         rc = sys.getrefcount(c)
@@ -587,4 +592,15 @@ class conjunctions_test_case(_ut.TestCase):
 
         # Build the conjunctions object. This will trigger
         # the internal C++ sanity checks in debug mode.
-        c = conj(pt, conj_thresh=5.0, conj_det_interval=1.0)
+        c = conj(pt, conj_thresh=10.0, conj_det_interval=1.0)
+
+        self.assertTrue(
+            all(len(c.get_aabb_collisions(_)) > 0 for _ in range(c.n_cd_steps))
+        )
+
+        with self.assertRaises(IndexError) as cm:
+            c.get_aabb_collisions(c.n_cd_steps)
+        self.assertTrue(
+            f"Cannot fetch the list of AABB collisions for the conjunction timestep at index {c.n_cd_steps}: the total number of conjunction steps is only {c.n_cd_steps}"
+            in str(cm.exception)
+        )
