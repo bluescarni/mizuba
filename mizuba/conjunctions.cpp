@@ -389,6 +389,11 @@ conjunctions::aabb_collision_span_t conjunctions::get_aabb_collisions(std::size_
     return aabb_collision_span_t{bp_ptr, bp_size};
 }
 
+std::size_t conjunctions::get_n_cd_steps() const noexcept
+{
+    return m_impl->m_n_cd_steps;
+}
+
 } // namespace mizuba
 
 #if defined(__GNUC__)

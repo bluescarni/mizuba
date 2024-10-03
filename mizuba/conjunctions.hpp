@@ -132,6 +132,8 @@ public:
     conjunctions &operator=(conjunctions &&) noexcept;
     ~conjunctions();
 
+    [[nodiscard]] std::size_t get_n_cd_steps() const noexcept;
+
     // NOTE: the four dimensions here are, respectively:
     // - the total number of conjunction steps,
     // - the total number of objects + 1 (the +1 is for the global

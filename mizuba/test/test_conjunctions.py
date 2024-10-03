@@ -567,3 +567,24 @@ class conjunctions_test_case(_ut.TestCase):
         t = conjs.get_bvh_tree(0)
         self.assertEqual(conjs.srt_idx[0, -1], 7)
         self.assertEqual(conjs.srt_idx[0, -2], 8)
+
+    def test_broad_phase(self):
+        # A test to trigger the internal debug
+        # checks implemented in C++.
+
+        # We rely on sgp4 data for this test.
+        if not hasattr(type(self), "sparse_sat_list"):
+            return
+
+        from .. import sgp4_polyjectory, conjunctions as conj
+
+        sat_list = self.half_sat_list
+
+        begin_jd = 2460496.5
+
+        # Build the polyjectory. Run it for only 15 minutes.
+        pt, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 15.0 / 1440.0)
+
+        # Build the conjunctions object. This will trigger
+        # the internal C++ sanity checks in debug mode.
+        c = conj(pt, conj_thresh=5.0, conj_det_interval=1.0)

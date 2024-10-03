@@ -362,6 +362,7 @@ PYBIND11_MODULE(core, m)
                 }),
                 "pj"_a.noconvert(), "conj_thresh"_a.noconvert(), "conj_det_interval"_a.noconvert(),
                 "whitelist"_a.noconvert() = std::vector<std::uint32_t>{});
+    conj_cl.def_property_readonly("n_cd_steps", &mz::conjunctions::get_n_cd_steps);
     conj_cl.def_property_readonly("aabbs", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
 
