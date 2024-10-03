@@ -10,6 +10,39 @@ import unittest as _ut
 
 
 class conjunctions_test_case(_ut.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        try:
+            from skyfield.api import load
+            from skyfield.iokit import parse_tle_file
+        except ImportError:
+            return
+
+        from ._sgp4_test_data_202407 import sgp4_test_tle
+
+        # Load the test TLEs.
+        ts = load.timescale()
+        sat_list = list(
+            parse_tle_file(
+                (bytes(_, "ascii") for _ in sgp4_test_tle.split("\n")),
+                ts,
+            )
+        )
+
+        # A sparse list of satellites.
+        # NOTE: we manually include an object for which the
+        # trajectory data terminates early.
+        cls.sparse_sat_list = sat_list[::2000] + [sat_list[220]]
+
+        # List of 9000 satellites.
+        cls.half_sat_list = sat_list[:9000]
+
+    @classmethod
+    def tearDownClass(cls):
+        if hasattr(cls, "sparse_sat_list"):
+            del cls.sparse_sat_list
+            del cls.half_sat_list
+
     # Helper to verify that the aabbs are consistent
     # with the positions of the objects computed via
     # polynomial evaluation.
@@ -252,29 +285,14 @@ class conjunctions_test_case(_ut.TestCase):
         self.assertEqual(len(c.cd_end_times), 1)
         self.assertEqual(c.cd_end_times[0], pj[0][1][-1])
 
-        # Test with sgp4 propagations, if possible.
-        try:
-            from skyfield.api import load
-            from skyfield.iokit import parse_tle_file
-        except ImportError:
+        # Run the sgp4 tests, if possible.
+        if not hasattr(type(self), "sparse_sat_list"):
             return
 
         from .. import sgp4_polyjectory
-        from ._sgp4_test_data_202407 import sgp4_test_tle
 
-        # Load the test TLEs.
-        ts = load.timescale()
-        sat_list = list(
-            parse_tle_file(
-                (bytes(_, "ascii") for _ in sgp4_test_tle.split("\n")),
-                ts,
-            )
-        )
-
-        # Use only some of the satellites.
-        # NOTE: we manually include an object for which the
-        # trajectory data terminates early.
-        sat_list = sat_list[::2000] + [sat_list[220]]
+        # Use the sparse satellite list.
+        sat_list = self.sparse_sat_list
 
         begin_jd = 2460496.5
 
