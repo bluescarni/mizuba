@@ -10,6 +10,39 @@ import unittest as _ut
 
 
 class conjunctions_test_case(_ut.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        try:
+            from skyfield.api import load
+            from skyfield.iokit import parse_tle_file
+        except ImportError:
+            return
+
+        from ._sgp4_test_data_202407 import sgp4_test_tle
+
+        # Load the test TLEs.
+        ts = load.timescale()
+        sat_list = list(
+            parse_tle_file(
+                (bytes(_, "ascii") for _ in sgp4_test_tle.split("\n")),
+                ts,
+            )
+        )
+
+        # A sparse list of satellites.
+        # NOTE: we manually include an object for which the
+        # trajectory data terminates early.
+        cls.sparse_sat_list = sat_list[::2000] + [sat_list[220]]
+
+        # List of 9000 satellites.
+        cls.half_sat_list = sat_list[:9000]
+
+    @classmethod
+    def tearDownClass(cls):
+        if hasattr(cls, "sparse_sat_list"):
+            del cls.sparse_sat_list
+            del cls.half_sat_list
+
     # Helper to verify that the aabbs are consistent
     # with the positions of the objects computed via
     # polynomial evaluation.
@@ -85,6 +118,7 @@ class conjunctions_test_case(_ut.TestCase):
         import sys
         from .. import conjunctions as conj, polyjectory
         from ._planar_circ import _planar_circ_tcs, _planar_circ_times
+        import numpy as np
 
         # Test error handling on construction.
         pj = polyjectory([_planar_circ_tcs], [_planar_circ_times], [0])
@@ -119,6 +153,10 @@ class conjunctions_test_case(_ut.TestCase):
 
         # Test accessors.
         c = conj(pj, conj_thresh=1.0, conj_det_interval=0.1)
+
+        self.assertEqual(c.n_cd_steps, len(c.cd_end_times))
+        self.assertTrue(isinstance(c.bvh_node, np.dtype))
+        self.assertTrue(isinstance(c.aabb_collision, np.dtype))
 
         # aabbs.
         rc = sys.getrefcount(c)
@@ -252,34 +290,20 @@ class conjunctions_test_case(_ut.TestCase):
         self.assertEqual(len(c.cd_end_times), 1)
         self.assertEqual(c.cd_end_times[0], pj[0][1][-1])
 
-        # Test with sgp4 propagations, if possible.
-        try:
-            from skyfield.api import load
-            from skyfield.iokit import parse_tle_file
-        except ImportError:
+        # Run the sgp4 tests, if possible.
+        if not hasattr(type(self), "sparse_sat_list"):
             return
 
         from .. import sgp4_polyjectory
-        from ._sgp4_test_data_202407 import sgp4_test_tle
 
-        # Load the test TLEs.
-        ts = load.timescale()
-        sat_list = list(
-            parse_tle_file(
-                (bytes(_, "ascii") for _ in sgp4_test_tle.split("\n")),
-                ts,
-            )
-        )
-
-        # Use only some of the satellites.
-        # NOTE: we manually include an object for which the
-        # trajectory data terminates early.
-        sat_list = sat_list[::2000] + [sat_list[220]]
+        # Use the sparse satellite list.
+        sat_list = self.sparse_sat_list
 
         begin_jd = 2460496.5
 
         # Build the polyjectory.
         pt, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 0.25)
+        tot_nobjs = pt.nobjs
 
         # Build the conjunctions object. Keep a small threshold not to interfere
         # with aabb checking.
@@ -342,6 +366,12 @@ class conjunctions_test_case(_ut.TestCase):
         self.assertFalse(np.all(np.isfinite(last_aabbs)))
         inf_idx = np.isinf(last_aabbs).nonzero()[0]
         self.assertTrue(np.all(c.mcodes[inf_idx, -1] == ((1 << 64) - 1)))
+
+        # Similarly, the number of objects reported in the root
+        # node of the bvh trees must be tot_nobjs - 1.
+        for idx in inf_idx:
+            t = c.get_bvh_tree(idx)
+            self.assertEqual(t[0]["end"] - t[0]["begin"], tot_nobjs - 1)
 
     def test_zero_aabbs(self):
         # Test to check behaviour with aabbs of zero size.
@@ -468,7 +498,7 @@ class conjunctions_test_case(_ut.TestCase):
         with self.assertRaises(IndexError) as cm:
             conjs.get_bvh_tree(1)
         self.assertTrue(
-            "Invalid tree index 1 specified - the total number of trees is only 1"
+            "Cannot fetch the BVH tree for the conjunction timestep at index 1: the total number of conjunction steps is only 1"
             in str(cm.exception)
         )
 
@@ -482,6 +512,11 @@ class conjunctions_test_case(_ut.TestCase):
         conjs = conjunctions(pj, 1e-16, 1.0)
         t = conjs.get_bvh_tree(0)
         self.assertEqual(len(t), 1)
+        self.assertEqual(t[0]["begin"], 0)
+        self.assertEqual(t[0]["end"], 2)
+        self.assertEqual(t[0]["parent"], -1)
+        self.assertEqual(t[0]["left"], -1)
+        self.assertEqual(t[0]["right"], -1)
 
         # Polyjectory in which the morton codes
         # of two objects differ at the last bit.
@@ -537,3 +572,35 @@ class conjunctions_test_case(_ut.TestCase):
         t = conjs.get_bvh_tree(0)
         self.assertEqual(conjs.srt_idx[0, -1], 7)
         self.assertEqual(conjs.srt_idx[0, -2], 8)
+
+    def test_broad_phase(self):
+        # A test to trigger the internal debug
+        # checks implemented in C++.
+
+        # We rely on sgp4 data for this test.
+        if not hasattr(type(self), "sparse_sat_list"):
+            return
+
+        from .. import sgp4_polyjectory, conjunctions as conj
+
+        sat_list = self.half_sat_list
+
+        begin_jd = 2460496.5
+
+        # Build the polyjectory. Run it for only 15 minutes.
+        pt, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 15.0 / 1440.0)
+
+        # Build the conjunctions object. This will trigger
+        # the internal C++ sanity checks in debug mode.
+        c = conj(pt, conj_thresh=10.0, conj_det_interval=1.0)
+
+        self.assertTrue(
+            all(len(c.get_aabb_collisions(_)) > 0 for _ in range(c.n_cd_steps))
+        )
+
+        with self.assertRaises(IndexError) as cm:
+            c.get_aabb_collisions(c.n_cd_steps)
+        self.assertTrue(
+            f"Cannot fetch the list of AABB collisions for the conjunction timestep at index {c.n_cd_steps}: the total number of conjunction steps is only {c.n_cd_steps}"
+            in str(cm.exception)
+        )

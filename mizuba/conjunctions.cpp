@@ -45,6 +45,7 @@ namespace detail
 
 struct conjunctions_impl {
     using bvh_node = conjunctions::bvh_node;
+    using aabb_collision = conjunctions::aabb_collision;
 
     // The path to the temp dir containing all the
     // conjunctions data.
@@ -57,8 +58,6 @@ struct conjunctions_impl {
     double m_conj_det_interval = 0;
     // The total number of conjunction detection steps.
     std::size_t m_n_cd_steps = 0;
-    // The whitelist.
-    boost::unordered_flat_set<std::uint32_t> m_whitelist;
     // End times of the conjunction steps.
     // NOTE: if needed, this one can also be turned into
     // a memory-mapped file.
@@ -70,6 +69,13 @@ struct conjunctions_impl {
     // the second element of the pair is the tree size. The size of
     // this vector is equal to the number of conjunction steps.
     std::vector<std::tuple<std::size_t, std::size_t>> m_tree_offsets;
+    // Vector of offsets and sizes for the broad-phase conjunction detection
+    // data stored in m_file_bp.
+    //
+    // The first element of the pair is the offset at which bp data begins,
+    // the second element of the pair is the size of the bp data. The size of
+    // this vector is equal to the number of conjunction steps.
+    std::vector<std::tuple<std::size_t, std::size_t>> m_bp_offsets;
     // Vector of flags to signal which objects are active for conjunction tracking.
     std::vector<bool> m_conj_active;
     // The memory-mapped file for the aabbs.
@@ -84,6 +90,8 @@ struct conjunctions_impl {
     boost::iostreams::mapped_file_source m_file_srt_idx;
     // The memory-mapped file for the bvh trees.
     boost::iostreams::mapped_file_source m_file_bvh_trees;
+    // The memory-mapped file for the bp data.
+    boost::iostreams::mapped_file_source m_file_bp;
     // Pointer to the beginning of m_file_aabbs, cast to float.
     const float *m_aabbs_base_ptr = nullptr;
     // Pointer to the beginning of m_file_srt_aabbs, cast to float.
@@ -96,22 +104,29 @@ struct conjunctions_impl {
     const std::uint32_t *m_srt_idx_base_ptr = nullptr;
     // Pointer to the beginning of m_file_bvh_trees, cast to bvh_node.
     const bvh_node *m_bvh_trees_ptr = nullptr;
+    // Pointer to the beginning of m_file_bp, cast to aabb_collision.
+    const aabb_collision *m_bp_ptr = nullptr;
 
     explicit conjunctions_impl(boost::filesystem::path temp_dir_path, polyjectory pj, double conj_thresh,
-                               double conj_det_interval, std::size_t n_cd_steps,
-                               boost::unordered_flat_set<std::uint32_t> whitelist, std::vector<double> cd_end_times,
-                               std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets)
+                               double conj_det_interval, std::size_t n_cd_steps, std::vector<double> cd_end_times,
+                               std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets,
+                               std::vector<std::tuple<std::size_t, std::size_t>> bp_offsets,
+                               std::vector<bool> conj_active)
         : m_temp_dir_path(std::move(temp_dir_path)), m_pj(std::move(pj)), m_conj_thresh(conj_thresh),
-          m_conj_det_interval(conj_det_interval), m_n_cd_steps(n_cd_steps), m_whitelist(std::move(whitelist)),
-          m_cd_end_times(std::move(cd_end_times)), m_tree_offsets(std::move(tree_offsets)),
-          m_file_aabbs((m_temp_dir_path / "aabbs").string()),
+          m_conj_det_interval(conj_det_interval), m_n_cd_steps(n_cd_steps), m_cd_end_times(std::move(cd_end_times)),
+          m_tree_offsets(std::move(tree_offsets)), m_bp_offsets(std::move(bp_offsets)),
+          m_conj_active(std::move(conj_active)), m_file_aabbs((m_temp_dir_path / "aabbs").string()),
           m_file_srt_aabbs((m_temp_dir_path / "srt_aabbs").string()),
           m_file_mcodes((m_temp_dir_path / "mcodes").string()),
           m_file_srt_mcodes((m_temp_dir_path / "srt_mcodes").string()),
-          m_file_srt_idx((m_temp_dir_path / "vidx").string()), m_file_bvh_trees((m_temp_dir_path / "bvh").string())
+          m_file_srt_idx((m_temp_dir_path / "vidx").string()), m_file_bvh_trees((m_temp_dir_path / "bvh").string()),
+          m_file_bp((m_temp_dir_path / "bp").string())
     {
-        // Sanity check.
+        // Sanity checks.
+        assert(n_cd_steps > 0u);
+        assert(m_cd_end_times.size() == n_cd_steps);
         assert(m_cd_end_times.size() == m_tree_offsets.size());
+        assert(m_cd_end_times.size() == m_bp_offsets.size());
 
         // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
         // https://en.cppreference.com/w/cpp/memory/start_lifetime_as
@@ -133,24 +148,8 @@ struct conjunctions_impl {
         m_bvh_trees_ptr = reinterpret_cast<const bvh_node *>(m_file_bvh_trees.data());
         assert(boost::alignment::is_aligned(m_bvh_trees_ptr, alignof(bvh_node)));
 
-        // Check the whitelist and setup m_conj_active.
-        const auto nobjs = m_pj.get_nobjs();
-        if (m_whitelist.empty()) {
-            m_conj_active.resize(boost::numeric_cast<decltype(m_conj_active.size())>(nobjs), true);
-        } else {
-            m_conj_active.resize(boost::numeric_cast<decltype(m_conj_active.size())>(nobjs), false);
-
-            for (const auto obj_idx : m_whitelist) {
-                if (obj_idx >= nobjs) [[unlikely]] {
-                    throw std::invalid_argument(
-                        fmt::format("Invalid whitelist detected: the whitelist contains the object index {}, but the "
-                                    "total number of objects is only {}",
-                                    obj_idx, nobjs));
-                }
-
-                m_conj_active[obj_idx] = true;
-            }
-        }
+        m_bp_ptr = reinterpret_cast<const aabb_collision *>(m_file_bp.data());
+        assert(boost::alignment::is_aligned(m_bp_ptr, alignof(aabb_collision)));
     }
 
     [[nodiscard]] bool is_open() noexcept
@@ -171,6 +170,7 @@ struct conjunctions_impl {
         m_file_srt_mcodes.close();
         m_file_srt_idx.close();
         m_file_bvh_trees.close();
+        m_file_bp.close();
 
         // Remove the temp dir and everything within.
         boost::filesystem::remove_all(m_temp_dir_path);
@@ -224,6 +224,31 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
     // Determine the number of conjunction detection steps.
     const auto n_cd_steps = boost::numeric_cast<std::size_t>(std::ceil(pj.get_maxT() / conj_det_interval));
 
+    // Build the set version of whitelist.
+    boost::unordered_flat_set<std::uint32_t> wl_set(whitelist.begin(), whitelist.end());
+
+    // Check the whitelist and setup the conj_active vector.
+    // This is a vector of flags establishing which objects are active
+    // for conjunction detection.
+    const auto nobjs = pj.get_nobjs();
+    std::vector<bool> conj_active;
+    if (wl_set.empty()) {
+        conj_active.resize(boost::numeric_cast<decltype(conj_active.size())>(nobjs), true);
+    } else {
+        conj_active.resize(boost::numeric_cast<decltype(conj_active.size())>(nobjs), false);
+
+        for (const auto obj_idx : wl_set) {
+            if (obj_idx >= nobjs) [[unlikely]] {
+                throw std::invalid_argument(
+                    fmt::format("Invalid whitelist detected: the whitelist contains the object index {}, but the "
+                                "total number of objects is only {}",
+                                obj_idx, nobjs));
+            }
+
+            conj_active[obj_idx] = true;
+        }
+    }
+
     // Assemble a "unique" dir path into the system temp dir. This will be the root dir
     // for all conjunctions data.
     const auto tmp_dir_path = detail::create_temp_dir("mizuba_conjunctions-%%%%-%%%%-%%%%-%%%%");
@@ -243,11 +268,13 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
         // Construct the bvh trees.
         auto tree_offsets = construct_bvh_trees_parallel(pj, tmp_dir_path, n_cd_steps);
 
+        // Broad-phase conjunction detection.
+        auto bp_offsets = broad_phase(pj, tmp_dir_path, n_cd_steps, tree_offsets, conj_active);
+
         // Create the impl.
         m_impl = std::make_shared<detail::conjunctions_impl>(
-            tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps,
-            boost::unordered_flat_set<std::uint32_t>(whitelist.begin(), whitelist.end()), std::move(cd_end_times),
-            std::move(tree_offsets));
+            tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps, std::move(cd_end_times),
+            std::move(tree_offsets), std::move(bp_offsets), std::move(conj_active));
 
         // LCOV_EXCL_START
     } catch (...) {
@@ -326,8 +353,9 @@ conjunctions::srt_idx_span_t conjunctions::get_srt_idx() const noexcept
 conjunctions::tree_span_t conjunctions::get_bvh_tree(std::size_t i) const
 {
     if (i >= m_impl->m_tree_offsets.size()) [[unlikely]] {
-        throw std::out_of_range(fmt::format("Invalid tree index {} specified - the total number of trees is only {}", i,
-                                            m_impl->m_tree_offsets.size()));
+        throw std::out_of_range(fmt::format("Cannot fetch the BVH tree for the conjunction timestep at index {}: the "
+                                            "total number of conjunction steps is only {}",
+                                            i, m_impl->m_tree_offsets.size()));
     }
 
     // Fetch the offset and size of the desired tree.
@@ -338,6 +366,30 @@ conjunctions::tree_span_t conjunctions::get_bvh_tree(std::size_t i) const
 
     // Return the span.
     return tree_span_t{tree_ptr, tree_size};
+}
+
+conjunctions::aabb_collision_span_t conjunctions::get_aabb_collisions(std::size_t i) const
+{
+    if (i >= m_impl->m_bp_offsets.size()) [[unlikely]] {
+        throw std::out_of_range(
+            fmt::format("Cannot fetch the list of AABB collisions for the conjunction timestep at index {}: the "
+                        "total number of conjunction steps is only {}",
+                        i, m_impl->m_bp_offsets.size()));
+    }
+
+    // Fetch the offset and size of the desired collision list.
+    const auto [bp_offset, bp_size] = m_impl->m_bp_offsets[i];
+
+    // Compute the pointer to the desired collision list.
+    const auto *bp_ptr = m_impl->m_bp_ptr + bp_offset;
+
+    // Return the span.
+    return aabb_collision_span_t{bp_ptr, bp_size};
+}
+
+std::size_t conjunctions::get_n_cd_steps() const noexcept
+{
+    return m_impl->m_n_cd_steps;
 }
 
 } // namespace mizuba

@@ -345,6 +345,9 @@ PYBIND11_MODULE(core, m)
     // Register conjunctions::bvh_node as a structured NumPy datatype.
     using bvh_node = mz::conjunctions::bvh_node;
     PYBIND11_NUMPY_DTYPE(bvh_node, begin, end, parent, left, right, lb, ub);
+    // Same for conjunctions::aabb_collision.
+    using aabb_collision = mz::conjunctions::aabb_collision;
+    PYBIND11_NUMPY_DTYPE(aabb_collision, i, j);
 
     // Conjunctions.
     py::class_<mz::conjunctions> conj_cl(m, "conjunctions", py::dynamic_attr{});
@@ -359,6 +362,7 @@ PYBIND11_MODULE(core, m)
                 }),
                 "pj"_a.noconvert(), "conj_thresh"_a.noconvert(), "conj_det_interval"_a.noconvert(),
                 "whitelist"_a.noconvert() = std::vector<std::uint32_t>{});
+    conj_cl.def_property_readonly("n_cd_steps", &mz::conjunctions::get_n_cd_steps);
     conj_cl.def_property_readonly("aabbs", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
 
@@ -480,6 +484,26 @@ PYBIND11_MODULE(core, m)
 
         return ret;
     });
+    conj_cl.def("get_aabb_collisions", [](const py::object &self, std::size_t i) {
+        const auto *p = py::cast<const mz::conjunctions *>(self);
+
+        // Fetch the aabb collisions span.
+        const auto aabb_collision_span = p->get_aabb_collisions(i);
+
+        // Turn into an array.
+        auto ret = py::array_t<aabb_collision>(
+            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(aabb_collision_span.extent(0))},
+            aabb_collision_span.data_handle(), self);
+
+        // Ensure the returned array is read-only.
+        ret.attr("flags").attr("writeable") = false;
+
+        return ret;
+    });
+    // Expose static getters for the structured types.
+    conj_cl.def_property_readonly_static("bvh_node", [](const py::object &) { return py::dtype::of<bvh_node>(); });
+    conj_cl.def_property_readonly_static("aabb_collision",
+                                         [](const py::object &) { return py::dtype::of<aabb_collision>(); });
 
     // Register the polyjectory/conjunctions cleanup machinery.
     auto atexit = py::module_::import("atexit");

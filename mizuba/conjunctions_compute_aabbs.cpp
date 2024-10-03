@@ -185,6 +185,12 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
         // with the conjunction radius? Note also that cfunc requires
         // input data stored in contiguous order, thus we would need
         // a 7-arguments cfunc which ignores arguments 3,4,5.
+        // NOTE: by using interval arithmetic here, we are producing intervals
+        // in the form [a, b] (i.e., closed intervals), even if originally
+        // the time intervals of the trajectory steps are meant to be half-open [a, b).
+        // This is fine, as the end result is a slight enlargement of the aabb,
+        // which is not problematic as the resulting aabb is still guaranteed
+        // to contain the position of the object.
         auto horner_eval = [order, h_int = ival(h_int_lb, h_int_ub)](const double *ptr) {
             auto acc = ival(ptr[order]);
             for (std::uint32_t o = 1; o <= order; ++o) {
@@ -244,6 +250,34 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
 
     return std::make_pair(lb, ub);
 }
+
+#if !defined(NDEBUG)
+
+// Helper to validate the global aabbs computed during a conjunction step.
+//
+// cd_idx is the conjunction step index, nobjs the total number of objects,
+// base_ptr the pointer to the beginning of aabb data for all conjunction steps.
+void validate_global_aabbs(auto cd_idx, auto nobjs, auto base_ptr)
+{
+    constexpr auto finf = std::numeric_limits<float>::infinity();
+
+    std::array lb = {finf, finf, finf, finf};
+    std::array ub = {-finf, -finf, -finf, -finf};
+
+    for (decltype(nobjs) i = 0; i < nobjs; ++i) {
+        for (auto j = 0u; j < 4u; ++j) {
+            lb[j] = std::min(lb[j], base_ptr[(cd_idx * (nobjs + 1u) + i) * 8u + j]);
+            ub[j] = std::max(ub[j], base_ptr[(cd_idx * (nobjs + 1u) + i) * 8u + 4u + j]);
+        }
+    }
+
+    for (auto j = 0u; j < 4u; ++j) {
+        assert(lb[j] == base_ptr[(cd_idx * (nobjs + 1u) + nobjs) * 8u + j]);
+        assert(ub[j] == base_ptr[(cd_idx * (nobjs + 1u) + nobjs) * 8u + 4u + j]);
+    }
+}
+
+#endif
 
 } // namespace
 
@@ -371,6 +405,13 @@ std::vector<double> conjunctions::compute_aabbs(const polyjectory &pj, const boo
 
             // Write cd_end into cd_end_times.
             cd_end_times[cd_idx] = cd_end;
+
+#if !defined(NDEBUG)
+
+            // Validate the global AABBs in debug mode.
+            detail::validate_global_aabbs(cd_idx, nobjs, base_ptr);
+
+#endif
         }
     });
 
