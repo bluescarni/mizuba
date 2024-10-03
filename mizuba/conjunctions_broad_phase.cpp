@@ -299,22 +299,22 @@ conjunctions::broad_phase(const polyjectory &pj, const boost::filesystem::path &
                                                                                        aabbs
 #endif
     ](const auto &cd_range) {
+        // Create the vector for storing the list of aabbs collisions
+        // for the conjunction steps in cd_range.
+        std::vector<aabb_collision> bp_cv;
+
+        // Mutex for concurrently inserting data into bp_cv while iterating
+        // over the objects.
+        std::mutex bp_cv_mutex;
+
         for (auto cd_idx = cd_range.begin(); cd_idx != cd_range.end(); ++cd_idx) {
             // Fetch the tree for the current conjunction step.
             const auto [tree_offset, tree_size] = tree_offsets[cd_idx];
             const auto *tree_ptr = bvh_trees_base_ptr + tree_offset;
             const tree_span_t tree{tree_ptr, tree_size};
 
-            // Create the vector for storing the list of aabbs collisions
-            // for the current conjunction step.
-            // NOTE: in principle here we could fetch bp_cv from thread-local
-            // storage, rather than creating it each time ex novo. However, the
-            // code would become more complex and I am not sure it is worth it
-            // performance wise. Something to keep in mind for the future.
-            std::vector<aabb_collision> bp_cv;
-
-            // Mutex for concurrently inserting data into bp_cv.
-            std::mutex bp_cv_mutex;
+            // Clear up bp_cv.
+            bp_cv.clear();
 
             // Fetch the number of objects with trajectory data for the current
             // conjunction step. This can be determined from the number of objects
