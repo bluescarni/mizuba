@@ -136,7 +136,9 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
     // Bump it up by one to define a half-open range.
     // NOTE: don't bump it if it is already at the end.
     // This could happen for instance if an object does not
-    // have trajectory data for the current conjunction step.
+    // have trajectory data for the current conjunction step,
+    // or if the trajectory data ends before the end of the
+    // conjunction step.
     ts_end += (ts_end != t_end);
 
     // Iterate over all trajectory steps and update the bounding box
