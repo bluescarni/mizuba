@@ -214,6 +214,12 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
                         conj_thresh));
     }
 
+    // NOTE: we need to square conj_thresh during narrow-phase conjunction detection.
+    if (!std::isfinite(conj_thresh * conj_thresh)) [[unlikely]] {
+        throw std::invalid_argument(
+            fmt::format("A conjunction threshold of {} is too large and results in an overflow error", conj_thresh));
+    }
+
     // Check conj_det_interval.
     if (!std::isfinite(conj_det_interval) || conj_det_interval <= 0) [[unlikely]] {
         throw std::invalid_argument(fmt::format(
@@ -270,6 +276,9 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
 
         // Broad-phase conjunction detection.
         auto bp_offsets = broad_phase(pj, tmp_dir_path, n_cd_steps, tree_offsets, conj_active);
+
+        // Narrow-phase conjunction detection.
+        narrow_phase(pj, tmp_dir_path, n_cd_steps, bp_offsets, cd_end_times);
 
         // Create the impl.
         m_impl = std::make_shared<detail::conjunctions_impl>(

@@ -24,7 +24,9 @@ set(_MIZUBA_CORE_SOURCES
     conjunctions_morton.cpp
     conjunctions_bvh.cpp
     conjunctions_broad_phase.cpp
+    conjunctions_narrow_phase.cpp
     detail/file_utils.cpp
+    detail/poly_utils.cpp
 )
 
 Python3_add_library(core MODULE WITH_SOABI ${_MIZUBA_CORE_SOURCES})

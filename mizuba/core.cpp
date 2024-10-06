@@ -348,6 +348,9 @@ PYBIND11_MODULE(core, m)
     // Same for conjunctions::aabb_collision.
     using aabb_collision = mz::conjunctions::aabb_collision;
     PYBIND11_NUMPY_DTYPE(aabb_collision, i, j);
+    // Same for conjunctions::conj.
+    using conj = mz::conjunctions::conj;
+    PYBIND11_NUMPY_DTYPE(conj, i, j);
 
     // Conjunctions.
     py::class_<mz::conjunctions> conj_cl(m, "conjunctions", py::dynamic_attr{});
@@ -504,6 +507,7 @@ PYBIND11_MODULE(core, m)
     conj_cl.def_property_readonly_static("bvh_node", [](const py::object &) { return py::dtype::of<bvh_node>(); });
     conj_cl.def_property_readonly_static("aabb_collision",
                                          [](const py::object &) { return py::dtype::of<aabb_collision>(); });
+    conj_cl.def_property_readonly_static("conj", [](const py::object &) { return py::dtype::of<conj>(); });
 
     // Register the polyjectory/conjunctions cleanup machinery.
     auto atexit = py::module_::import("atexit");

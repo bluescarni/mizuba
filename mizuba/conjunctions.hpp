@@ -91,6 +91,8 @@ class conjunctions
     std::vector<std::tuple<std::size_t, std::size_t>>
     broad_phase(const polyjectory &, const boost::filesystem::path &, std::size_t,
                 const std::vector<std::tuple<std::size_t, std::size_t>> &, const std::vector<bool> &);
+    void narrow_phase(const polyjectory &, const boost::filesystem::path &, std::size_t,
+                      const std::vector<std::tuple<std::size_t, std::size_t>> &, const std::vector<double> &);
 
 public:
     // The BVH node struct.
@@ -108,6 +110,12 @@ public:
         // Indices of the objects whose AABBs collide.
         std::uint32_t i, j;
         auto operator<=>(const aabb_collision &) const = default;
+    };
+
+    // Struct to represent a conjunction between two objects.
+    struct conj {
+        // The objects involved in the conjunction.
+        std::uint32_t i, j;
     };
 
     template <typename WRange = std::vector<std::uint32_t>>
