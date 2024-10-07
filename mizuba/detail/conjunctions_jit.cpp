@@ -127,7 +127,7 @@ void add_poly_ssdiff3_cfunc(heyoka::llvm_state &s, std::uint32_t order)
     }
 
     // Access the polynomials as submdspans into vars.
-    hy::mdspan var_arr(std::as_const(vars).data(), static_cast<decltype(vars.size())>(6), order + 1u);
+    stdex::mdspan var_arr(std::as_const(vars).data(), static_cast<decltype(vars.size())>(6), order + 1u);
     auto xi_poly = stdex::submdspan(var_arr, 0u, stdex::full_extent);
     auto yi_poly = stdex::submdspan(var_arr, 1u, stdex::full_extent);
     auto zi_poly = stdex::submdspan(var_arr, 2u, stdex::full_extent);
