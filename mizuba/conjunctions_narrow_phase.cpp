@@ -29,6 +29,7 @@
 #include <oneapi/tbb/cache_aligned_allocator.h>
 #include <oneapi/tbb/enumerable_thread_specific.h>
 #include <oneapi/tbb/parallel_for.h>
+#include <oneapi/tbb/parallel_sort.h>
 
 #include "conjunctions.hpp"
 #include "detail/conjunctions_jit.hpp"
@@ -52,9 +53,6 @@ void conjunctions::narrow_phase(const polyjectory &pj, const boost::filesystem::
                                 const std::vector<double> &cd_end_times, const detail::conj_jit_data &cjd,
                                 double conj_thresh)
 {
-    using detail::poly_cache;
-    using detail::pwrap;
-
     // Cache the polynomial order.
     const auto order = pj.get_poly_order();
 
@@ -66,20 +64,22 @@ void conjunctions::narrow_phase(const polyjectory &pj, const boost::filesystem::
     // Fetch the compiled functions.
     auto *pta_cfunc = cjd.pta_cfunc;
     auto *pssdiff3_cfunc = cjd.pssdiff3_cfunc;
+    auto *fex_check = cjd.fex_check;
+    auto *rtscc = cjd.rtscc;
+    auto *pt1 = cjd.pt1;
 
     // Cache the square of conj_thresh.
     // NOTE: we checked in the conjunctions constructor that
     // this is safe to compute.
     const auto conj_thresh2 = conj_thresh * conj_thresh;
 
+    // The global vector of conjunctions, plus a mutex for safe multithreaded access.
+    std::vector<conj> global_conj_vec;
+    std::mutex global_conj_vec_mutex;
+
     // We will be using thread-specific data to store temporary results during narrow-phase
     // conjunction detection.
     struct ets_data {
-        // The working list type used during real root isolation.
-        using wlist_t = std::vector<std::tuple<double, double, pwrap>>;
-        // The type used to store the list of isolating intervals.
-        using isol_t = std::vector<std::tuple<double, double>>;
-
         // Local vector of detected conjunctions.
         std::vector<conj> conj_vec;
         // Polynomial cache for use during real root isolation.
@@ -88,11 +88,11 @@ void conjunctions::narrow_phase(const polyjectory &pj, const boost::filesystem::
         // to and interact with r_iso_cache during destruction,
         // and we must be sure that wlist is destroyed *before*
         // r_iso_cache.
-        poly_cache r_iso_cache;
+        detail::poly_cache r_iso_cache;
         // The working list.
-        wlist_t wlist;
+        detail::wlist_t wlist;
         // The list of isolating intervals.
-        isol_t isol;
+        detail::isol_t isol;
         // Buffers used as temporary storage for the results
         // of operations on polynomials.
         // NOTE: if we restructure the code to use JIT more,
@@ -131,7 +131,9 @@ void conjunctions::narrow_phase(const polyjectory &pj, const boost::filesystem::
     oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, n_cd_steps), [&pj, order, &ets, &bp_offsets,
                                                                                        bp_base_ptr, &cd_end_times,
                                                                                        pta_cfunc, pssdiff3_cfunc,
-                                                                                       conj_thresh2](
+                                                                                       conj_thresh2, fex_check, rtscc,
+                                                                                       pt1, &global_conj_vec,
+                                                                                       &global_conj_vec_mutex](
                                                                                           const auto &cd_range) {
         for (auto cd_idx = cd_range.begin(); cd_idx != cd_range.end(); ++cd_idx) {
             // Fetch the broad-phase data for the current conjunction step.
@@ -147,8 +149,8 @@ void conjunctions::narrow_phase(const polyjectory &pj, const boost::filesystem::
             // Iterate over all the broad-phase aabb collisions.
             oneapi::tbb::parallel_for(
                 oneapi::tbb::blocked_range<std::size_t>(0, bpc.extent(0)),
-                [&pj, bpc, order, &ets, cd_begin, cd_end, pta_cfunc, pssdiff3_cfunc,
-                 conj_thresh2](const auto &bp_range) {
+                [&pj, bpc, order, &ets, cd_begin, cd_end, pta_cfunc, pssdiff3_cfunc, conj_thresh2, fex_check, rtscc,
+                 pt1, &global_conj_vec, &global_conj_vec_mutex](const auto &bp_range) {
                     // Fetch the thread-local data.
                     // NOTE: no need to isolate here, as we are not
                     // invoking any other TBB primitive from within this
@@ -160,9 +162,6 @@ void conjunctions::narrow_phase(const polyjectory &pj, const boost::filesystem::
 
                     // Prepare the local conjunction vector.
                     local_conj_vec.clear();
-
-                    // Temporary polynomials used in the bisection loop.
-                    pwrap tmp1(r_iso_cache, order), tmp2(r_iso_cache, order), tmp(r_iso_cache, order);
 
                     for (auto bp_idx = bp_range.begin(); bp_idx != bp_range.end(); ++bp_idx) {
                         const auto [i, j] = bpc(bp_idx);
@@ -368,6 +367,66 @@ void conjunctions::narrow_phase(const polyjectory &pj, const boost::filesystem::
 
                                 // Prepare tmp_conj_vec.
                                 tmp_conj_vec.clear();
+
+                                // Run polynomial root finding to detect conjunctions.
+                                detail::run_poly_root_finding(
+                                    ts_diff_der_ptr, order, rf_int, isol, wlist, fex_check, rtscc, pt1, i, j,
+                                    // NOTE: positive direction to detect only distance minima.
+                                    1, tmp_conj_vec, r_iso_cache);
+
+                                // For each detected conjunction, we need to:
+                                // - verify that indeed the conjunction happens below
+                                //   the threshold,
+                                // - compute the conjunction distance and absolute
+                                //   time coordinate.
+                                for (const auto &[_1, _2, conj_tm] : tmp_conj_vec) {
+                                    assert(_1 == i);
+                                    assert(_2 == j);
+
+                                    // Compute the conjunction distance square.
+                                    const auto conj_dist2 = detail::horner_eval(ts_diff_ptr, order, conj_tm);
+
+                                    if (!std::isfinite(conj_dist2)) [[unlikely]] {
+                                        // LCOV_EXCL_START
+                                        throw std::invalid_argument(
+                                            fmt::format("A non-finite conjunction distance square of {} was computed "
+                                                        "for the objects at indices {} and {}",
+                                                        conj_dist2, i, j));
+                                        // LCOV_EXCL_STOP
+                                    }
+
+                                    if (conj_dist2 < conj_thresh2) {
+                                        // Compute the state vector for the two objects.
+                                        const std::array<double, 3> ri = {detail::horner_eval(poly_xi, order, conj_tm),
+                                                                          detail::horner_eval(poly_yi, order, conj_tm),
+                                                                          detail::horner_eval(poly_zi, order, conj_tm)},
+                                                                    vi
+                                                                    = {detail::horner_eval(poly_vxi, order, conj_tm),
+                                                                       detail::horner_eval(poly_vyi, order, conj_tm),
+                                                                       detail::horner_eval(poly_vzi, order, conj_tm)};
+
+                                        const std::array<double, 3> rj = {detail::horner_eval(poly_xj, order, conj_tm),
+                                                                          detail::horner_eval(poly_yj, order, conj_tm),
+                                                                          detail::horner_eval(poly_zj, order, conj_tm)},
+                                                                    vj
+                                                                    = {detail::horner_eval(poly_vxj, order, conj_tm),
+                                                                       detail::horner_eval(poly_vyj, order, conj_tm),
+                                                                       detail::horner_eval(poly_vzj, order, conj_tm)};
+
+                                        local_conj_vec.emplace_back(
+                                            // NOTE: we want to store here the absolute
+                                            // time coordinate of the conjunction. conj_tm
+                                            // is a time coordinate relative to the root
+                                            // finding interval, so we need to transform it
+                                            // into an absolute time within the polyjectory.
+                                            lb_rf + conj_tm,
+                                            // NOTE: conj_dist2 is finite but it could still
+                                            // be negative due to floating-point rounding
+                                            // (e.g., zero-distance conjunctions). Ensure
+                                            // we do not produce NaN here.
+                                            std::sqrt(std::max(conj_dist2, 0.)), i, j, ri, vi, rj, vj);
+                                    }
+                                }
                             }
 
                             // Update it_i and it_j.
@@ -390,9 +449,18 @@ void conjunctions::narrow_phase(const polyjectory &pj, const boost::filesystem::
 
                         assert(loop_entered);
                     }
+
+                    // Merge the local conjunction vector into the global one.
+                    std::lock_guard lock(global_conj_vec_mutex);
+
+                    global_conj_vec.insert(global_conj_vec.end(), local_conj_vec.begin(), local_conj_vec.end());
                 });
         }
     });
+
+    // Sort the global vector of conjunctions according to TCA.
+    oneapi::tbb::parallel_sort(global_conj_vec.begin(), global_conj_vec.end(),
+                               [](const auto &c1, const auto &c2) { return c1.tca < c2.tca; });
 }
 
 } // namespace mizuba
