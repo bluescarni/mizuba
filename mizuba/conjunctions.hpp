@@ -44,6 +44,8 @@ struct conjunctions_impl;
 void close_cj(std::shared_ptr<conjunctions_impl> &) noexcept;
 [[nodiscard]] const std::shared_ptr<conjunctions_impl> &fetch_cj_impl(const conjunctions &) noexcept;
 
+struct conj_jit_data;
+
 } // namespace detail
 
 class conjunctions
@@ -92,7 +94,8 @@ class conjunctions
     broad_phase(const polyjectory &, const boost::filesystem::path &, std::size_t,
                 const std::vector<std::tuple<std::size_t, std::size_t>> &, const std::vector<bool> &);
     void narrow_phase(const polyjectory &, const boost::filesystem::path &, std::size_t,
-                      const std::vector<std::tuple<std::size_t, std::size_t>> &, const std::vector<double> &);
+                      const std::vector<std::tuple<std::size_t, std::size_t>> &, const std::vector<double> &,
+                      const detail::conj_jit_data &, double);
 
 public:
     // The BVH node struct.

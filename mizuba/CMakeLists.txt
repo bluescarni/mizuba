@@ -25,6 +25,7 @@ set(_MIZUBA_CORE_SOURCES
     conjunctions_bvh.cpp
     conjunctions_broad_phase.cpp
     conjunctions_narrow_phase.cpp
+    detail/conjunctions_jit.cpp
     detail/file_utils.cpp
     detail/poly_utils.cpp
 )

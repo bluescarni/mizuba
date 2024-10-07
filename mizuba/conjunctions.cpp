@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <tuple>
 #include <utility>
@@ -26,7 +27,10 @@
 #include <boost/numeric/conversion/cast.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
 
+#include <oneapi/tbb/parallel_invoke.h>
+
 #include "conjunctions.hpp"
+#include "detail/conjunctions_jit.hpp"
 #include "detail/file_utils.hpp"
 #include "polyjectory.hpp"
 
@@ -265,20 +269,35 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
         // Change the permissions so that only the owner has access.
         boost::filesystem::permissions(tmp_dir_path, boost::filesystem::owner_all);
 
-        // Run the computation of the aabbs.
-        auto cd_end_times = compute_aabbs(pj, tmp_dir_path, n_cd_steps, conj_thresh, conj_det_interval);
+        // NOTE: narrow-phase conjunction detection requires JIT compilation
+        // of several functions. Run the compilation in parallel with the initial
+        // phases of conjunction detection.
+        std::vector<double> cd_end_times;
+        std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets, bp_offsets;
+        std::optional<detail::conj_jit_data> cjd;
 
-        // Morton encoding and indirect sorting.
-        morton_encode_sort_parallel(pj, tmp_dir_path, n_cd_steps);
+        oneapi::tbb::parallel_invoke(
+            [this, &pj, &cd_end_times, &tree_offsets, &bp_offsets, &tmp_dir_path, n_cd_steps, conj_thresh,
+             conj_det_interval, &conj_active]() {
+                // Run the computation of the aabbs.
+                cd_end_times = compute_aabbs(pj, tmp_dir_path, n_cd_steps, conj_thresh, conj_det_interval);
 
-        // Construct the bvh trees.
-        auto tree_offsets = construct_bvh_trees_parallel(pj, tmp_dir_path, n_cd_steps);
+                // Morton encoding and indirect sorting.
+                morton_encode_sort_parallel(pj, tmp_dir_path, n_cd_steps);
 
-        // Broad-phase conjunction detection.
-        auto bp_offsets = broad_phase(pj, tmp_dir_path, n_cd_steps, tree_offsets, conj_active);
+                // Construct the bvh trees.
+                tree_offsets = construct_bvh_trees_parallel(pj, tmp_dir_path, n_cd_steps);
+
+                // Broad-phase conjunction detection.
+                bp_offsets = broad_phase(pj, tmp_dir_path, n_cd_steps, tree_offsets, conj_active);
+            },
+            [&cjd, &pj]() {
+                // Compile the functions necessary for narrow-phase conjunction detection.
+                cjd.emplace(pj.get_poly_order());
+            });
 
         // Narrow-phase conjunction detection.
-        narrow_phase(pj, tmp_dir_path, n_cd_steps, bp_offsets, cd_end_times);
+        narrow_phase(pj, tmp_dir_path, n_cd_steps, bp_offsets, cd_end_times, *cjd, conj_thresh);
 
         // Create the impl.
         m_impl = std::make_shared<detail::conjunctions_impl>(
