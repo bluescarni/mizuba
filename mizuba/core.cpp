@@ -503,6 +503,21 @@ PYBIND11_MODULE(core, m)
 
         return ret;
     });
+    conj_cl.def_property_readonly("conjunctions", [](const py::object &self) {
+        const auto *p = py::cast<const mz::conjunctions *>(self);
+
+        // Fetch the span.
+        const auto conj_span = p->get_conjunctions();
+
+        // Turn into an array.
+        auto ret = py::array_t<conj>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(conj_span.extent(0))},
+                                     conj_span.data_handle(), self);
+
+        // Ensure the returned array is read-only.
+        ret.attr("flags").attr("writeable") = false;
+
+        return ret;
+    });
     // Expose static getters for the structured types.
     conj_cl.def_property_readonly_static("bvh_node", [](const py::object &) { return py::dtype::of<bvh_node>(); });
     conj_cl.def_property_readonly_static("aabb_collision",

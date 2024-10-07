@@ -176,6 +176,8 @@ public:
     [[nodiscard]] tree_span_t get_bvh_tree(std::size_t) const;
     using aabb_collision_span_t = heyoka::mdspan<const aabb_collision, heyoka::dextents<std::size_t, 1>>;
     [[nodiscard]] aabb_collision_span_t get_aabb_collisions(std::size_t) const;
+    using conj_span_t = heyoka::mdspan<const conj, heyoka::dextents<std::size_t, 1>>;
+    [[nodiscard]] conj_span_t get_conjunctions() const noexcept;
 };
 
 } // namespace mizuba

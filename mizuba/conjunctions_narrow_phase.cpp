@@ -12,12 +12,15 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
+#include <ios>
 #include <mutex>
 #include <stdexcept>
 #include <tuple>
 #include <vector>
 
 #include <boost/align.hpp>
+#include <boost/filesystem/operations.hpp>
 #include <boost/filesystem/path.hpp>
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <boost/numeric/conversion/cast.hpp>
@@ -33,6 +36,7 @@
 
 #include "conjunctions.hpp"
 #include "detail/conjunctions_jit.hpp"
+#include "detail/file_utils.hpp"
 #include "detail/ival.hpp"
 #include "detail/poly_utils.hpp"
 #include "polyjectory.hpp"
@@ -461,6 +465,43 @@ void conjunctions::narrow_phase(const polyjectory &pj, const boost::filesystem::
     // Sort the global vector of conjunctions according to TCA.
     oneapi::tbb::parallel_sort(global_conj_vec.begin(), global_conj_vec.end(),
                                [](const auto &c1, const auto &c2) { return c1.tca < c2.tca; });
+
+    // Dump the conjunctions to file.
+
+    // Compute the total required size.
+    using safe_size_t = boost::safe_numerics::safe<std::size_t>;
+    const auto tot_size = safe_size_t(global_conj_vec.size()) * sizeof(conj);
+
+    // Path to the conjunctions file.
+    const auto conj_file_path = tmp_dir_path / "conjunctions";
+    // LCOV_EXCL_START
+    if (boost::filesystem::exists(conj_file_path)) [[unlikely]] {
+        throw std::runtime_error(
+            fmt::format("Cannot create the storage file '{}', as it exists already", conj_file_path.string()));
+    }
+    // LCOV_EXCL_STOP
+
+    // Create the file.
+    std::ofstream file(conj_file_path.string(), std::ios::binary | std::ios::out);
+    // Make sure we throw on errors.
+    file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
+
+    // NOTE: if we have no conjunctions, we still want to write something to disk because
+    // otherwise we cannot memory-map an empty file.
+    if (tot_size > 0u) {
+        file.write(reinterpret_cast<const char *>(global_conj_vec.data()), tot_size);
+    } else {
+        // NOTE: use a single-byte file to signal the lack of conjunctions.
+        // Make super extra sure this cannot me mistaken for a single conjunction.
+        static_assert(sizeof(conj) > 1u);
+
+        const char empty{};
+        file.write(&empty, 1);
+    }
+
+    // Close the file and mark it as read-only.
+    file.close();
+    detail::mark_file_read_only(conj_file_path);
 }
 
 } // namespace mizuba
