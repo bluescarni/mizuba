@@ -360,8 +360,8 @@ void conjunctions::narrow_phase(const polyjectory &pj, const boost::filesystem::
 
                                 // Compute the time derivative of the dist2 poly in-place.
                                 auto *ts_diff_der_ptr = ts_diff_der.data();
-                                for (std::uint32_t i = 0; i < order; ++i) {
-                                    ts_diff_der_ptr[i] = (i + 1u) * ts_diff_ptr[i + 1u];
+                                for (std::uint32_t j = 0; j < order; ++j) {
+                                    ts_diff_der_ptr[j] = (j + 1u) * ts_diff_ptr[j + 1u];
                                 }
                                 // NOTE: the highest-order term needs to be set to zero manually.
                                 ts_diff_der_ptr[order] = 0;
