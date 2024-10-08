@@ -46,6 +46,7 @@
 #include <heyoka/taylor.hpp>
 
 #include "detail/file_utils.hpp"
+#include "logging.hpp"
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -838,10 +839,12 @@ sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, st
         = detail::sgp4_compute_initial_sat_states(sat_data, jd_begin, exit_radius, reentry_radius);
 
     // Construct the sgp4 ODE sys.
+    stopwatch sw;
     const auto sgp4_ode = detail::construct_sgp4_ode();
 
     // Construct the ODE integrator.
     const auto ta = detail::construct_sgp4_ode_integrator(sgp4_ode, exit_radius, reentry_radius);
+    log_info("SGP4 ODE integrator construction time: {}s", sw);
 
     // Assemble a "unique" dir path into the system temp dir.
     const auto tmp_dir_path = detail::create_temp_dir("mizuba_sgp4_polyjectory-%%%%-%%%%-%%%%-%%%%");
@@ -864,10 +867,14 @@ sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, st
     boost::filesystem::permissions(tmp_dir_path, boost::filesystem::owner_all);
 
     // Run the numerical integration.
+    sw.reset();
     const auto status = detail::perform_ode_integration(ta, tmp_dir_path, sat_data, jd_begin, jd_end, init_states);
+    log_info("SGP4 ODE integration time: {}s", sw);
 
     // Consolidate all the data files into a single file.
+    sw.reset();
     const auto [traj_offset, time_offset] = detail::consolidate_data(tmp_dir_path, sat_data.extent(1), ta.get_order());
+    log_info("SGP4 file consolidation time: {}s", sw);
 
     // Build and return the polyjectory.
     return detail::build_polyjectory(tmp_dir_path, traj_offset, time_offset, status, ta.get_order());

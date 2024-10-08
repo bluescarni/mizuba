@@ -356,6 +356,9 @@ PYBIND11_MODULE(core, m)
     py::class_<mz::conjunctions> conj_cl(m, "conjunctions", py::dynamic_attr{});
     conj_cl.def(py::init([](mz::polyjectory pj, double conj_thresh, double conj_det_interval,
                             std::vector<std::uint32_t> whitelist) {
+                    // NOTE: release the GIL during conjunction detection.
+                    py::gil_scoped_release release;
+
                     auto ret = mz::conjunctions(std::move(pj), conj_thresh, conj_det_interval, std::move(whitelist));
 
                     // Register the conjunctions implementation in the cleanup machinery.

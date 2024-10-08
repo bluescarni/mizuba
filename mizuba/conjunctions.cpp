@@ -32,6 +32,7 @@
 #include "conjunctions.hpp"
 #include "detail/conjunctions_jit.hpp"
 #include "detail/file_utils.hpp"
+#include "logging.hpp"
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -293,28 +294,42 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
         std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets, bp_offsets;
         std::optional<detail::conj_jit_data> cjd;
 
+        stopwatch sw;
+
         oneapi::tbb::parallel_invoke(
             [this, &pj, &cd_end_times, &tree_offsets, &bp_offsets, &tmp_dir_path, n_cd_steps, conj_thresh,
-             conj_det_interval, &conj_active]() {
+             conj_det_interval, &conj_active, &sw]() {
                 // Run the computation of the aabbs.
+                sw.reset();
                 cd_end_times = compute_aabbs(pj, tmp_dir_path, n_cd_steps, conj_thresh, conj_det_interval);
+                log_info("AABBs computation time: {}s", sw);
 
                 // Morton encoding and indirect sorting.
+                sw.reset();
                 morton_encode_sort_parallel(pj, tmp_dir_path, n_cd_steps);
+                log_info("Morton encoding and indirect sorting time: {}s", sw);
 
                 // Construct the bvh trees.
+                sw.reset();
                 tree_offsets = construct_bvh_trees_parallel(pj, tmp_dir_path, n_cd_steps);
+                log_info("BVH trees construction time: {}s", sw);
 
                 // Broad-phase conjunction detection.
+                sw.reset();
                 bp_offsets = broad_phase(pj, tmp_dir_path, n_cd_steps, tree_offsets, conj_active);
+                log_info("Broad-phase conjunction detection time: {}s", sw);
             },
             [&cjd, &pj]() {
                 // Compile the functions necessary for narrow-phase conjunction detection.
+                stopwatch sw_jit;
                 cjd.emplace(pj.get_poly_order());
+                log_info("JIT compilation time: {}s", sw_jit);
             });
 
         // Narrow-phase conjunction detection.
+        sw.reset();
         narrow_phase(pj, tmp_dir_path, n_cd_steps, bp_offsets, cd_end_times, *cjd, conj_thresh);
+        log_info("Narrow-phase conjunction detection time: {}s", sw);
 
         // Create the impl.
         m_impl = std::make_shared<detail::conjunctions_impl>(
