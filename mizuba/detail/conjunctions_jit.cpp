@@ -200,6 +200,7 @@ void add_poly_ssdiff3_cfunc(heyoka::llvm_state &s, std::uint32_t order)
 
 } // namespace
 
+// NOTE: consider experimenting with, e.g., slp vectorization here.
 conj_jit_data::conj_jit_data(std::uint32_t order)
 {
     namespace hy = heyoka;
