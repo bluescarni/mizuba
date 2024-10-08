@@ -266,6 +266,11 @@ class conjunctions_test_case(_ut.TestCase):
             # Verify the aabbs.
             self._verify_conj_aabbs(c, rng)
 
+            # No aabb collisions or conjunctions expected.
+            for i in range(c.n_cd_steps):
+                self.assertEqual(len(c.get_aabb_collisions(i)), 0)
+            self.assertEqual(len(c.conjunctions), 0)
+
             # Test whitelist initialisation.
             c = conj(
                 pj, conj_thresh=0.1, conj_det_interval=conj_det_interval, whitelist=[0]
@@ -287,7 +292,7 @@ class conjunctions_test_case(_ut.TestCase):
         # larger than maxT, the time data in the conjunctions object
         # is correctly clamped.
         c = conj(pj, conj_thresh=0.1, conj_det_interval=42.0)
-        self.assertEqual(len(c.cd_end_times), 1)
+        self.assertEqual(c.n_cd_steps, 1)
         self.assertEqual(c.cd_end_times[0], pj[0][1][-1])
 
         # Run the sgp4 tests, if possible.
@@ -315,7 +320,7 @@ class conjunctions_test_case(_ut.TestCase):
         # Shape checks.
         self.assertEqual(c.aabbs.shape, c.srt_aabbs.shape)
         self.assertEqual(c.mcodes.shape, c.srt_mcodes.shape)
-        self.assertEqual(c.srt_idx.shape, (len(c.cd_end_times), c.polyjectory.nobjs))
+        self.assertEqual(c.srt_idx.shape, (c.n_cd_steps, c.polyjectory.nobjs))
 
         # The global aabbs must be the same in srt_aabbs.
         self.assertTrue(
@@ -344,7 +349,7 @@ class conjunctions_test_case(_ut.TestCase):
 
         # Indexing into aabbs and mcodes via srt_idx must produce
         # srt_abbs and srt_mcodes.
-        for cd_idx in range(len(c.cd_end_times)):
+        for cd_idx in range(c.n_cd_steps):
             self.assertEqual(
                 sorted(c.srt_idx[cd_idx]), list(range(c.polyjectory.nobjs))
             )
@@ -573,15 +578,16 @@ class conjunctions_test_case(_ut.TestCase):
         self.assertEqual(conjs.srt_idx[0, -1], 7)
         self.assertEqual(conjs.srt_idx[0, -2], 8)
 
-    def test_broad_phase(self):
-        # A test to trigger the internal debug
-        # checks implemented in C++.
+    def test_broad_narrow_phase(self):
+        # NOTE: for the broad-phase, we are relying
+        # on internal debug checks implemented in C++.
 
         # We rely on sgp4 data for this test.
         if not hasattr(type(self), "sparse_sat_list"):
             return
 
         from .. import sgp4_polyjectory, conjunctions as conj
+        import numpy as np
 
         sat_list = self.half_sat_list
 
@@ -604,3 +610,9 @@ class conjunctions_test_case(_ut.TestCase):
             f"Cannot fetch the list of AABB collisions for the conjunction timestep at index {c.n_cd_steps}: the total number of conjunction steps is only {c.n_cd_steps}"
             in str(cm.exception)
         )
+
+        # The conjunctions must be sorted according
+        # to the TCA.
+        self.assertTrue(np.all(np.diff(c.conjunctions["tca"]) >= 0))
+        # No conjunction must be at or above the threshold.
+        self.assertTrue(np.all(np.diff(c.conjunctions["dca"]) < 10))
