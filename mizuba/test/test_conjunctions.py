@@ -31,7 +31,8 @@ class conjunctions_test_case(_ut.TestCase):
 
         # A sparse list of satellites.
         # NOTE: we manually include an object for which the
-        # trajectory data terminates early.
+        # trajectory data terminates early (but only if the exit_radius
+        # is set to 12000).
         cls.sparse_sat_list = sat_list[::2000] + [sat_list[220]]
 
         # List of 9000 satellites.
@@ -307,7 +308,9 @@ class conjunctions_test_case(_ut.TestCase):
         begin_jd = 2460496.5
 
         # Build the polyjectory.
-        pt, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 0.25)
+        pt, mask = sgp4_polyjectory(
+            sat_list, begin_jd, begin_jd + 0.25, exit_radius=12000.0
+        )
         tot_nobjs = pt.nobjs
 
         # Build the conjunctions object. Keep a small threshold not to interfere
@@ -614,5 +617,9 @@ class conjunctions_test_case(_ut.TestCase):
         # The conjunctions must be sorted according
         # to the TCA.
         self.assertTrue(np.all(np.diff(c.conjunctions["tca"]) >= 0))
+        # All conjunctions must happen before the polyjectory end time.
+        self.assertTrue(c.conjunctions["tca"][-1] < 15.0)
         # No conjunction must be at or above the threshold.
         self.assertTrue(np.all(np.diff(c.conjunctions["dca"]) < 10))
+        # Objects cannot have conjunctions with themselves.
+        self.assertTrue(np.all(c.conjunctions["i"] != c.conjunctions["j"]))
