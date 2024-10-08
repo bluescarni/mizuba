@@ -158,6 +158,7 @@ class conjunctions_test_case(_ut.TestCase):
         self.assertEqual(c.n_cd_steps, len(c.cd_end_times))
         self.assertTrue(isinstance(c.bvh_node, np.dtype))
         self.assertTrue(isinstance(c.aabb_collision, np.dtype))
+        self.assertTrue(isinstance(c.conj, np.dtype))
 
         # aabbs.
         rc = sys.getrefcount(c)
@@ -617,9 +618,57 @@ class conjunctions_test_case(_ut.TestCase):
         # The conjunctions must be sorted according
         # to the TCA.
         self.assertTrue(np.all(np.diff(c.conjunctions["tca"]) >= 0))
+
         # All conjunctions must happen before the polyjectory end time.
         self.assertTrue(c.conjunctions["tca"][-1] < 15.0)
+
         # No conjunction must be at or above the threshold.
         self.assertTrue(np.all(np.diff(c.conjunctions["dca"]) < 10))
+
         # Objects cannot have conjunctions with themselves.
         self.assertTrue(np.all(c.conjunctions["i"] != c.conjunctions["j"]))
+
+        # DCA must be consistent with state vectors.
+        self.assertTrue(
+            np.all(
+                np.isclose(
+                    np.linalg.norm(c.conjunctions["ri"] - c.conjunctions["rj"], axis=1),
+                    c.conjunctions["dca"],
+                    rtol=1e-13,
+                )
+            )
+        )
+
+        # Verify the conjunctions with the sgp4 python module.
+        sl_array = np.array(sat_list)[mask]
+        for cj in c.conjunctions:
+            # Fetch the conjunction data.
+            tca = cj["tca"]
+            dca = cj["dca"]
+            i, j = cj["i"], cj["j"]
+            ri, rj = cj["ri"], cj["rj"]
+            vi, vj = cj["vi"], cj["vj"]
+
+            # Fetch the satellite models.
+            sat_i = sl_array[i].model
+            sat_j = sl_array[j].model
+
+            ei, sri, svi = sat_i.sgp4(begin_jd, tca / 1440.0)
+            ej, srj, svj = sat_j.sgp4(begin_jd, tca / 1440.0)
+
+            diff_ri = np.linalg.norm(sri - ri)
+            diff_rj = np.linalg.norm(srj - rj)
+
+            diff_vi = np.linalg.norm(svi - vi)
+            diff_vj = np.linalg.norm(svj - vj)
+
+            # NOTE: unit of measure here is [km], vs typical
+            # values of >1e3 km in the coordinates. Thus, relative
+            # error is 1e-11, absolute error is ~10µm.
+            self.assertLess(diff_ri, 1e-8)
+            self.assertLess(diff_rj, 1e-8)
+
+            # NOTE: unit of measure here is [km/s], vs typicial
+            # velocity values of >1 km/s.
+            self.assertLess(diff_vi, 1e-11)
+            self.assertLess(diff_vj, 1e-11)
