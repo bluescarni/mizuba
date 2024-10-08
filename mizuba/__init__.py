@@ -51,6 +51,7 @@ from . import test
 
 
 class stopwatch:
+    # A minimal stopwatch class, inspired by spdlog.
     def __init__(self):
         import time
 

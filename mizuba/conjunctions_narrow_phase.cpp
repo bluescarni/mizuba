@@ -51,14 +51,27 @@
 namespace mizuba
 {
 
+// Narrow-phase conjunction detection.
+//
+// The objective of this phase is to iterate over the aabb collisions identified
+// during broad-phase conjunction detection and determine which aabb collisions
+// correspond to conjunctions.
+//
+// pj is the polyjectory, tmp_dir_path the temporary dir storing all conjunction data,
+// bp_offsets the offsets/sizes to access the broad-phase data, cd_end_times the end
+// times of the conjunction steps, cjd the structure storing the JIT-compiled functions
+// employed during narrow-phase conjunction detection, conj_thresh the conjunction threshold.
 void conjunctions::narrow_phase(const polyjectory &pj, const boost::filesystem::path &tmp_dir_path,
-                                std::size_t n_cd_steps,
                                 const std::vector<std::tuple<std::size_t, std::size_t>> &bp_offsets,
                                 const std::vector<double> &cd_end_times, const detail::conj_jit_data &cjd,
                                 double conj_thresh)
 {
     // Cache the polynomial order.
     const auto order = pj.get_poly_order();
+
+    // Cache the number of conjunction steps.
+    // NOTE: static cast is ok, n_cd_steps is originally defined as a std::size_t.
+    const auto n_cd_steps = static_cast<std::size_t>(cd_end_times.size());
 
     // Fetch a pointer to the bp data.
     boost::iostreams::mapped_file_source file_bp((tmp_dir_path / "bp").string());

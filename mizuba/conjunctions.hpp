@@ -93,7 +93,7 @@ class conjunctions
     std::vector<std::tuple<std::size_t, std::size_t>>
     broad_phase(const polyjectory &, const boost::filesystem::path &, std::size_t,
                 const std::vector<std::tuple<std::size_t, std::size_t>> &, const std::vector<bool> &);
-    void narrow_phase(const polyjectory &, const boost::filesystem::path &, std::size_t,
+    void narrow_phase(const polyjectory &, const boost::filesystem::path &,
                       const std::vector<std::tuple<std::size_t, std::size_t>> &, const std::vector<double> &,
                       const detail::conj_jit_data &, double);
 

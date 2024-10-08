@@ -145,7 +145,7 @@ void add_poly_ssdiff3_cfunc(heyoka::llvm_state &s, std::uint32_t order)
         }
 
         return ret;
-    };
+    }; // LCOV_EXCL_LINE
 
     // Compute the differences.
     auto diff_x = pdiff(xi_poly, xj_poly);

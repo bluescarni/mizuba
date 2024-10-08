@@ -328,7 +328,7 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
 
         // Narrow-phase conjunction detection.
         sw.reset();
-        narrow_phase(pj, tmp_dir_path, n_cd_steps, bp_offsets, cd_end_times, *cjd, conj_thresh);
+        narrow_phase(pj, tmp_dir_path, bp_offsets, cd_end_times, *cjd, conj_thresh);
         log_info("Narrow-phase conjunction detection time: {}s", sw);
 
         // Create the impl.
