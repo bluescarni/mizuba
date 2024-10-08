@@ -14,7 +14,6 @@
 #include <cstdint>
 #include <fstream>
 #include <ios>
-#include <mutex>
 #include <stdexcept>
 #include <tuple>
 #include <vector>
@@ -30,6 +29,7 @@
 
 #include <oneapi/tbb/blocked_range.h>
 #include <oneapi/tbb/cache_aligned_allocator.h>
+#include <oneapi/tbb/concurrent_vector.h>
 #include <oneapi/tbb/enumerable_thread_specific.h>
 #include <oneapi/tbb/parallel_for.h>
 #include <oneapi/tbb/parallel_sort.h>
@@ -77,9 +77,8 @@ void conjunctions::narrow_phase(const polyjectory &pj, const boost::filesystem::
     // this is safe to compute.
     const auto conj_thresh2 = conj_thresh * conj_thresh;
 
-    // The global vector of conjunctions, plus a mutex for safe multithreaded access.
-    std::vector<conj> global_conj_vec;
-    std::mutex global_conj_vec_mutex;
+    // The global vector of conjunctions.
+    oneapi::tbb::concurrent_vector<conj> global_conj_vec_c;
 
     // We will be using thread-specific data to store temporary results during narrow-phase
     // conjunction detection.
@@ -136,10 +135,15 @@ void conjunctions::narrow_phase(const polyjectory &pj, const boost::filesystem::
                                                                                        bp_base_ptr, &cd_end_times,
                                                                                        pta_cfunc, pssdiff3_cfunc,
                                                                                        conj_thresh2, fex_check, rtscc,
-                                                                                       pt1, &global_conj_vec,
-                                                                                       &global_conj_vec_mutex](
+                                                                                       pt1, &global_conj_vec_c](
                                                                                           const auto &cd_range) {
+        // Conjunctions vector specific for a conjunction step.
+        oneapi::tbb::concurrent_vector<conj> cd_conj_vec;
+
         for (auto cd_idx = cd_range.begin(); cd_idx != cd_range.end(); ++cd_idx) {
+            // Reset cd_conj_vec.
+            cd_conj_vec.clear();
+
             // Fetch the broad-phase data for the current conjunction step.
             const auto [bp_offset, bp_size] = bp_offsets[cd_idx];
             const auto *bp_ptr = bp_base_ptr + bp_offset;
@@ -154,7 +158,7 @@ void conjunctions::narrow_phase(const polyjectory &pj, const boost::filesystem::
             oneapi::tbb::parallel_for(
                 oneapi::tbb::blocked_range<std::size_t>(0, bpc.extent(0)),
                 [&pj, bpc, order, &ets, cd_begin, cd_end, pta_cfunc, pssdiff3_cfunc, conj_thresh2, fex_check, rtscc,
-                 pt1, &global_conj_vec, &global_conj_vec_mutex](const auto &bp_range) {
+                 pt1, &cd_conj_vec](const auto &bp_range) {
                     // Fetch the thread-local data.
                     // NOTE: no need to isolate here, as we are not
                     // invoking any other TBB primitive from within this
@@ -454,13 +458,17 @@ void conjunctions::narrow_phase(const polyjectory &pj, const boost::filesystem::
                         assert(loop_entered);
                     }
 
-                    // Merge the local conjunction vector into the global one.
-                    std::lock_guard lock(global_conj_vec_mutex);
-
-                    global_conj_vec.insert(global_conj_vec.end(), local_conj_vec.begin(), local_conj_vec.end());
+                    // Merge the local conjunction vector into cd_conj_vec.
+                    cd_conj_vec.grow_by(local_conj_vec.begin(), local_conj_vec.end());
                 });
+
+            // Merge cd_conj_vec into global_conj_vec_c.
+            global_conj_vec_c.grow_by(cd_conj_vec.begin(), cd_conj_vec.end());
         }
     });
+
+    // Make a copy of global_conj_vec_c for faster sorting and dumping.
+    std::vector global_conj_vec(global_conj_vec_c.begin(), global_conj_vec_c.end());
 
     // Sort the global vector of conjunctions according to TCA.
     oneapi::tbb::parallel_sort(global_conj_vec.begin(), global_conj_vec.end(),
