@@ -520,7 +520,8 @@ PYBIND11_MODULE(core, m)
         ret.attr("flags").attr("writeable") = false;
 
         return ret;
-    });
+    }); // LCOV_EXCL_LINE
+
     // Expose static getters for the structured types.
     conj_cl.def_property_readonly_static("bvh_node", [](const py::object &) { return py::dtype::of<bvh_node>(); });
     conj_cl.def_property_readonly_static("aabb_collision",

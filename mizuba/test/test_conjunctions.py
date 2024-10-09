@@ -132,6 +132,12 @@ class conjunctions_test_case(_ut.TestCase):
         )
 
         with self.assertRaises(ValueError) as cm:
+            conj(conj_det_interval=0.0, pj=pj, conj_thresh=float(np.finfo(float).max))
+        self.assertTrue(
+            "is too large and results in an overflow error" in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
             conj(pj, conj_thresh=float("inf"), conj_det_interval=0.0)
         self.assertTrue(
             "The conjunction threshold must be finite and positive, but instead a value of"
