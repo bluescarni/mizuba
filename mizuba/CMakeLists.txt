@@ -11,6 +11,7 @@ set(MIZUBA_PYTHON_FILES
     test/test_conjunctions.py
     test/_planar_circ.py
     test/test_polyjectory.py
+    test/test_heyoka_conjunctions.py
 )
 
 # Core module.
