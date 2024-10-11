@@ -33,11 +33,13 @@ Repository = "https://github.com/bluescarni/mizuba"
 
 [project.optional-dependencies]
 sgp4 = ["skyfield"]
-heyoka = ["heyoka"]
+heyoka = ["heyoka >= 6.1.0, < 7"]
 
 [tool.scikit-build]
 # Avoid copying the C++ source files when building
 # binary wheels.
 wheel.packages = []
 # Enable IPO.
-cmake.define.HEYOKA_PY_ENABLE_IPO = "ON"
+cmake.define.MIZUBA_ENABLE_IPO = "ON"
+# Custom install path setting.
+cmake.define.MIZUBA_INSTALL_PATH = "."
