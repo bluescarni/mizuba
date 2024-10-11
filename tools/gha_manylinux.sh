@@ -68,16 +68,18 @@ make -j4 install
 # Build the mizuba wheel.
 cd ${GITHUB_WORKSPACE}
 /opt/python/${PYTHON_DIR}/bin/pip wheel . -v
+export WHEEL_FILENAME=`ls mizuba*.whl`
+echo "WHEEL_FILENAME: ${WHEEL_FILENAME}"
 # Repair it.
 # NOTE: this is temporary because some libraries in the docker
 # image are installed in lib64 rather than lib and they are
 # not picked up properly by the linker.
 export LD_LIBRARY_PATH="/usr/local/lib64:/usr/local/lib"
-auditwheel repair ./mizuba*.whl -w ./repaired_wheel
+auditwheel repair ./${WHEEL_FILENAME} -w ./repaired_wheel
 # Try to install it and run the tests.
 unset LD_LIBRARY_PATH
 cd /
-/opt/python/${PYTHON_DIR}/bin/pip install ${GITHUB_WORKSPACE}/repaired_wheel/mizuba*[sgp4,heyoka]
+/opt/python/${PYTHON_DIR}/bin/pip install ${GITHUB_WORKSPACE}/repaired_wheel/${WHEEL_FILENAME}[sgp4,heyoka]
 cd ${GITHUB_WORKSPACE}/tools
 /opt/python/${PYTHON_DIR}/bin/python -c "import mizuba; mizuba.test.run_test_suite();" 
 cd /
@@ -85,7 +87,7 @@ cd /
 # Upload to PyPI.
 if [[ "${MIZUBA_RELEASE_BUILD}" == "yes" ]]; then
 	/opt/python/${PYTHON_DIR}/bin/pip install twine
-	/opt/python/${PYTHON_DIR}/bin/twine upload -u __token__ ${GITHUB_WORKSPACE}/repaired_wheel/mizuba*
+	/opt/python/${PYTHON_DIR}/bin/twine upload -u __token__ ${GITHUB_WORKSPACE}/repaired_wheel/${WHEEL_FILENAME}
 fi
 
 set +e
