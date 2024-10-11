@@ -23,12 +23,12 @@ def run_test_suite():
 
     suite = tl.loadTestsFromTestCase(test_conjunctions.conjunctions_test_case)
     suite.addTest(
+        tl.loadTestsFromTestCase(test_heyoka_conjunctions.heyoka_conjunctions_test_case)
+    )
+    suite.addTest(
         tl.loadTestsFromTestCase(test_sgp4_polyjectory.sgp4_polyjectory_test_case)
     )
     suite.addTest(tl.loadTestsFromTestCase(test_polyjectory.polyjectory_test_case))
-    suite.addTest(
-        tl.loadTestsFromTestCase(test_heyoka_conjunctions.heyoka_conjunctions_test_case)
-    )
 
     test_result = _ut.TextTestRunner(verbosity=2).run(suite)
 

@@ -15,7 +15,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
     # track of the minimum distances between the objects.
     def test_main(self):
         try:
-            #import heyoka as hy
+            import heyoka as hy
             from sgp4.api import Satrec
         except ImportError:
             return

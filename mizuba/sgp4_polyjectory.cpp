@@ -207,7 +207,7 @@ auto construct_sgp4_ode_integrator(const ODESys &sys, double exit_radius, double
     init_state.resize(boost::safe_numerics::safe<decltype(init_state.size())>(sys.size()) * batch_size);
 
     return ta_t(sys, std::move(init_state), batch_size, heyoka::kw::t_events = std::move(t_events),
-                heyoka::kw::compact_mode = true, heyoka::kw::parjit = true);
+                heyoka::kw::compact_mode = true);
 }
 
 // Run the ODE integration according to the sgp4 dynamics, storing the Taylor coefficients
