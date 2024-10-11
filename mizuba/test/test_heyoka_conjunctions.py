@@ -278,28 +278,61 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
 
         ta.propagate_for(4.8)
 
-        hy_conj_list = np.sort(np.array(hy_conj_list, dtype=conj.conj), order="tca")
+        hy_conj_arr = np.sort(np.array(hy_conj_list, dtype=conj.conj), order="tca")
 
-        self.assertEqual(len(hy_conj_list), 2)
+        self.assertEqual(len(hy_conj_arr), 2)
 
-        self.assertTrue(np.isclose(hy_conj_list[0]["tca"], np.pi / 2, atol=1e-15))
-        self.assertTrue(np.isclose(hy_conj_list[0]["dca"], 0, atol=1e-15))
-        self.assertEqual(hy_conj_list[0]["i"], 0)
-        self.assertEqual(hy_conj_list[0]["j"], 1)
+        self.assertTrue(np.isclose(hy_conj_arr[0]["tca"], np.pi / 2, atol=1e-15))
+        self.assertTrue(np.isclose(hy_conj_arr[0]["dca"], 0, atol=1e-15))
+        self.assertEqual(hy_conj_arr[0]["i"], 0)
+        self.assertEqual(hy_conj_arr[0]["j"], 1)
+        self.assertTrue(np.all(np.isclose(hy_conj_arr[0]["ri"], [0, 0, 1], atol=1e-15)))
+        self.assertTrue(np.all(np.isclose(hy_conj_arr[0]["rj"], [0, 0, 1], atol=1e-15)))
+
+        self.assertTrue(np.isclose(hy_conj_arr[1]["tca"], 3 * np.pi / 2, atol=1e-15))
+        self.assertTrue(np.isclose(hy_conj_arr[1]["dca"], 0, atol=1e-15))
+        self.assertEqual(hy_conj_arr[1]["i"], 0)
+        self.assertEqual(hy_conj_arr[1]["j"], 1)
         self.assertTrue(
-            np.all(np.isclose(hy_conj_list[0]["ri"], [0, 0, 1], atol=1e-15))
+            np.all(np.isclose(hy_conj_arr[1]["ri"], [0, 0, -1], atol=1e-15))
         )
         self.assertTrue(
-            np.all(np.isclose(hy_conj_list[0]["rj"], [0, 0, 1], atol=1e-15))
+            np.all(np.isclose(hy_conj_arr[1]["rj"], [0, 0, -1], atol=1e-15))
         )
 
-        self.assertTrue(np.isclose(hy_conj_list[1]["tca"], 3 * np.pi / 2, atol=1e-15))
-        self.assertTrue(np.isclose(hy_conj_list[1]["dca"], 0, atol=1e-15))
-        self.assertEqual(hy_conj_list[1]["i"], 0)
-        self.assertEqual(hy_conj_list[1]["j"], 1)
+        # Try an equatorial collision too.
+        ta.time = 0.0
+        ta.state[:] = 0.0
+        hy_conj_list.clear()
+
+        ic_rs[0, 0] = 1.0
+        ic_rs[0, 4] = 1.0
+        ic_rs[0, 6] = 1.0
+
+        ic_rs[1, 0] = -1.0
+        ic_rs[1, 4] = 1.0
+        ic_rs[1, 6] = 1.0
+
+        ta.propagate_for(4.8)
+
+        hy_conj_arr = np.sort(np.array(hy_conj_list, dtype=conj.conj), order="tca")
+
+        self.assertEqual(len(hy_conj_arr), 2)
+
+        self.assertTrue(np.isclose(hy_conj_arr[0]["tca"], np.pi / 2, atol=1e-15))
+        self.assertTrue(np.isclose(hy_conj_arr[0]["dca"], 0, atol=1e-15))
+        self.assertEqual(hy_conj_arr[0]["i"], 0)
+        self.assertEqual(hy_conj_arr[0]["j"], 1)
+        self.assertTrue(np.all(np.isclose(hy_conj_arr[0]["ri"], [0, 1, 0], atol=1e-15)))
+        self.assertTrue(np.all(np.isclose(hy_conj_arr[0]["rj"], [0, 1, 0], atol=1e-15)))
+
+        self.assertTrue(np.isclose(hy_conj_arr[1]["tca"], 3 * np.pi / 2, atol=1e-15))
+        self.assertTrue(np.isclose(hy_conj_arr[1]["dca"], 0, atol=1e-15))
+        self.assertEqual(hy_conj_arr[1]["i"], 0)
+        self.assertEqual(hy_conj_arr[1]["j"], 1)
         self.assertTrue(
-            np.all(np.isclose(hy_conj_list[1]["ri"], [0, 0, -1], atol=1e-15))
+            np.all(np.isclose(hy_conj_arr[1]["ri"], [0, -1, 0], atol=1e-15))
         )
         self.assertTrue(
-            np.all(np.isclose(hy_conj_list[1]["rj"], [0, 0, -1], atol=1e-15))
+            np.all(np.isclose(hy_conj_arr[1]["rj"], [0, -1, 0], atol=1e-15))
         )
