@@ -79,7 +79,7 @@ auditwheel repair ./${WHEEL_FILENAME} -w ./repaired_wheel
 # Try to install it and run the tests.
 unset LD_LIBRARY_PATH
 cd /
-/opt/python/${PYTHON_DIR}/bin/pip install ${GITHUB_WORKSPACE}/repaired_wheel/${WHEEL_FILENAME}[sgp4,heyoka]
+/opt/python/${PYTHON_DIR}/bin/pip install ${GITHUB_WORKSPACE}/repaired_wheel/${WHEEL_FILENAME} skyfield heyoka
 cd ${GITHUB_WORKSPACE}/tools
 /opt/python/${PYTHON_DIR}/bin/python -c "import mizuba; mizuba.test.run_test_suite();" 
 cd /
