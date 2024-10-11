@@ -13,7 +13,6 @@
 #include <cstdint>
 #include <fstream>
 #include <ios>
-#include <mutex>
 #include <set>
 #include <stdexcept>
 #include <tuple>
@@ -30,10 +29,10 @@
 
 #include <oneapi/tbb/blocked_range.h>
 #include <oneapi/tbb/cache_aligned_allocator.h>
+#include <oneapi/tbb/concurrent_vector.h>
 #include <oneapi/tbb/enumerable_thread_specific.h>
 #include <oneapi/tbb/parallel_for.h>
 #include <oneapi/tbb/parallel_sort.h>
-#include <oneapi/tbb/task_arena.h>
 
 #include "conjunctions.hpp"
 #include "detail/file_utils.hpp"
@@ -299,22 +298,17 @@ conjunctions::broad_phase(const polyjectory &pj, const boost::filesystem::path &
                                                                                        aabbs
 #endif
     ](const auto &cd_range) {
+        // AABBs collision vector specific for a conjunction step.
+        oneapi::tbb::concurrent_vector<aabb_collision> bp_cv_c;
+
         for (auto cd_idx = cd_range.begin(); cd_idx != cd_range.end(); ++cd_idx) {
+            // Reset bp_cv_c.
+            bp_cv_c.clear();
+
             // Fetch the tree for the current conjunction step.
             const auto [tree_offset, tree_size] = tree_offsets[cd_idx];
             const auto *tree_ptr = bvh_trees_base_ptr + tree_offset;
             const tree_span_t tree{tree_ptr, tree_size};
-
-            // Create the vector for storing the list of aabbs collisions
-            // for the current conjunction step.
-            // NOTE: in principle here we could fetch bp_cv from thread-local
-            // storage, rather than creating it each time ex novo. However, the
-            // code would become more complex and I am not sure it is worth it
-            // performance wise. Something to keep in mind for the future.
-            std::vector<aabb_collision> bp_cv;
-
-            // Mutex for concurrently inserting data into bp_cv.
-            std::mutex bp_cv_mutex;
 
             // Fetch the number of objects with trajectory data for the current
             // conjunction step. This can be determined from the number of objects
@@ -327,7 +321,7 @@ conjunctions::broad_phase(const polyjectory &pj, const boost::filesystem::path &
             // identify collisions between its aabb and the aabbs of the other objects.
             oneapi::tbb::parallel_for(
                 oneapi::tbb::blocked_range<std::uint32_t>(0, nobjs),
-                [&ets, srt_idx, cd_idx, &conj_active, srt_aabbs, tree, &bp_cv, &bp_cv_mutex](const auto &obj_range) {
+                [&ets, srt_idx, cd_idx, &conj_active, srt_aabbs, tree, &bp_cv_c](const auto &obj_range) {
                     // Fetch the thread-local data.
                     // NOTE: no need to isolate here, as we are not
                     // invoking any other TBB primitive from within this
@@ -427,11 +421,12 @@ conjunctions::broad_phase(const polyjectory &pj, const boost::filesystem::path &
                         } while (!stack.empty());
                     }
 
-                    // Append the detected aabbs collisions to bp_cv.
-                    std::lock_guard lock(bp_cv_mutex);
-
-                    bp_cv.insert(bp_cv.end(), local_bp.begin(), local_bp.end());
+                    // Append the detected aabbs collisions to bp_cv_c.
+                    bp_cv_c.grow_by(local_bp.begin(), local_bp.end());
                 });
+
+            // Make a copy of bp_cv_c for faster sorting and dumping.
+            std::vector bp_cv(bp_cv_c.begin(), bp_cv_c.end());
 
             // Sort the data in bp_cv.
             oneapi::tbb::parallel_sort(bp_cv.begin(), bp_cv.end());

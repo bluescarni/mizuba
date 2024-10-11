@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <tuple>
 #include <utility>
@@ -26,8 +27,12 @@
 #include <boost/numeric/conversion/cast.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
 
+#include <oneapi/tbb/parallel_invoke.h>
+
 #include "conjunctions.hpp"
+#include "detail/conjunctions_jit.hpp"
 #include "detail/file_utils.hpp"
+#include "logging.hpp"
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -46,6 +51,7 @@ namespace detail
 struct conjunctions_impl {
     using bvh_node = conjunctions::bvh_node;
     using aabb_collision = conjunctions::aabb_collision;
+    using conj = conjunctions::conj;
 
     // The path to the temp dir containing all the
     // conjunctions data.
@@ -92,6 +98,8 @@ struct conjunctions_impl {
     boost::iostreams::mapped_file_source m_file_bvh_trees;
     // The memory-mapped file for the bp data.
     boost::iostreams::mapped_file_source m_file_bp;
+    // The memory-mapped file for the detected conjunctions.
+    boost::iostreams::mapped_file_source m_file_conjs;
     // Pointer to the beginning of m_file_aabbs, cast to float.
     const float *m_aabbs_base_ptr = nullptr;
     // Pointer to the beginning of m_file_srt_aabbs, cast to float.
@@ -106,6 +114,8 @@ struct conjunctions_impl {
     const bvh_node *m_bvh_trees_ptr = nullptr;
     // Pointer to the beginning of m_file_bp, cast to aabb_collision.
     const aabb_collision *m_bp_ptr = nullptr;
+    // Pointer to the beginning of m_file_conjs, cast to conj.
+    const conj *m_conjs_ptr = nullptr;
 
     explicit conjunctions_impl(boost::filesystem::path temp_dir_path, polyjectory pj, double conj_thresh,
                                double conj_det_interval, std::size_t n_cd_steps, std::vector<double> cd_end_times,
@@ -120,7 +130,7 @@ struct conjunctions_impl {
           m_file_mcodes((m_temp_dir_path / "mcodes").string()),
           m_file_srt_mcodes((m_temp_dir_path / "srt_mcodes").string()),
           m_file_srt_idx((m_temp_dir_path / "vidx").string()), m_file_bvh_trees((m_temp_dir_path / "bvh").string()),
-          m_file_bp((m_temp_dir_path / "bp").string())
+          m_file_bp((m_temp_dir_path / "bp").string()), m_file_conjs(m_temp_dir_path / "conjunctions")
     {
         // Sanity checks.
         assert(n_cd_steps > 0u);
@@ -150,6 +160,17 @@ struct conjunctions_impl {
 
         m_bp_ptr = reinterpret_cast<const aabb_collision *>(m_file_bp.data());
         assert(boost::alignment::is_aligned(m_bp_ptr, alignof(aabb_collision)));
+
+        // NOTE: if no conjunctions were detected, only a single byte
+        // was written to m_file_conjs. In this case, we leave m_conjs_ptr
+        // null in order to signal the lack of conjunctions.
+        // NOTE: we do not need to do this for broad-phase conjunction
+        // detection data because there we can detect the lack of data from
+        // m_bp_offsets.
+        if (m_file_conjs.size() > 1u) {
+            m_conjs_ptr = reinterpret_cast<const conj *>(m_file_conjs.data());
+            assert(boost::alignment::is_aligned(m_conjs_ptr, alignof(conj)));
+        }
     }
 
     [[nodiscard]] bool is_open() noexcept
@@ -171,6 +192,7 @@ struct conjunctions_impl {
         m_file_srt_idx.close();
         m_file_bvh_trees.close();
         m_file_bp.close();
+        m_file_conjs.close();
 
         // Remove the temp dir and everything within.
         boost::filesystem::remove_all(m_temp_dir_path);
@@ -212,6 +234,12 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
         throw std::invalid_argument(
             fmt::format("The conjunction threshold must be finite and positive, but instead a value of {} was provided",
                         conj_thresh));
+    }
+
+    // NOTE: we need to square conj_thresh during narrow-phase conjunction detection.
+    if (!std::isfinite(conj_thresh * conj_thresh)) [[unlikely]] {
+        throw std::invalid_argument(
+            fmt::format("A conjunction threshold of {} is too large and results in an overflow error", conj_thresh));
     }
 
     // Check conj_det_interval.
@@ -259,17 +287,49 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
         // Change the permissions so that only the owner has access.
         boost::filesystem::permissions(tmp_dir_path, boost::filesystem::owner_all);
 
-        // Run the computation of the aabbs.
-        auto cd_end_times = compute_aabbs(pj, tmp_dir_path, n_cd_steps, conj_thresh, conj_det_interval);
+        // NOTE: narrow-phase conjunction detection requires JIT compilation
+        // of several functions. Run the compilation in parallel with the initial
+        // phases of conjunction detection.
+        std::vector<double> cd_end_times;
+        std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets, bp_offsets;
+        std::optional<detail::conj_jit_data> cjd;
 
-        // Morton encoding and indirect sorting.
-        morton_encode_sort_parallel(pj, tmp_dir_path, n_cd_steps);
+        stopwatch sw;
 
-        // Construct the bvh trees.
-        auto tree_offsets = construct_bvh_trees_parallel(pj, tmp_dir_path, n_cd_steps);
+        oneapi::tbb::parallel_invoke(
+            [this, &pj, &cd_end_times, &tree_offsets, &bp_offsets, &tmp_dir_path, n_cd_steps, conj_thresh,
+             conj_det_interval, &conj_active, &sw]() {
+                // Run the computation of the aabbs.
+                sw.reset();
+                cd_end_times = compute_aabbs(pj, tmp_dir_path, n_cd_steps, conj_thresh, conj_det_interval);
+                log_info("AABBs computation time: {}s", sw);
 
-        // Broad-phase conjunction detection.
-        auto bp_offsets = broad_phase(pj, tmp_dir_path, n_cd_steps, tree_offsets, conj_active);
+                // Morton encoding and indirect sorting.
+                sw.reset();
+                morton_encode_sort_parallel(pj, tmp_dir_path, n_cd_steps);
+                log_info("Morton encoding and indirect sorting time: {}s", sw);
+
+                // Construct the bvh trees.
+                sw.reset();
+                tree_offsets = construct_bvh_trees_parallel(pj, tmp_dir_path, n_cd_steps);
+                log_info("BVH trees construction time: {}s", sw);
+
+                // Broad-phase conjunction detection.
+                sw.reset();
+                bp_offsets = broad_phase(pj, tmp_dir_path, n_cd_steps, tree_offsets, conj_active);
+                log_info("Broad-phase conjunction detection time: {}s", sw);
+            },
+            [&cjd, &pj]() {
+                // Compile the functions necessary for narrow-phase conjunction detection.
+                stopwatch sw_jit;
+                cjd.emplace(pj.get_poly_order());
+                log_info("JIT compilation time: {}s", sw_jit);
+            });
+
+        // Narrow-phase conjunction detection.
+        sw.reset();
+        narrow_phase(pj, tmp_dir_path, bp_offsets, cd_end_times, *cjd, conj_thresh);
+        log_info("Narrow-phase conjunction detection time: {}s", sw);
 
         // Create the impl.
         m_impl = std::make_shared<detail::conjunctions_impl>(
@@ -390,6 +450,20 @@ conjunctions::aabb_collision_span_t conjunctions::get_aabb_collisions(std::size_
 std::size_t conjunctions::get_n_cd_steps() const noexcept
 {
     return m_impl->m_n_cd_steps;
+}
+
+conjunctions::conj_span_t conjunctions::get_conjunctions() const noexcept
+{
+    if (m_impl->m_conjs_ptr == nullptr) {
+        // No conjunctions detected.
+        return conj_span_t{nullptr, 0};
+    } else {
+        assert(m_impl->m_file_conjs.size() % sizeof(conj) == 0u);
+        // NOTE: the static cast is ok because we made sure that
+        // the total size of m_file_conjs can be represented by
+        // std::size_t.
+        return conj_span_t{m_impl->m_conjs_ptr, static_cast<std::size_t>(m_impl->m_file_conjs.size() / sizeof(conj))};
+    }
 }
 
 } // namespace mizuba

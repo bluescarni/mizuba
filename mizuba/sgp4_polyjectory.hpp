@@ -20,9 +20,12 @@ namespace mizuba
 {
 
 // Default exit radius.
-// This roughly corresponds to the semi-major axis at which
+// NOTE: 12000 would roughly be the semi-major axis at which
 // one should start using the deep space part of the SGP4 algorithm.
-inline constexpr double sgp4_exit_radius = 12000;
+// We bump this up to 20000 in order to account for potential
+// high-eccentricity orbits which still can be propagated without
+// the SGP4 deep-space part.
+inline constexpr double sgp4_exit_radius = 20000;
 
 // Default reentry radius: 150km of altitude over the mean
 // Earth radius.

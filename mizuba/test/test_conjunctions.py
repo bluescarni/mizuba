@@ -31,7 +31,8 @@ class conjunctions_test_case(_ut.TestCase):
 
         # A sparse list of satellites.
         # NOTE: we manually include an object for which the
-        # trajectory data terminates early.
+        # trajectory data terminates early (but only if the exit_radius
+        # is set to 12000).
         cls.sparse_sat_list = sat_list[::2000] + [sat_list[220]]
 
         # List of 9000 satellites.
@@ -131,6 +132,12 @@ class conjunctions_test_case(_ut.TestCase):
         )
 
         with self.assertRaises(ValueError) as cm:
+            conj(conj_det_interval=0.0, pj=pj, conj_thresh=float(np.finfo(float).max))
+        self.assertTrue(
+            "is too large and results in an overflow error" in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
             conj(pj, conj_thresh=float("inf"), conj_det_interval=0.0)
         self.assertTrue(
             "The conjunction threshold must be finite and positive, but instead a value of"
@@ -157,6 +164,7 @@ class conjunctions_test_case(_ut.TestCase):
         self.assertEqual(c.n_cd_steps, len(c.cd_end_times))
         self.assertTrue(isinstance(c.bvh_node, np.dtype))
         self.assertTrue(isinstance(c.aabb_collision, np.dtype))
+        self.assertTrue(isinstance(c.conj, np.dtype))
 
         # aabbs.
         rc = sys.getrefcount(c)
@@ -266,6 +274,11 @@ class conjunctions_test_case(_ut.TestCase):
             # Verify the aabbs.
             self._verify_conj_aabbs(c, rng)
 
+            # No aabb collisions or conjunctions expected.
+            for i in range(c.n_cd_steps):
+                self.assertEqual(len(c.get_aabb_collisions(i)), 0)
+            self.assertEqual(len(c.conjunctions), 0)
+
             # Test whitelist initialisation.
             c = conj(
                 pj, conj_thresh=0.1, conj_det_interval=conj_det_interval, whitelist=[0]
@@ -287,7 +300,7 @@ class conjunctions_test_case(_ut.TestCase):
         # larger than maxT, the time data in the conjunctions object
         # is correctly clamped.
         c = conj(pj, conj_thresh=0.1, conj_det_interval=42.0)
-        self.assertEqual(len(c.cd_end_times), 1)
+        self.assertEqual(c.n_cd_steps, 1)
         self.assertEqual(c.cd_end_times[0], pj[0][1][-1])
 
         # Run the sgp4 tests, if possible.
@@ -302,7 +315,9 @@ class conjunctions_test_case(_ut.TestCase):
         begin_jd = 2460496.5
 
         # Build the polyjectory.
-        pt, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 0.25)
+        pt, mask = sgp4_polyjectory(
+            sat_list, begin_jd, begin_jd + 0.25, exit_radius=12000.0
+        )
         tot_nobjs = pt.nobjs
 
         # Build the conjunctions object. Keep a small threshold not to interfere
@@ -315,7 +330,7 @@ class conjunctions_test_case(_ut.TestCase):
         # Shape checks.
         self.assertEqual(c.aabbs.shape, c.srt_aabbs.shape)
         self.assertEqual(c.mcodes.shape, c.srt_mcodes.shape)
-        self.assertEqual(c.srt_idx.shape, (len(c.cd_end_times), c.polyjectory.nobjs))
+        self.assertEqual(c.srt_idx.shape, (c.n_cd_steps, c.polyjectory.nobjs))
 
         # The global aabbs must be the same in srt_aabbs.
         self.assertTrue(
@@ -344,7 +359,7 @@ class conjunctions_test_case(_ut.TestCase):
 
         # Indexing into aabbs and mcodes via srt_idx must produce
         # srt_abbs and srt_mcodes.
-        for cd_idx in range(len(c.cd_end_times)):
+        for cd_idx in range(c.n_cd_steps):
             self.assertEqual(
                 sorted(c.srt_idx[cd_idx]), list(range(c.polyjectory.nobjs))
             )
@@ -573,15 +588,16 @@ class conjunctions_test_case(_ut.TestCase):
         self.assertEqual(conjs.srt_idx[0, -1], 7)
         self.assertEqual(conjs.srt_idx[0, -2], 8)
 
-    def test_broad_phase(self):
-        # A test to trigger the internal debug
-        # checks implemented in C++.
+    def test_broad_narrow_phase(self):
+        # NOTE: for the broad-phase, we are relying
+        # on internal debug checks implemented in C++.
 
         # We rely on sgp4 data for this test.
         if not hasattr(type(self), "sparse_sat_list"):
             return
 
         from .. import sgp4_polyjectory, conjunctions as conj
+        import numpy as np
 
         sat_list = self.half_sat_list
 
@@ -604,3 +620,61 @@ class conjunctions_test_case(_ut.TestCase):
             f"Cannot fetch the list of AABB collisions for the conjunction timestep at index {c.n_cd_steps}: the total number of conjunction steps is only {c.n_cd_steps}"
             in str(cm.exception)
         )
+
+        # The conjunctions must be sorted according
+        # to the TCA.
+        self.assertTrue(np.all(np.diff(c.conjunctions["tca"]) >= 0))
+
+        # All conjunctions must happen before the polyjectory end time.
+        self.assertTrue(c.conjunctions["tca"][-1] < 15.0)
+
+        # No conjunction must be at or above the threshold.
+        self.assertTrue(np.all(np.diff(c.conjunctions["dca"]) < 10))
+
+        # Objects cannot have conjunctions with themselves.
+        self.assertTrue(np.all(c.conjunctions["i"] != c.conjunctions["j"]))
+
+        # DCA must be consistent with state vectors.
+        self.assertTrue(
+            np.all(
+                np.isclose(
+                    np.linalg.norm(c.conjunctions["ri"] - c.conjunctions["rj"], axis=1),
+                    c.conjunctions["dca"],
+                    rtol=1e-13,
+                )
+            )
+        )
+
+        # Verify the conjunctions with the sgp4 python module.
+        sl_array = np.array(sat_list)[mask]
+        for cj in c.conjunctions:
+            # Fetch the conjunction data.
+            tca = cj["tca"]
+            dca = cj["dca"]
+            i, j = cj["i"], cj["j"]
+            ri, rj = cj["ri"], cj["rj"]
+            vi, vj = cj["vi"], cj["vj"]
+
+            # Fetch the satellite models.
+            sat_i = sl_array[i].model
+            sat_j = sl_array[j].model
+
+            ei, sri, svi = sat_i.sgp4(begin_jd, tca / 1440.0)
+            ej, srj, svj = sat_j.sgp4(begin_jd, tca / 1440.0)
+
+            diff_ri = np.linalg.norm(sri - ri)
+            diff_rj = np.linalg.norm(srj - rj)
+
+            diff_vi = np.linalg.norm(svi - vi)
+            diff_vj = np.linalg.norm(svj - vj)
+
+            # NOTE: unit of measure here is [km], vs typical
+            # values of >1e3 km in the coordinates. Thus, relative
+            # error is 1e-11, absolute error is ~10µm.
+            self.assertLess(diff_ri, 1e-8)
+            self.assertLess(diff_rj, 1e-8)
+
+            # NOTE: unit of measure here is [km/s], vs typicial
+            # velocity values of >1 km/s.
+            self.assertLess(diff_vi, 1e-11)
+            self.assertLess(diff_vj, 1e-11)

@@ -44,6 +44,8 @@ struct conjunctions_impl;
 void close_cj(std::shared_ptr<conjunctions_impl> &) noexcept;
 [[nodiscard]] const std::shared_ptr<conjunctions_impl> &fetch_cj_impl(const conjunctions &) noexcept;
 
+struct conj_jit_data;
+
 } // namespace detail
 
 class conjunctions
@@ -91,6 +93,9 @@ class conjunctions
     std::vector<std::tuple<std::size_t, std::size_t>>
     broad_phase(const polyjectory &, const boost::filesystem::path &, std::size_t,
                 const std::vector<std::tuple<std::size_t, std::size_t>> &, const std::vector<bool> &);
+    void narrow_phase(const polyjectory &, const boost::filesystem::path &,
+                      const std::vector<std::tuple<std::size_t, std::size_t>> &, const std::vector<double> &,
+                      const detail::conj_jit_data &, double);
 
 public:
     // The BVH node struct.
@@ -108,6 +113,20 @@ public:
         // Indices of the objects whose AABBs collide.
         std::uint32_t i, j;
         auto operator<=>(const aabb_collision &) const = default;
+    };
+
+    // Struct to represent a conjunction between two objects.
+    struct conj {
+        // Time of closest approach.
+        double tca;
+        // Distance of closest approach.
+        double dca;
+        // The objects involved in the conjunction.
+        std::uint32_t i, j;
+        // The state vectors of i and j
+        // at TCA.
+        std::array<double, 3> ri, vi;
+        std::array<double, 3> rj, vj;
     };
 
     template <typename WRange = std::vector<std::uint32_t>>
@@ -157,6 +176,8 @@ public:
     [[nodiscard]] tree_span_t get_bvh_tree(std::size_t) const;
     using aabb_collision_span_t = heyoka::mdspan<const aabb_collision, heyoka::dextents<std::size_t, 1>>;
     [[nodiscard]] aabb_collision_span_t get_aabb_collisions(std::size_t) const;
+    using conj_span_t = heyoka::mdspan<const conj, heyoka::dextents<std::size_t, 1>>;
+    [[nodiscard]] conj_span_t get_conjunctions() const noexcept;
 };
 
 } // namespace mizuba

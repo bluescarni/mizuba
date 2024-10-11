@@ -348,11 +348,17 @@ PYBIND11_MODULE(core, m)
     // Same for conjunctions::aabb_collision.
     using aabb_collision = mz::conjunctions::aabb_collision;
     PYBIND11_NUMPY_DTYPE(aabb_collision, i, j);
+    // Same for conjunctions::conj.
+    using conj = mz::conjunctions::conj;
+    PYBIND11_NUMPY_DTYPE(conj, tca, dca, i, j, ri, vi, rj, vj);
 
     // Conjunctions.
     py::class_<mz::conjunctions> conj_cl(m, "conjunctions", py::dynamic_attr{});
     conj_cl.def(py::init([](mz::polyjectory pj, double conj_thresh, double conj_det_interval,
                             std::vector<std::uint32_t> whitelist) {
+                    // NOTE: release the GIL during conjunction detection.
+                    py::gil_scoped_release release;
+
                     auto ret = mz::conjunctions(std::move(pj), conj_thresh, conj_det_interval, std::move(whitelist));
 
                     // Register the conjunctions implementation in the cleanup machinery.
@@ -500,10 +506,27 @@ PYBIND11_MODULE(core, m)
 
         return ret;
     });
+    conj_cl.def_property_readonly("conjunctions", [](const py::object &self) {
+        const auto *p = py::cast<const mz::conjunctions *>(self);
+
+        // Fetch the span.
+        const auto conj_span = p->get_conjunctions();
+
+        // Turn into an array.
+        auto ret = py::array_t<conj>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(conj_span.extent(0))},
+                                     conj_span.data_handle(), self);
+
+        // Ensure the returned array is read-only.
+        ret.attr("flags").attr("writeable") = false;
+
+        return ret;
+    }); // LCOV_EXCL_LINE
+
     // Expose static getters for the structured types.
     conj_cl.def_property_readonly_static("bvh_node", [](const py::object &) { return py::dtype::of<bvh_node>(); });
     conj_cl.def_property_readonly_static("aabb_collision",
                                          [](const py::object &) { return py::dtype::of<aabb_collision>(); });
+    conj_cl.def_property_readonly_static("conj", [](const py::object &) { return py::dtype::of<conj>(); });
 
     // Register the polyjectory/conjunctions cleanup machinery.
     auto atexit = py::module_::import("atexit");

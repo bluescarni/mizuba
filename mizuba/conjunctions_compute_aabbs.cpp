@@ -30,6 +30,7 @@
 #include "conjunctions.hpp"
 #include "detail/file_utils.hpp"
 #include "detail/ival.hpp"
+#include "detail/poly_utils.hpp"
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -135,7 +136,9 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
     // Bump it up by one to define a half-open range.
     // NOTE: don't bump it if it is already at the end.
     // This could happen for instance if an object does not
-    // have trajectory data for the current conjunction step.
+    // have trajectory data for the current conjunction step,
+    // or if the trajectory data ends before the end of the
+    // conjunction step.
     ts_end += (ts_end != t_end);
 
     // Iterate over all trajectory steps and update the bounding box
@@ -179,29 +182,21 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
         const auto *cf_ptr_z = &traj_span(ss_idx, 2, 0);
         const auto *cf_ptr_r = &traj_span(ss_idx, 6, 0);
 
-        // Helper to run the polynomial evaluations using interval arithmetic.
+        // Run the polynomial evaluations with interval arithmetics.
         // NOTE: jit for performance? If so, we can do all 4 coordinates
         // in a single JIT compiled function. Possibly also the update
         // with the conjunction radius? Note also that cfunc requires
         // input data stored in contiguous order, thus we would need
-        // a 7-arguments cfunc which ignores arguments 3,4,5.
+        // a 7-arguments cfunc which ignores arguments at indices 3,4,5.
         // NOTE: by using interval arithmetic here, we are producing intervals
         // in the form [a, b] (i.e., closed intervals), even if originally
         // the time intervals of the trajectory steps are meant to be half-open [a, b).
         // This is fine, as the end result is a slight enlargement of the aabb,
         // which is not problematic as the resulting aabb is still guaranteed
         // to contain the position of the object.
-        auto horner_eval = [order, h_int = ival(h_int_lb, h_int_ub)](const double *ptr) {
-            auto acc = ival(ptr[order]);
-            for (std::uint32_t o = 1; o <= order; ++o) {
-                acc = ival(ptr[order - o]) + acc * h_int;
-            }
-
-            return acc;
-        };
-
-        // Run the polynomial evaluations with interval arithmetics.
-        std::array xyzr_int{horner_eval(cf_ptr_x), horner_eval(cf_ptr_y), horner_eval(cf_ptr_z), horner_eval(cf_ptr_r)};
+        const auto h_int = ival(h_int_lb, h_int_ub);
+        std::array xyzr_int{detail::horner_eval(cf_ptr_x, order, h_int), detail::horner_eval(cf_ptr_y, order, h_int),
+                            detail::horner_eval(cf_ptr_z, order, h_int), detail::horner_eval(cf_ptr_r, order, h_int)};
 
         // Adjust the intervals accounting for conjunction tracking.
         for (auto &val : xyzr_int) {

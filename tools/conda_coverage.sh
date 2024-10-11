@@ -16,7 +16,7 @@ export PATH="$HOME/miniconda/bin:$PATH"
 bash miniconda.sh -b -p $HOME/miniconda
 conda create -y -p $deps_dir c-compiler cxx-compiler cmake ninja \
     tbb-devel tbb libboost-devel heyoka fmt 'python=3.12' numpy \
-    pybind11 skyfield sgp4 lcov
+    pybind11 skyfield sgp4 heyoka.py lcov
 source activate $deps_dir
 
 # Create the build dir and cd into it.
