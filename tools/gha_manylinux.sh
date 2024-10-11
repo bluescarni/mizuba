@@ -76,18 +76,18 @@ echo "WHEEL_FILENAME: ${WHEEL_FILENAME}"
 # not picked up properly by the linker.
 export LD_LIBRARY_PATH="/usr/local/lib64:/usr/local/lib"
 auditwheel repair ./${WHEEL_FILENAME} -w ./repaired_wheel
+export REPAIRED_WHEEL_FILENAME=`basename \`ls ./repaired_wheel/*.whl\``
+echo "REPAIRED_WHEEL_FILENAME: ${REPAIRED_WHEEL_FILENAME}"
 # Try to install it and run the tests.
 unset LD_LIBRARY_PATH
 cd /
-/opt/python/${PYTHON_DIR}/bin/pip install ${GITHUB_WORKSPACE}/repaired_wheel/${WHEEL_FILENAME} skyfield heyoka
-cd ${GITHUB_WORKSPACE}/tools
+/opt/python/${PYTHON_DIR}/bin/pip install ${GITHUB_WORKSPACE}/repaired_wheel/${REPAIRED_WHEEL_FILENAME}[skyfield,heyoka]
 /opt/python/${PYTHON_DIR}/bin/python -c "import mizuba; mizuba.test.run_test_suite();" 
-cd /
 
 # Upload to PyPI.
 if [[ "${MIZUBA_RELEASE_BUILD}" == "yes" ]]; then
 	/opt/python/${PYTHON_DIR}/bin/pip install twine
-	/opt/python/${PYTHON_DIR}/bin/twine upload -u __token__ ${GITHUB_WORKSPACE}/repaired_wheel/${WHEEL_FILENAME}
+	/opt/python/${PYTHON_DIR}/bin/twine upload -u __token__ ${GITHUB_WORKSPACE}/repaired_wheel/${REPAIRED_WHEEL_FILENAME}
 fi
 
 set +e
