@@ -12,6 +12,8 @@ from ._version import __version__
 # We import the sub-modules into the root namespace.
 from .core import *
 
+del core
+
 from . import test
 
 
