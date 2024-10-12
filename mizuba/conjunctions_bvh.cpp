@@ -404,8 +404,8 @@ auto consolidate_tree_data(const auto &tmp_dir_path, const auto &tree_sizes)
 // pj is the polyjectory, tmp_dir_path the temporary dir storing all conjunction data,
 // n_cd_steps the number of conjunction steps.
 std::vector<std::tuple<std::size_t, std::size_t>>
-conjunctions::construct_bvh_trees_parallel(const polyjectory &pj, const boost::filesystem::path &tmp_dir_path,
-                                           std::size_t n_cd_steps) const
+conjunctions::construct_bvh_trees(const polyjectory &pj, const boost::filesystem::path &tmp_dir_path,
+                                  std::size_t n_cd_steps) const
 {
     using safe_u32_t = boost::safe_numerics::safe<std::uint32_t>;
 
