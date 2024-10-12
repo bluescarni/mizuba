@@ -178,6 +178,8 @@ public:
     [[nodiscard]] aabb_collision_span_t get_aabb_collisions(std::size_t) const;
     using conj_span_t = heyoka::mdspan<const conj, heyoka::dextents<std::size_t, 1>>;
     [[nodiscard]] conj_span_t get_conjunctions() const noexcept;
+    using whitelist_span_t = heyoka::mdspan<const std::uint32_t, heyoka::dextents<std::size_t, 1>>;
+    [[nodiscard]] whitelist_span_t get_whitelist() const noexcept;
 };
 
 } // namespace mizuba

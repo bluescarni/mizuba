@@ -521,6 +521,22 @@ PYBIND11_MODULE(core, m)
 
         return ret;
     }); // LCOV_EXCL_LINE
+    conj_cl.def_property_readonly("whitelist", [](const py::object &self) {
+        const auto *p = py::cast<const mz::conjunctions *>(self);
+
+        // Fetch the span.
+        const auto whitelist_span = p->get_whitelist();
+
+        // Turn into an array.
+        auto ret = py::array_t<std::uint32_t>(
+            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(whitelist_span.extent(0))},
+            whitelist_span.data_handle(), self);
+
+        // Ensure the returned array is read-only.
+        ret.attr("flags").attr("writeable") = false;
+
+        return ret;
+    });
 
     // Expose static getters for the structured types.
     conj_cl.def_property_readonly_static("bvh_node", [](const py::object &) { return py::dtype::of<bvh_node>(); });

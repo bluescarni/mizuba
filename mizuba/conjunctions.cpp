@@ -6,6 +6,7 @@
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -25,9 +26,9 @@
 #include <boost/filesystem/path.hpp>
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <boost/numeric/conversion/cast.hpp>
-#include <boost/unordered/unordered_flat_set.hpp>
 
 #include <oneapi/tbb/parallel_invoke.h>
+#include <oneapi/tbb/parallel_sort.h>
 
 #include "conjunctions.hpp"
 #include "detail/conjunctions_jit.hpp"
@@ -82,7 +83,12 @@ struct conjunctions_impl {
     // the second element of the pair is the size of the bp data. The size of
     // this vector is equal to the number of conjunction steps.
     std::vector<std::tuple<std::size_t, std::size_t>> m_bp_offsets;
+    // Sorted vector of whitelisted objects for conjunction detection.
+    // If empty, it means that all objects must be considered for
+    // conjunction detection.
+    std::vector<std::uint32_t> m_whitelist;
     // Vector of flags to signal which objects are active for conjunction tracking.
+    // This is the flag vector analogue of m_whitelist.
     std::vector<bool> m_conj_active;
     // The memory-mapped file for the aabbs.
     boost::iostreams::mapped_file_source m_file_aabbs;
@@ -121,11 +127,12 @@ struct conjunctions_impl {
                                double conj_det_interval, std::size_t n_cd_steps, std::vector<double> cd_end_times,
                                std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets,
                                std::vector<std::tuple<std::size_t, std::size_t>> bp_offsets,
-                               std::vector<bool> conj_active)
+                               std::vector<std::uint32_t> whitelist, std::vector<bool> conj_active)
         : m_temp_dir_path(std::move(temp_dir_path)), m_pj(std::move(pj)), m_conj_thresh(conj_thresh),
           m_conj_det_interval(conj_det_interval), m_n_cd_steps(n_cd_steps), m_cd_end_times(std::move(cd_end_times)),
           m_tree_offsets(std::move(tree_offsets)), m_bp_offsets(std::move(bp_offsets)),
-          m_conj_active(std::move(conj_active)), m_file_aabbs((m_temp_dir_path / "aabbs").string()),
+          m_whitelist(std::move(whitelist)), m_conj_active(std::move(conj_active)),
+          m_file_aabbs((m_temp_dir_path / "aabbs").string()),
           m_file_srt_aabbs((m_temp_dir_path / "srt_aabbs").string()),
           m_file_mcodes((m_temp_dir_path / "mcodes").string()),
           m_file_srt_mcodes((m_temp_dir_path / "srt_mcodes").string()),
@@ -252,20 +259,29 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
     // Determine the number of conjunction detection steps.
     const auto n_cd_steps = boost::numeric_cast<std::size_t>(std::ceil(pj.get_maxT() / conj_det_interval));
 
-    // Build the set version of whitelist.
-    boost::unordered_flat_set<std::uint32_t> wl_set(whitelist.begin(), whitelist.end());
+    // Build the sorted version of whitelist, removing duplicates.
+    oneapi::tbb::parallel_sort(whitelist.begin(), whitelist.end());
+    whitelist.erase(std::unique(whitelist.begin(), whitelist.end()), whitelist.end());
 
-    // Check the whitelist and setup the conj_active vector.
-    // This is a vector of flags establishing which objects are active
-    // for conjunction detection.
+    // Make sure we can represent the size of a whitelist as std::size_t.
+    try {
+        static_cast<void>(boost::numeric_cast<std::size_t>(whitelist.size()));
+        // LCOV_EXCL_START
+    } catch (...) {
+        throw std::overflow_error("Overflow detected in the size of the conjunction whitelist");
+    }
+    // LCOV_EXCL_STOP
+
+    // Build a flag vector equivalent of whitelist. This is used during broad-phase conjunction detection.
+    // During its construction, sanity-check the whitelist.
     const auto nobjs = pj.get_nobjs();
     std::vector<bool> conj_active;
-    if (wl_set.empty()) {
+    if (whitelist.empty()) {
         conj_active.resize(boost::numeric_cast<decltype(conj_active.size())>(nobjs), true);
     } else {
         conj_active.resize(boost::numeric_cast<decltype(conj_active.size())>(nobjs), false);
 
-        for (const auto obj_idx : wl_set) {
+        for (const auto obj_idx : whitelist) {
             if (obj_idx >= nobjs) [[unlikely]] {
                 throw std::invalid_argument(
                     fmt::format("Invalid whitelist detected: the whitelist contains the object index {}, but the "
@@ -334,7 +350,7 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
         // Create the impl.
         m_impl = std::make_shared<detail::conjunctions_impl>(
             tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps, std::move(cd_end_times),
-            std::move(tree_offsets), std::move(bp_offsets), std::move(conj_active));
+            std::move(tree_offsets), std::move(bp_offsets), std::move(whitelist), std::move(conj_active));
 
         // LCOV_EXCL_START
     } catch (...) {
@@ -464,6 +480,13 @@ conjunctions::conj_span_t conjunctions::get_conjunctions() const noexcept
         // std::size_t.
         return conj_span_t{m_impl->m_conjs_ptr, static_cast<std::size_t>(m_impl->m_file_conjs.size() / sizeof(conj))};
     }
+}
+
+conjunctions::whitelist_span_t conjunctions::get_whitelist() const noexcept
+{
+    // NOTE: static cast is ok, we make sure in the ctor that
+    // we can represent the size of the whitelist with std::size_t.
+    return whitelist_span_t{m_impl->m_whitelist.data(), static_cast<std::size_t>(m_impl->m_whitelist.size())};
 }
 
 } // namespace mizuba
