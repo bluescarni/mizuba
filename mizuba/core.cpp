@@ -9,6 +9,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -170,6 +171,17 @@ void cleanup_cj_weak_ptrs()
             // LCOV_EXCL_STOP
         }
     }
+}
+
+// Wrapper to invoke the cleanup functions at shutdown.
+extern "C" void cpp_atexit_wrapper()
+{
+#if !defined(NDEBUG)
+    std::cout << "Running the C++ cleanup function" << std::endl;
+#endif
+
+    cleanup_pj_weak_ptrs();
+    cleanup_cj_weak_ptrs();
 }
 
 } // namespace
@@ -544,10 +556,25 @@ PYBIND11_MODULE(core, m)
                                          [](const py::object &) { return py::dtype::of<aabb_collision>(); });
     conj_cl.def_property_readonly_static("conj", [](const py::object &) { return py::dtype::of<conj>(); });
 
-    // Register the polyjectory/conjunctions cleanup machinery.
+    // Register the polyjectory/conjunctions cleanup machinery on the Python side.
     auto atexit = py::module_::import("atexit");
     atexit.attr("register")(py::cpp_function([]() {
+#if !defined(NDEBUG)
+        std::cout << "Running the Python cleanup function" << std::endl;
+#endif
+
         mzpy::detail::cleanup_pj_weak_ptrs();
         mzpy::detail::cleanup_cj_weak_ptrs();
     }));
+
+    // Register the cleanup machinery also on the C++ side.
+    //
+    // NOTE: we do this also on the C++ side because we have run into some situations
+    // in which, after a Ctrl+C signal, the Python interpreter would not invoke
+    // the functions registered with atexit, leaving behind the temporary data on disk.
+    //
+    // NOTE: because we declared the structures used for cleanup as constinit, they are
+    // constructed at compile time and they should be guaranteed to be destroyed *after*
+    // the execution of cpp_atexit_wrapper, whose registration happens at runtime.
+    std::atexit(mzpy::detail::cpp_atexit_wrapper);
 }
