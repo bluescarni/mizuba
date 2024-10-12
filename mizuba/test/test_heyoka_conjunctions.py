@@ -19,7 +19,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         orig_dyn = hy.model.fixed_centres(G, [M], [[0.0, 0.0, 0.0]])
         orig_vars = ["x", "y", "z", "vx", "vy", "vz"]
 
-        # Create a dynamical model corresponding to N particles
+        # Create a dynamical model corresponding to N objects
         # non interacting with each other, attracted by the Keplerian
         # Earth. Also add an equation for the distance from the centre
         # of attraction.
