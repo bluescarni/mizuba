@@ -255,7 +255,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         except ImportError:
             return
 
-        from .. import conjunctions as conj
+        from .. import conjunctions as conj, polyjectory
         import numpy as np
 
         orig_dyn = hy.model.fixed_centres(1.0, [1.0], [[0.0, 0.0, 0.0]])
@@ -276,28 +276,41 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         ic_rs[1, 5] = 1.0
         ic_rs[1, 6] = 1.0
 
-        ta.propagate_for(4.8)
+        c_out = ta.propagate_for(4.8, c_output=True)[4]
+
+        # Build the polyjectory.
+        trajs = []
+        for i in range(N):
+            trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
+        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+
+        cj = conj(pj, 1e4, .1)
 
         hy_conj_arr = np.sort(np.array(hy_conj_list, dtype=conj.conj), order="tca")
 
         self.assertEqual(len(hy_conj_arr), 2)
 
-        self.assertTrue(np.isclose(hy_conj_arr[0]["tca"], np.pi / 2, atol=1e-15))
-        self.assertTrue(np.isclose(hy_conj_arr[0]["dca"], 0, atol=1e-15))
-        self.assertEqual(hy_conj_arr[0]["i"], 0)
-        self.assertEqual(hy_conj_arr[0]["j"], 1)
-        self.assertTrue(np.all(np.isclose(hy_conj_arr[0]["ri"], [0, 0, 1], atol=1e-15)))
-        self.assertTrue(np.all(np.isclose(hy_conj_arr[0]["rj"], [0, 0, 1], atol=1e-15)))
-
-        self.assertTrue(np.isclose(hy_conj_arr[1]["tca"], 3 * np.pi / 2, atol=1e-15))
-        self.assertTrue(np.isclose(hy_conj_arr[1]["dca"], 0, atol=1e-15))
-        self.assertEqual(hy_conj_arr[1]["i"], 0)
-        self.assertEqual(hy_conj_arr[1]["j"], 1)
+        # Compare the results.
+        self.assertEqual(len(cj.conjunctions), len(hy_conj_arr))
         self.assertTrue(
-            np.all(np.isclose(hy_conj_arr[1]["ri"], [0, 0, -1], atol=1e-15))
+            np.all(np.isclose(cj.conjunctions["tca"], hy_conj_arr["tca"], rtol=1e-12))
         )
         self.assertTrue(
-            np.all(np.isclose(hy_conj_arr[1]["rj"], [0, 0, -1], atol=1e-15))
+            np.all(np.isclose(cj.conjunctions["dca"], hy_conj_arr["dca"], rtol=1e-12))
+        )
+        self.assertTrue(np.all(cj.conjunctions["i"] == hy_conj_arr["i"]))
+        self.assertTrue(np.all(cj.conjunctions["j"] == hy_conj_arr["j"]))
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["ri"], hy_conj_arr["ri"], rtol=1e-12))
+        )
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["rj"], hy_conj_arr["rj"], rtol=1e-12))
+        )
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["vi"], hy_conj_arr["vi"], rtol=1e-12))
+        )
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["vj"], hy_conj_arr["vj"], rtol=1e-12))
         )
 
         # Try an equatorial collision too.
@@ -313,26 +326,39 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         ic_rs[1, 4] = 1.0
         ic_rs[1, 6] = 1.0
 
-        ta.propagate_for(4.8)
+        c_out = ta.propagate_for(4.8, c_output=True)[4]
+
+        # Build the polyjectory.
+        trajs = []
+        for i in range(N):
+            trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
+        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+
+        cj = conj(pj, 1e4, .1)
 
         hy_conj_arr = np.sort(np.array(hy_conj_list, dtype=conj.conj), order="tca")
 
         self.assertEqual(len(hy_conj_arr), 2)
 
-        self.assertTrue(np.isclose(hy_conj_arr[0]["tca"], np.pi / 2, atol=1e-15))
-        self.assertTrue(np.isclose(hy_conj_arr[0]["dca"], 0, atol=1e-15))
-        self.assertEqual(hy_conj_arr[0]["i"], 0)
-        self.assertEqual(hy_conj_arr[0]["j"], 1)
-        self.assertTrue(np.all(np.isclose(hy_conj_arr[0]["ri"], [0, 1, 0], atol=1e-15)))
-        self.assertTrue(np.all(np.isclose(hy_conj_arr[0]["rj"], [0, 1, 0], atol=1e-15)))
-
-        self.assertTrue(np.isclose(hy_conj_arr[1]["tca"], 3 * np.pi / 2, atol=1e-15))
-        self.assertTrue(np.isclose(hy_conj_arr[1]["dca"], 0, atol=1e-15))
-        self.assertEqual(hy_conj_arr[1]["i"], 0)
-        self.assertEqual(hy_conj_arr[1]["j"], 1)
+        # Compare the results.
+        self.assertEqual(len(cj.conjunctions), len(hy_conj_arr))
         self.assertTrue(
-            np.all(np.isclose(hy_conj_arr[1]["ri"], [0, -1, 0], atol=1e-15))
+            np.all(np.isclose(cj.conjunctions["tca"], hy_conj_arr["tca"], rtol=1e-12))
         )
         self.assertTrue(
-            np.all(np.isclose(hy_conj_arr[1]["rj"], [0, -1, 0], atol=1e-15))
+            np.all(np.isclose(cj.conjunctions["dca"], hy_conj_arr["dca"], rtol=1e-12))
+        )
+        self.assertTrue(np.all(cj.conjunctions["i"] == hy_conj_arr["i"]))
+        self.assertTrue(np.all(cj.conjunctions["j"] == hy_conj_arr["j"]))
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["ri"], hy_conj_arr["ri"], rtol=1e-12))
+        )
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["rj"], hy_conj_arr["rj"], rtol=1e-12))
+        )
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["vi"], hy_conj_arr["vi"], rtol=1e-12))
+        )
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["vj"], hy_conj_arr["vj"], rtol=1e-12))
         )
