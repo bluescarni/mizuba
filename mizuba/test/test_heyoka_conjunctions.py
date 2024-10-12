@@ -10,48 +10,13 @@ import unittest as _ut
 
 
 class heyoka_conjunctions_test_case(_ut.TestCase):
-    # A test case in which we compare the results of conjunction
-    # detection with a heyoka simulation in which we keep
-    # track of the minimum distances between the objects.
-    def test_main(self):
-        try:
-            import heyoka as hy
-            from skyfield.api import load
-            from skyfield.iokit import parse_tle_file
-            from sgp4.api import SatrecArray
-        except ImportError:
-            return
-
-        # NOTE: we will be using TLE data to run the test.
-        from ._sgp4_test_data_202407 import sgp4_test_tle
-        from .. import conjunctions as conj, polyjectory
+    def _make_kep_ta(self, G, M, N):
+        import heyoka as hy
         import numpy as np
         from copy import copy
 
-        # Load the test TLEs.
-        ts = load.timescale()
-        sat_list = list(
-            parse_tle_file(
-                (bytes(_, "ascii") for _ in sgp4_test_tle.split("\n")),
-                ts,
-            )
-        )
-
-        # Select around 10 objects.
-        sat_list = sat_list[:: len(sat_list) // 10]
-        N = len(sat_list)
-
-        # Compute their positions at some date.
-        jd = 2460496.5
-        sat_arr = SatrecArray([_.model for _ in sat_list])
-        e, r, v = sat_arr.sgp4(np.array([jd]), np.array([0.0]))
-        self.assertTrue(np.all(e == 0))
-
-        # Gravitational constant in km**3/(kg * s**2).
-        G = 6.67430e-20
-
         # The original dynamical model - Keplerian centre of attraction.
-        orig_dyn = hy.model.fixed_centres(G, [5.972168e24], [[0.0, 0.0, 0.0]])
+        orig_dyn = hy.model.fixed_centres(G, [M], [[0.0, 0.0, 0.0]])
         orig_vars = ["x", "y", "z", "vx", "vy", "vz"]
 
         # Create a dynamical model corresponding to N particles
@@ -139,6 +104,47 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
             list(zip(var_list, dyn)), compact_mode=True, nt_events=ev_list
         )
 
+        return ta, hy_conj_list
+
+    # A test case in which we compare the results of conjunction
+    # detection with a heyoka simulation in which we keep
+    # track of the minimum distances between the objects.
+    def test_tle(self):
+        try:
+            import heyoka as hy
+            from skyfield.api import load
+            from skyfield.iokit import parse_tle_file
+            from sgp4.api import SatrecArray
+        except ImportError:
+            return
+
+        # NOTE: we will be using TLE data to run the test.
+        from ._sgp4_test_data_202407 import sgp4_test_tle
+        from .. import conjunctions as conj, polyjectory
+        import numpy as np
+
+        # Load the test TLEs.
+        ts = load.timescale()
+        sat_list = list(
+            parse_tle_file(
+                (bytes(_, "ascii") for _ in sgp4_test_tle.split("\n")),
+                ts,
+            )
+        )
+
+        # Select around 10 objects.
+        sat_list = sat_list[:: len(sat_list) // 10]
+        N = len(sat_list)
+
+        # Compute their positions at some date.
+        jd = 2460496.5
+        sat_arr = SatrecArray([_.model for _ in sat_list])
+        e, r, v = sat_arr.sgp4(np.array([jd]), np.array([0.0]))
+        self.assertTrue(np.all(e == 0))
+
+        # NOTE: gravitational constant in km**3/(kg * s**2).
+        ta, hy_conj_list = self._make_kep_ta(6.67430e-20, 5.972168e24, N)
+
         # Setup the initial conditions.
         ic_rs = ta.state.reshape((-1, 7))
         for i in range(N):
@@ -189,9 +195,9 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
 
         # Run another conjunction detection, this time conjunction
         # thresh 500km.
-        cj = conj(pj, 500., 60.0)
+        cj = conj(pj, 500.0, 60.0)
 
-        hy_conj_list = hy_conj_list[hy_conj_list['dca'] < 500.]
+        hy_conj_list = hy_conj_list[hy_conj_list["dca"] < 500.0]
 
         self.assertEqual(len(cj.conjunctions), len(hy_conj_list))
         self.assertTrue(
@@ -216,9 +222,9 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         )
 
         # Same with 200km.
-        cj = conj(pj, 200., 60.0)
+        cj = conj(pj, 200.0, 60.0)
 
-        hy_conj_list = hy_conj_list[hy_conj_list['dca'] < 200.]
+        hy_conj_list = hy_conj_list[hy_conj_list["dca"] < 200.0]
 
         self.assertEqual(len(cj.conjunctions), len(hy_conj_list))
         self.assertTrue(
@@ -241,3 +247,144 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         self.assertTrue(
             np.all(np.isclose(cj.conjunctions["vj"], hy_conj_list["vj"], rtol=1e-12))
         )
+
+    def test_close_conjunction(self):
+        # Test keplerian orbits leading to collisions.
+        try:
+            import heyoka as hy
+        except ImportError:
+            return
+
+        from .. import conjunctions as conj, polyjectory
+        import numpy as np
+
+        orig_dyn = hy.model.fixed_centres(1.0, [1.0], [[0.0, 0.0, 0.0]])
+        orig_vars = ["x", "y", "z", "vx", "vy", "vz"]
+
+        N = 2
+
+        ta, hy_conj_list = self._make_kep_ta(1.0, 1.0, N)
+
+        # Setup the initial conditions.
+        ic_rs = ta.state.reshape((-1, 7))
+
+        ic_rs[0, 0] = 1.0
+        ic_rs[0, 5] = 1.0
+        ic_rs[0, 6] = 1.0
+
+        ic_rs[1, 0] = -1.0
+        ic_rs[1, 5] = 1.0
+        ic_rs[1, 6] = 1.0
+
+        c_out = ta.propagate_for(4.8, c_output=True)[4]
+
+        # Build the polyjectory.
+        trajs = []
+        for i in range(N):
+            trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
+        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+
+        cj = conj(pj, 1e-4, 0.1)
+
+        hy_conj_arr = np.sort(np.array(hy_conj_list, dtype=conj.conj), order="tca")
+
+        self.assertEqual(len(hy_conj_arr), 2)
+
+        # Compare the results.
+        self.assertEqual(len(cj.conjunctions), len(hy_conj_arr))
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["tca"], hy_conj_arr["tca"], rtol=1e-12))
+        )
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["dca"], hy_conj_arr["dca"], rtol=1e-12))
+        )
+        self.assertTrue(np.all(cj.conjunctions["i"] == hy_conj_arr["i"]))
+        self.assertTrue(np.all(cj.conjunctions["j"] == hy_conj_arr["j"]))
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["ri"], hy_conj_arr["ri"], rtol=1e-12))
+        )
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["rj"], hy_conj_arr["rj"], rtol=1e-12))
+        )
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["vi"], hy_conj_arr["vi"], rtol=1e-12))
+        )
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["vj"], hy_conj_arr["vj"], rtol=1e-12))
+        )
+
+        # Try an equatorial collision too.
+        ta.time = 0.0
+        ta.state[:] = 0.0
+        hy_conj_list.clear()
+
+        ic_rs[0, 0] = 1.0
+        ic_rs[0, 4] = 1.0
+        ic_rs[0, 6] = 1.0
+
+        ic_rs[1, 0] = -1.0
+        ic_rs[1, 4] = 1.0
+        ic_rs[1, 6] = 1.0
+
+        c_out = ta.propagate_for(4.8, c_output=True)[4]
+
+        # Build the polyjectory.
+        trajs = []
+        for i in range(N):
+            trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
+        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+
+        cj = conj(pj, 1e-4, 0.1)
+
+        hy_conj_arr = np.sort(np.array(hy_conj_list, dtype=conj.conj), order="tca")
+
+        self.assertEqual(len(hy_conj_arr), 2)
+
+        # Compare the results.
+        self.assertEqual(len(cj.conjunctions), len(hy_conj_arr))
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["tca"], hy_conj_arr["tca"], rtol=1e-12))
+        )
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["dca"], hy_conj_arr["dca"], rtol=1e-12))
+        )
+        self.assertTrue(np.all(cj.conjunctions["i"] == hy_conj_arr["i"]))
+        self.assertTrue(np.all(cj.conjunctions["j"] == hy_conj_arr["j"]))
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["ri"], hy_conj_arr["ri"], rtol=1e-12))
+        )
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["rj"], hy_conj_arr["rj"], rtol=1e-12))
+        )
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["vi"], hy_conj_arr["vi"], rtol=1e-12))
+        )
+        self.assertTrue(
+            np.all(np.isclose(cj.conjunctions["vj"], hy_conj_arr["vj"], rtol=1e-12))
+        )
+
+        # Try two identical trajectories. This should produce no conjunctions.
+        ta.time = 0.0
+        ta.state[:] = 0.0
+        hy_conj_list.clear()
+
+        ic_rs[0, 0] = 1.0
+        ic_rs[0, 4] = 1.0
+        ic_rs[0, 6] = 1.0
+
+        ic_rs[1, 0] = 1.0
+        ic_rs[1, 4] = 1.0
+        ic_rs[1, 6] = 1.0
+
+        c_out = ta.propagate_for(4.8, c_output=True)[4]
+
+        # Build the polyjectory.
+        trajs = []
+        for i in range(N):
+            trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
+        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+
+        cj = conj(pj, 1e4, 0.1)
+
+        self.assertEqual(len(cj.conjunctions), 0)
+        self.assertEqual(len(hy_conj_list), 0)

@@ -113,6 +113,22 @@ pwrap &pwrap::operator=(pwrap &&other) noexcept
 
 pwrap::~pwrap()
 {
+#if !defined(NDEBUG)
+
+    // Run consistency checks on the cache in debug mode.
+    // The cache must not contain empty vectors
+    // and all vectors in the cache must have the same size.
+    if (!pc.empty()) {
+        const auto op1 = pc[0].size();
+
+        for (const auto &vec : pc) {
+            assert(!vec.empty());
+            assert(vec.size() == op1);
+        }
+    }
+
+#endif
+
     // Put the current v in the cache.
     back_to_cache();
 }
