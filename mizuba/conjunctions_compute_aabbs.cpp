@@ -283,6 +283,9 @@ void validate_global_aabbs(auto cd_idx, auto nobjs, auto base_ptr)
 // pj is the polyjectory, tmp_dir_path the temporary dir storing all conjunction data,
 // n_cd_steps the number of conjunction steps, conj_thresh the conjunction threshold,
 // conj_det_interval the conjunction detection interval.
+//
+// NOTE: if an object has no trajectory data during a conjunction step, its AABB for
+// that step will be set to infinities.
 std::vector<double> conjunctions::compute_aabbs(const polyjectory &pj, const boost::filesystem::path &tmp_dir_path,
                                                 std::size_t n_cd_steps, double conj_thresh,
                                                 double conj_det_interval) const

@@ -403,6 +403,9 @@ auto consolidate_tree_data(const auto &tmp_dir_path, const auto &tree_sizes)
 //
 // pj is the polyjectory, tmp_dir_path the temporary dir storing all conjunction data,
 // n_cd_steps the number of conjunction steps.
+//
+// NOTE: if an object has no trajectory data during a conjunction step, it will not show
+// up in the bvh tree.
 std::vector<std::tuple<std::size_t, std::size_t>>
 conjunctions::construct_bvh_trees(const polyjectory &pj, const boost::filesystem::path &tmp_dir_path,
                                   std::size_t n_cd_steps) const
