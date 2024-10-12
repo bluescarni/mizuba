@@ -306,12 +306,12 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
 
                 // Morton encoding and indirect sorting.
                 sw.reset();
-                morton_encode_sort_parallel(pj, tmp_dir_path, n_cd_steps);
+                morton_encode_sort(pj, tmp_dir_path, n_cd_steps);
                 log_info("Morton encoding and indirect sorting time: {}s", sw);
 
                 // Construct the bvh trees.
                 sw.reset();
-                tree_offsets = construct_bvh_trees_parallel(pj, tmp_dir_path, n_cd_steps);
+                tree_offsets = construct_bvh_trees(pj, tmp_dir_path, n_cd_steps);
                 log_info("BVH trees construction time: {}s", sw);
 
                 // Broad-phase conjunction detection.
