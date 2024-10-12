@@ -284,7 +284,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
             trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
         pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
 
-        cj = conj(pj, 1e4, .1)
+        cj = conj(pj, 1e-4, 0.1)
 
         hy_conj_arr = np.sort(np.array(hy_conj_list, dtype=conj.conj), order="tca")
 
@@ -334,7 +334,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
             trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
         pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
 
-        cj = conj(pj, 1e4, .1)
+        cj = conj(pj, 1e-4, 0.1)
 
         hy_conj_arr = np.sort(np.array(hy_conj_list, dtype=conj.conj), order="tca")
 
@@ -362,3 +362,29 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         self.assertTrue(
             np.all(np.isclose(cj.conjunctions["vj"], hy_conj_arr["vj"], rtol=1e-12))
         )
+
+        # Try two identical trajectories. This should produce no conjunctions.
+        ta.time = 0.0
+        ta.state[:] = 0.0
+        hy_conj_list.clear()
+
+        ic_rs[0, 0] = 1.0
+        ic_rs[0, 4] = 1.0
+        ic_rs[0, 6] = 1.0
+
+        ic_rs[1, 0] = 1.0
+        ic_rs[1, 4] = 1.0
+        ic_rs[1, 6] = 1.0
+
+        c_out = ta.propagate_for(4.8, c_output=True)[4]
+
+        # Build the polyjectory.
+        trajs = []
+        for i in range(N):
+            trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
+        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+
+        cj = conj(pj, 1e4, 0.1)
+
+        self.assertEqual(len(cj.conjunctions), 0)
+        self.assertEqual(len(hy_conj_list), 0)
