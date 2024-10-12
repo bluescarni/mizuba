@@ -548,7 +548,7 @@ PYBIND11_MODULE(core, m)
         ret.attr("flags").attr("writeable") = false;
 
         return ret;
-    });
+    }); // LCOV_EXCL_LINE
 
     // Expose static getters for the structured types.
     conj_cl.def_property_readonly_static("bvh_node", [](const py::object &) { return py::dtype::of<bvh_node>(); });
@@ -576,5 +576,7 @@ PYBIND11_MODULE(core, m)
     // NOTE: because we declared the structures used for cleanup as constinit, they are
     // constructed at compile time and they should be guaranteed to be destroyed *after*
     // the execution of cpp_atexit_wrapper, whose registration happens at runtime.
+    //
+    // NOTE: perhaps consider keeping only the C++-side cleanup in the future?
     std::atexit(mzpy::detail::cpp_atexit_wrapper);
 }
