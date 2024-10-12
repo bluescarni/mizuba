@@ -577,6 +577,9 @@ PYBIND11_MODULE(core, m)
     // constructed at compile time and they should be guaranteed to be destroyed *after*
     // the execution of cpp_atexit_wrapper, whose registration happens at runtime.
     //
-    // NOTE: perhaps consider keeping only the C++-side cleanup in the future?
+    // NOTE: perhaps consider keeping only the C++-side cleanup in the future? Also,
+    // if this is ever extracted as a separate C++ library, we probably want to keep
+    // this cleanup mechanism for those cases in which the destructors of local
+    // variables will not be called (e.g., if the user calls std::exit()).
     std::atexit(mzpy::detail::cpp_atexit_wrapper);
 }
