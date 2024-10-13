@@ -87,9 +87,9 @@ class conjunctions
     [[nodiscard]] std::array<double, 2> get_cd_begin_end(double, std::size_t, double, std::size_t) const;
     std::vector<double> compute_aabbs(const polyjectory &, const boost::filesystem::path &, std::size_t, double,
                                       double) const;
-    void morton_encode_sort_parallel(const polyjectory &, const boost::filesystem::path &, std::size_t) const;
+    void morton_encode_sort(const polyjectory &, const boost::filesystem::path &, std::size_t) const;
     std::vector<std::tuple<std::size_t, std::size_t>>
-    construct_bvh_trees_parallel(const polyjectory &, const boost::filesystem::path &, std::size_t) const;
+    construct_bvh_trees(const polyjectory &, const boost::filesystem::path &, std::size_t) const;
     std::vector<std::tuple<std::size_t, std::size_t>>
     broad_phase(const polyjectory &, const boost::filesystem::path &, std::size_t,
                 const std::vector<std::tuple<std::size_t, std::size_t>> &, const std::vector<bool> &);
@@ -178,6 +178,8 @@ public:
     [[nodiscard]] aabb_collision_span_t get_aabb_collisions(std::size_t) const;
     using conj_span_t = heyoka::mdspan<const conj, heyoka::dextents<std::size_t, 1>>;
     [[nodiscard]] conj_span_t get_conjunctions() const noexcept;
+    using whitelist_span_t = heyoka::mdspan<const std::uint32_t, heyoka::dextents<std::size_t, 1>>;
+    [[nodiscard]] whitelist_span_t get_whitelist() const noexcept;
 };
 
 } // namespace mizuba

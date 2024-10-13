@@ -118,8 +118,12 @@ constexpr auto morton_enc = mortonnd::MortonNDLutEncoder<4, 16, 8>();
 //
 // pj is the polyjectory, tmp_dir_path the temporary dir storing all conjunction data,
 // n_cd_steps the number of conjunction steps.
-void conjunctions::morton_encode_sort_parallel(const polyjectory &pj, const boost::filesystem::path &tmp_dir_path,
-                                               std::size_t n_cd_steps) const
+//
+// NOTE: if an object has no trajectory data during a conjunction step, its morton code will
+// be set to -1, and in the morton sorting it will be placed at the tail end (i.e., even past any object
+// with available trajectory data that may have a morton code of -1).
+void conjunctions::morton_encode_sort(const polyjectory &pj, const boost::filesystem::path &tmp_dir_path,
+                                      std::size_t n_cd_steps) const
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
 

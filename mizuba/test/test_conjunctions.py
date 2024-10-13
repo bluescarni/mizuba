@@ -229,6 +229,7 @@ class conjunctions_test_case(_ut.TestCase):
 
     def test_main(self):
         import numpy as np
+        import sys
         from .. import conjunctions as conj, polyjectory
         from ._planar_circ import _planar_circ_tcs, _planar_circ_times
 
@@ -283,6 +284,16 @@ class conjunctions_test_case(_ut.TestCase):
             c = conj(
                 pj, conj_thresh=0.1, conj_det_interval=conj_det_interval, whitelist=[0]
             )
+
+            # Check the whitelist property.
+            rc = sys.getrefcount(c)
+            wl = c.whitelist
+            self.assertEqual(sys.getrefcount(c), rc + 1)
+            with self.assertRaises(ValueError) as cm:
+                wl[:] = wl
+            with self.assertRaises(AttributeError) as cm:
+                c.whitelist = wl
+            self.assertEqual(len(wl), 1)
 
             with self.assertRaises(ValueError) as cm:
                 conj(
@@ -606,9 +617,15 @@ class conjunctions_test_case(_ut.TestCase):
         # Build the polyjectory. Run it for only 15 minutes.
         pt, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 15.0 / 1440.0)
 
+        # Build a whitelist that excludes two satellites
+        # that we know undergo a conjunction.
+        wl = list(range(pt.nobjs))
+        for idx in [6746, 4549]:
+            del wl[idx]
+
         # Build the conjunctions object. This will trigger
         # the internal C++ sanity checks in debug mode.
-        c = conj(pt, conj_thresh=10.0, conj_det_interval=1.0)
+        c = conj(pt, conj_thresh=10.0, conj_det_interval=1.0, whitelist=wl)
 
         self.assertTrue(
             all(len(c.get_aabb_collisions(_)) > 0 for _ in range(c.n_cd_steps))
@@ -643,6 +660,11 @@ class conjunctions_test_case(_ut.TestCase):
                     rtol=1e-13,
                 )
             )
+        )
+
+        # Conjunctions cannot happen between whitelisted indices.
+        self.assertFalse(
+            (4549, 6746) in list(tuple(_) for _ in c.conjunctions[["i", "j"]])
         )
 
         # Verify the conjunctions with the sgp4 python module.
