@@ -30,6 +30,7 @@
 #include <oneapi/tbb/parallel_for.h>
 
 #include "detail/file_utils.hpp"
+#include "logging.hpp"
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -256,6 +257,9 @@ polyjectory::polyjectory(ptag,
             cur_offset += time_size;
         }
 
+        // Time the data copy from the spans into the file.
+        stopwatch sw;
+
         // NOTE: at this point maxT could contain bogus/incorrect values because
         // we have not checked the time data yet. We will do this below.
 
@@ -345,6 +349,8 @@ polyjectory::polyjectory(ptag,
 
         // Mark it as read-only.
         detail::mark_file_read_only(storage_path);
+
+        log_info("polyjectory copy from spans time: {}", sw);
 
         // Create the impl.
         // NOTE: here make_shared() first allocates, and then constructs. If there are no exceptions, the assignment
