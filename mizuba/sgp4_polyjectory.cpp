@@ -656,12 +656,9 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
         cur_offset += tc_size / sizeof(double);
     }
 
-    // Offset vector for the time data. It will contain:
-    // - the offset (in number of double-precision values) in the storage file
-    //   at which the time data for an object begins,
-    // - the number of steps.
-    std::vector<std::tuple<std::size_t, std::size_t>> time_offset;
-    time_offset.reserve(n_sats);
+    // Init the time offsets vector.
+    std::vector<std::size_t> time_offsets;
+    time_offsets.reserve(n_sats);
 
     // Times.
     for (std::size_t i = 0; i < n_sats; ++i) {
@@ -673,9 +670,10 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
         assert(boost::filesystem::is_regular_file(time_path));
         const auto time_size = boost::filesystem::file_size(time_path);
         assert(time_size % sizeof(double) == 0u);
+        assert(time_size / sizeof(double) == traj_offsets[i].n_steps);
 
         // Update time_offset.
-        time_offset.emplace_back(cur_offset, time_size / sizeof(double));
+        time_offsets.push_back(cur_offset);
 
         // Update cur_offset.
         cur_offset += time_size / sizeof(double);
@@ -696,7 +694,7 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
 
     // Copy over the data from the individual files.
     oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, n_sats),
-                              [&tmp_dir_path, base_ptr, order, &traj_offsets, &time_offset](const auto &range) {
+                              [&tmp_dir_path, base_ptr, order, &traj_offsets, &time_offsets](const auto &range) {
                                   for (auto i = range.begin(); i != range.end(); ++i) {
                                       // Taylor coefficients.
 
@@ -725,7 +723,7 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
                                       // Time data.
 
                                       // Compute the file size.
-                                      const auto time_size = sizeof(double) * std::get<1>(time_offset[i]);
+                                      const auto time_size = sizeof(double) * traj_offsets[i].n_steps;
 
                                       // Build the file path.
                                       const auto time_path = tmp_dir_path / fmt::format("time_{}", i);
@@ -737,7 +735,7 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
                                       time_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
                                       // Copy it into the mapped file.
-                                      time_file.read(reinterpret_cast<char *>(base_ptr + std::get<0>(time_offset[i])),
+                                      time_file.read(reinterpret_cast<char *>(base_ptr + time_offsets[i]),
                                                      boost::numeric_cast<std::streamsize>(time_size));
 
                                       // Close the file.
