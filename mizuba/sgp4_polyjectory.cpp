@@ -632,7 +632,7 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
     traj_offsets.reserve(n_sats);
 
     // Keep track of the offset in the storage file.
-    safe_size_t cur_offset = 0;
+    safe_size_t cur_traj_offset = 0;
 
     // Taylor coefficients.
     for (std::size_t i = 0; i < n_sats; ++i) {
@@ -648,15 +648,18 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
         // Update traj_offsets.
         const auto n_steps = boost::numeric_cast<std::size_t>(
             tc_size / static_cast<std::size_t>(safe_size_t(sizeof(double)) * (order + 1u) * 7u));
-        traj_offsets.emplace_back(cur_offset, n_steps);
+        traj_offsets.emplace_back(cur_traj_offset, n_steps);
 
-        // Update cur_offset.
-        cur_offset += tc_size / sizeof(double);
+        // Update cur_traj_offset.
+        cur_traj_offset += tc_size / sizeof(double);
     }
 
     // Init the time offsets vector.
     std::vector<std::size_t> time_offsets;
     time_offsets.reserve(n_sats);
+
+    // Keep track of the offset in the time file.
+    safe_size_t cur_time_offset = 0;
 
     // Times.
     for (std::size_t i = 0; i < n_sats; ++i) {
@@ -671,78 +674,84 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
         assert(time_size / sizeof(double) == traj_offsets[i].n_steps);
 
         // Update time_offset.
-        time_offsets.push_back(cur_offset);
+        time_offsets.push_back(cur_time_offset);
 
         // Update cur_offset.
-        cur_offset += time_size / sizeof(double);
+        cur_time_offset += time_size / sizeof(double);
     }
 
-    // Create the storage file.
-    const auto storage_path = tmp_dir_path / "storage";
-    detail::create_sized_file(storage_path, cur_offset * sizeof(double));
+    // Create the storage files.
+    const auto traj_path = tmp_dir_path / "traj";
+    detail::create_sized_file(traj_path, cur_traj_offset * sizeof(double));
+    const auto time_path = tmp_dir_path / "time";
+    detail::create_sized_file(time_path, cur_time_offset * sizeof(double));
 
-    // Memory-map it.
-    boost::iostreams::mapped_file_sink file(storage_path.string());
+    // Memory-map them.
+    boost::iostreams::mapped_file_sink traj_file(traj_path.string());
+    boost::iostreams::mapped_file_sink time_file(time_path.string());
 
-    // Fetch a pointer to the beginning of the data.
+    // Fetch pointers to the beginning of the data.
     // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
     // https://en.cppreference.com/w/cpp/memory/start_lifetime_as
-    auto *base_ptr = reinterpret_cast<double *>(file.data());
-    assert(boost::alignment::is_aligned(base_ptr, alignof(double)));
+    auto *traj_base_ptr = reinterpret_cast<double *>(traj_file.data());
+    assert(boost::alignment::is_aligned(traj_base_ptr, alignof(double)));
+    auto *time_base_ptr = reinterpret_cast<double *>(time_file.data());
+    assert(boost::alignment::is_aligned(time_base_ptr, alignof(double)));
 
     // Copy over the data from the individual files.
-    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, n_sats),
-                              [&tmp_dir_path, base_ptr, order, &traj_offsets, &time_offsets](const auto &range) {
-                                  for (auto i = range.begin(); i != range.end(); ++i) {
-                                      // Taylor coefficients.
+    oneapi::tbb::parallel_for(
+        oneapi::tbb::blocked_range<std::size_t>(0, n_sats),
+        [&tmp_dir_path, traj_base_ptr, time_base_ptr, order, &traj_offsets, &time_offsets](const auto &range) {
+            for (auto i = range.begin(); i != range.end(); ++i) {
+                // Taylor coefficients.
 
-                                      // Compute the file size.
-                                      const auto tc_size = sizeof(double) * (order + 1u) * 7u * traj_offsets[i].n_steps;
+                // Compute the file size.
+                const auto tc_size = sizeof(double) * (order + 1u) * 7u * traj_offsets[i].n_steps;
 
-                                      // Build the file path.
-                                      const auto tc_path = tmp_dir_path / fmt::format("tc_{}", i);
-                                      assert(boost::filesystem::exists(tc_path));
-                                      assert(boost::filesystem::file_size(tc_path) == tc_size);
+                // Build the file path.
+                const auto tc_path = tmp_dir_path / fmt::format("tc_{}", i);
+                assert(boost::filesystem::exists(tc_path));
+                assert(boost::filesystem::file_size(tc_path) == tc_size);
 
-                                      // Open it.
-                                      std::ifstream tc_file(tc_path.string(), std::ios::binary | std::ios::in);
-                                      tc_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
+                // Open it.
+                std::ifstream tc_file(tc_path.string(), std::ios::binary | std::ios::in);
+                tc_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
-                                      // Copy it into the mapped file.
-                                      tc_file.read(reinterpret_cast<char *>(base_ptr + traj_offsets[i].offset),
-                                                   boost::numeric_cast<std::streamsize>(tc_size));
+                // Copy it into the mapped file.
+                tc_file.read(reinterpret_cast<char *>(traj_base_ptr + traj_offsets[i].offset),
+                             boost::numeric_cast<std::streamsize>(tc_size));
 
-                                      // Close the file.
-                                      tc_file.close();
+                // Close the file.
+                tc_file.close();
 
-                                      // Remove the file.
-                                      boost::filesystem::remove(tc_path);
+                // Remove the file.
+                boost::filesystem::remove(tc_path);
 
-                                      // Time data.
+                // Time data.
 
-                                      // Compute the file size.
-                                      const auto time_size = sizeof(double) * traj_offsets[i].n_steps;
+                // Compute the file size.
+                const auto time_size = sizeof(double) * traj_offsets[i].n_steps;
 
-                                      // Build the file path.
-                                      const auto time_path = tmp_dir_path / fmt::format("time_{}", i);
-                                      assert(boost::filesystem::exists(time_path));
-                                      assert(boost::filesystem::file_size(time_path) == time_size);
+                // Build the file path.
+                const auto time_path = tmp_dir_path / fmt::format("time_{}", i);
+                assert(boost::filesystem::exists(time_path));
+                assert(boost::filesystem::file_size(time_path) == time_size);
 
-                                      // Open it.
-                                      std::ifstream time_file(time_path.string(), std::ios::binary | std::ios::in);
-                                      time_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
+                // Open it.
+                std::ifstream time_file(time_path.string(), std::ios::binary | std::ios::in);
+                time_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
-                                      // Copy it into the mapped file.
-                                      time_file.read(reinterpret_cast<char *>(base_ptr + time_offsets[i]),
-                                                     boost::numeric_cast<std::streamsize>(time_size));
+                // Copy it into the mapped file.
+                time_file.read(reinterpret_cast<char *>(time_base_ptr + time_offsets[i]),
+                               boost::numeric_cast<std::streamsize>(time_size));
 
-                                      // Close the file.
-                                      time_file.close();
+                // Close the file.
+                time_file.close();
 
-                                      // Remove the file.
-                                      boost::filesystem::remove(time_path);
-                                  }
-                              });
+                // Remove the file.
+                boost::filesystem::remove(time_path);
+            }
+        });
 
     // Return the trajectory offsets vector.
     // NOTE: the time offset vector is not necessary, it will be reconstructed
@@ -821,8 +830,9 @@ sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, st
     log_trace("SGP4 file consolidation time: {}s", sw);
 
     // Build and return the polyjectory.
-    return polyjectory(std::filesystem::path((tmp_dir_path / "storage").string()), ta.get_order(),
-                       std::move(traj_offsets), std::move(status));
+    return polyjectory(std::filesystem::path((tmp_dir_path / "traj").string()),
+                       std::filesystem::path((tmp_dir_path / "time").string()), ta.get_order(), std::move(traj_offsets),
+                       std::move(status));
 }
 
 } // namespace mizuba

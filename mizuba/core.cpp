@@ -292,9 +292,10 @@ PYBIND11_MODULE(core, m)
             return ret;
         }),
         "trajs"_a.noconvert(), "times"_a.noconvert(), "status"_a.noconvert());
-    pt_cl.def(
-        py::init<const std::filesystem::path &, std::uint32_t, std::vector<traj_offset>, std::vector<std::int32_t>>(),
-        "data_file"_a.noconvert(), "order"_a.noconvert(), "traj_offsets"_a.noconvert(), "status"_a.noconvert());
+    pt_cl.def(py::init<const std::filesystem::path &, const std::filesystem::path &, std::uint32_t,
+                       std::vector<traj_offset>, std::vector<std::int32_t>>(),
+              "traj_file"_a.noconvert(), "time_file"_a.noconvert(), "order"_a.noconvert(), "traj_offsets"_a.noconvert(),
+              "status"_a.noconvert());
     pt_cl.def_property_readonly("nobjs", &mz::polyjectory::get_nobjs);
     pt_cl.def_property_readonly("maxT", &mz::polyjectory::get_maxT);
     pt_cl.def_property_readonly("poly_order", &mz::polyjectory::get_poly_order);
