@@ -50,12 +50,12 @@ namespace detail
 {
 
 struct polyjectory_impl {
-    using traj_offset_t = polyjectory::traj_offset_t;
+    using traj_offset = polyjectory::traj_offset;
 
     // Path to the memory-mapped file.
     boost::filesystem::path m_file_path;
     // Offsets for the trajectory data.
-    std::vector<traj_offset_t> m_traj_offset_vec;
+    std::vector<traj_offset> m_traj_offset_vec;
     // Offsets for the time data.
     std::vector<std::size_t> m_time_offset_vec;
     // Polynomial order + 1 for the trajectory data.
@@ -69,7 +69,7 @@ struct polyjectory_impl {
     // Pointer to the beginning of m_file, cast to double.
     const double *m_base_ptr = nullptr;
 
-    explicit polyjectory_impl(boost::filesystem::path file_path, std::vector<traj_offset_t> traj_offset_vec,
+    explicit polyjectory_impl(boost::filesystem::path file_path, std::vector<traj_offset> traj_offset_vec,
                               std::vector<std::size_t> time_offset_vec, std::uint32_t poly_op1, double maxT,
                               std::vector<std::int32_t> status)
         : m_file_path(std::move(file_path)), m_traj_offset_vec(std::move(traj_offset_vec)),
@@ -171,7 +171,7 @@ polyjectory::polyjectory(ptag,
         // - the duration of the longest trajectory.
 
         // Init the trajectories offset vector.
-        std::vector<traj_offset_t> traj_offset_vec;
+        std::vector<traj_offset> traj_offset_vec;
         traj_offset_vec.reserve(n_objs);
 
         // Keep track of the current offset into the file.
@@ -376,7 +376,7 @@ polyjectory::polyjectory(ptag,
 // also deduce the layout of the time data. 'order' it the polynomial order of the polyjectory,
 // 'status' the vector of object statuses.
 polyjectory::polyjectory(const std::filesystem::path &orig_file_path, std::uint32_t order,
-                         std::vector<traj_offset_t> traj_offsets, std::vector<std::int32_t> status)
+                         std::vector<traj_offset> traj_offsets, std::vector<std::int32_t> status)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
 
@@ -523,11 +523,11 @@ polyjectory::polyjectory(const std::filesystem::path &orig_file_path, std::uint3
                 auto local_maxT = -std::numeric_limits<double>::infinity();
 
                 for (auto i = range.begin(); i != range.end(); ++i) {
-                    const auto [traj_offset, n_steps] = traj_offsets[i];
+                    const auto [t_offset, n_steps] = traj_offsets[i];
                     const auto time_offset = time_offsets[i];
 
                     // Build a trajectory span and check the data.
-                    const traj_span_t cur_traj{st_file_base_ptr + traj_offset, n_steps, op1};
+                    const traj_span_t cur_traj{st_file_base_ptr + t_offset, n_steps, op1};
 
                     // Check for non-finite trajectory data.
                     for (std::size_t j = 0; j < cur_traj.extent(0); ++j) {
@@ -618,10 +618,10 @@ polyjectory::operator[](std::size_t i) const
     const auto *base_ptr = m_impl->m_base_ptr;
 
     // Fetch the traj offset and nsteps.
-    const auto [traj_offset, nsteps] = m_impl->m_traj_offset_vec[i];
+    const auto [t_offset, nsteps] = m_impl->m_traj_offset_vec[i];
 
     // Compute the pointers.
-    const auto *traj_ptr = base_ptr + traj_offset;
+    const auto *traj_ptr = base_ptr + t_offset;
     const auto *time_ptr = base_ptr + m_impl->m_time_offset_vec[i];
 
     // Return the spans.

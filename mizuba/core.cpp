@@ -206,6 +206,10 @@ PYBIND11_MODULE(core, m)
 
     m.doc() = "The core mizuba module";
 
+    // Register polyjectory::traj_offset as a structured NumPy datatype.
+    using traj_offset = mz::polyjectory::traj_offset;
+    PYBIND11_NUMPY_DTYPE(traj_offset, offset, n_steps);
+
     // polyjectory.
     py::class_<mz::polyjectory> pt_cl(m, "polyjectory", py::dynamic_attr{});
     pt_cl.def(
@@ -288,6 +292,9 @@ PYBIND11_MODULE(core, m)
             return ret;
         }),
         "trajs"_a.noconvert(), "times"_a.noconvert(), "status"_a.noconvert());
+    pt_cl.def(
+        py::init<const std::filesystem::path &, std::uint32_t, std::vector<traj_offset>, std::vector<std::int32_t>>(),
+        "data_file"_a.noconvert(), "order"_a.noconvert(), "traj_offsets"_a.noconvert(), "status"_a.noconvert());
     pt_cl.def_property_readonly("nobjs", &mz::polyjectory::get_nobjs);
     pt_cl.def_property_readonly("maxT", &mz::polyjectory::get_maxT);
     pt_cl.def_property_readonly("poly_order", &mz::polyjectory::get_poly_order);
@@ -320,6 +327,9 @@ PYBIND11_MODULE(core, m)
             return py::make_tuple(std::move(traj_ret), std::move(time_ret), status);
         },
         "i"_a.noconvert());
+
+    // Expose static getters for the structured types.
+    pt_cl.def_property_readonly_static("traj_offset", [](const py::object &) { return py::dtype::of<traj_offset>(); });
 
     // sgp4 polyjectory.
     m.def(

@@ -630,8 +630,8 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
     stopwatch sw;
 
     // Init the trajectory offsets.
-    std::vector<polyjectory::traj_offset_t> traj_offset;
-    traj_offset.reserve(n_sats);
+    std::vector<polyjectory::traj_offset> traj_offsets;
+    traj_offsets.reserve(n_sats);
 
     // Keep track of the offset in the storage file.
     safe_size_t cur_offset = 0;
@@ -647,10 +647,10 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
         const auto tc_size = boost::filesystem::file_size(tc_path);
         assert(tc_size % (safe_size_t(sizeof(double)) * (order + 1u) * 7u) == 0u);
 
-        // Update traj_offset.
+        // Update traj_offsets.
         const auto n_steps = boost::numeric_cast<std::size_t>(
             tc_size / static_cast<std::size_t>(safe_size_t(sizeof(double)) * (order + 1u) * 7u));
-        traj_offset.emplace_back(cur_offset, n_steps);
+        traj_offsets.emplace_back(cur_offset, n_steps);
 
         // Update cur_offset.
         cur_offset += tc_size / sizeof(double);
@@ -696,12 +696,12 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
 
     // Copy over the data from the individual files.
     oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, n_sats),
-                              [&tmp_dir_path, base_ptr, order, &traj_offset, &time_offset](const auto &range) {
+                              [&tmp_dir_path, base_ptr, order, &traj_offsets, &time_offset](const auto &range) {
                                   for (auto i = range.begin(); i != range.end(); ++i) {
                                       // Taylor coefficients.
 
                                       // Compute the file size.
-                                      const auto tc_size = sizeof(double) * (order + 1u) * 7u * traj_offset[i].n_steps;
+                                      const auto tc_size = sizeof(double) * (order + 1u) * 7u * traj_offsets[i].n_steps;
 
                                       // Build the file path.
                                       const auto tc_path = tmp_dir_path / fmt::format("tc_{}", i);
@@ -713,7 +713,7 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
                                       tc_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
                                       // Copy it into the mapped file.
-                                      tc_file.read(reinterpret_cast<char *>(base_ptr + traj_offset[i].offset),
+                                      tc_file.read(reinterpret_cast<char *>(base_ptr + traj_offsets[i].offset),
                                                    boost::numeric_cast<std::streamsize>(tc_size));
 
                                       // Close the file.
@@ -753,7 +753,7 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
     // Return the trajectory offsets vector.
     // NOTE: the time offset vector is not necessary, it will be reconstructed
     // in the polyjectory constructor.
-    return traj_offset;
+    return traj_offsets;
 }
 
 } // namespace
@@ -823,12 +823,12 @@ sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, st
 
     // Consolidate all the data files into a single file.
     sw.reset();
-    auto traj_offset = detail::consolidate_data(tmp_dir_path, sat_data.extent(1), ta.get_order());
+    auto traj_offsets = detail::consolidate_data(tmp_dir_path, sat_data.extent(1), ta.get_order());
     log_trace("SGP4 file consolidation time: {}s", sw);
 
     // Build and return the polyjectory.
     return polyjectory(std::filesystem::path((tmp_dir_path / "storage").string()), ta.get_order(),
-                       std::move(traj_offset), std::move(status));
+                       std::move(traj_offsets), std::move(status));
 }
 
 } // namespace mizuba

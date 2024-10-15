@@ -62,7 +62,7 @@ public:
     //   specific trajectory begins in a datafile,
     // - the total number of steps in the trajectory.
     // This is used for locating trajectories into a data file.
-    struct traj_offset_t {
+    struct traj_offset {
         std::size_t offset;
         std::size_t n_steps;
     };
@@ -101,7 +101,7 @@ public:
                                         std::forward<StatusRng>(status_rng)))
     {
     }
-    explicit polyjectory(const std::filesystem::path &, std::uint32_t, std::vector<traj_offset_t>,
+    explicit polyjectory(const std::filesystem::path &, std::uint32_t, std::vector<traj_offset>,
                          std::vector<std::int32_t>);
     polyjectory(const polyjectory &);
     polyjectory(polyjectory &&) noexcept;
