@@ -639,14 +639,6 @@ std::size_t polyjectory::get_nobjs() const noexcept
     return static_cast<std::size_t>(m_impl->m_traj_offset_vec.size());
 }
 
-std::filesystem::path polyjectory::get_file_path() const
-{
-    // NOTE: need to convert from Boost::filesystem to std::filesystem.
-    // NOTE: m_impl->m_file_path should already be canonical, since the
-    // path is somewhere inside a temp dir created via create_temp_dir().
-    return std::filesystem::path(m_impl->m_file_path.string());
-}
-
 double polyjectory::get_maxT() const noexcept
 {
     return m_impl->m_maxT;

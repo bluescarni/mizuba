@@ -105,7 +105,6 @@ public:
     ~polyjectory();
 
     [[nodiscard]] std::size_t get_nobjs() const noexcept;
-    [[nodiscard]] std::filesystem::path get_file_path() const;
     [[nodiscard]] double get_maxT() const noexcept;
     [[nodiscard]] std::uint32_t get_poly_order() const noexcept;
 
