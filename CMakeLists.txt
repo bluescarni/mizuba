@@ -118,8 +118,11 @@ message(STATUS "Found heyoka version ${heyoka_VERSION}")
 # fmt.
 find_package(fmt REQUIRED CONFIG)
 
-# Mandatory dependency on TBB.
+# TBB.
 find_package(TBB REQUIRED CONFIG)
+
+# spdlog.
+find_package(spdlog REQUIRED CONFIG)
 
 # Boost.
 # NOTE: need 1.69 for safe numerics.

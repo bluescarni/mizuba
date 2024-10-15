@@ -9,7 +9,8 @@
 #include <chrono>
 #include <string>
 
-#include <pybind11/pybind11.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
 
 #include "logging.hpp"
 
@@ -20,19 +21,39 @@ namespace mizuba
 namespace detail
 {
 
+namespace
+{
+
+spdlog::logger *get_logger()
+{
+    static auto ret = spdlog::stdout_color_mt("mizuba");
+
+    return ret.get();
+}
+
+} // namespace
+
 void log_info_impl(const std::string &msg)
 {
-    namespace py = pybind11;
+    get_logger()->info(msg);
+}
 
-    // NOTE: need to acquire the GIL in case this is invoked
-    // from an external thread (e.g., TBB).
-    py::gil_scoped_acquire acquire;
-
-    auto logger = py::module_::import("logging").attr("getLogger")("mizuba");
-    logger.attr("info")(msg);
+void log_trace_impl(const std::string &msg)
+{
+    get_logger()->trace(msg);
 }
 
 } // namespace detail
+
+void set_logger_level_info()
+{
+    detail::get_logger()->set_level(spdlog::level::info);
+}
+
+void set_logger_level_trace()
+{
+    detail::get_logger()->set_level(spdlog::level::trace);
+}
 
 stopwatch::stopwatch() : m_start_tp{clock::now()} {}
 

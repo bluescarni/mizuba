@@ -752,7 +752,7 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
                                   }
                               });
 
-    log_info("SGP4 data consolidation time: {}", sw);
+    log_trace("SGP4 data consolidation time: {}", sw);
 
     // Return the trajectory offsets vector.
     // NOTE: the time offset vector is not necessary, it will be reconstructed
@@ -798,7 +798,7 @@ sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, st
 
     // Construct the ODE integrator.
     const auto ta = detail::construct_sgp4_ode_integrator(sgp4_ode, exit_radius, reentry_radius);
-    log_info("SGP4 ODE integrator construction time: {}s", sw);
+    log_trace("SGP4 ODE integrator construction time: {}s", sw);
 
     // Assemble a "unique" dir path into the system temp dir.
     const auto tmp_dir_path = detail::create_temp_dir("mizuba_sgp4_polyjectory-%%%%-%%%%-%%%%-%%%%");
@@ -823,12 +823,12 @@ sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, st
     // Run the numerical integration.
     sw.reset();
     auto status = detail::perform_ode_integration(ta, tmp_dir_path, sat_data, jd_begin, jd_end, init_states);
-    log_info("SGP4 ODE integration time: {}s", sw);
+    log_trace("SGP4 ODE integration time: {}s", sw);
 
     // Consolidate all the data files into a single file.
     sw.reset();
     auto traj_offset = detail::consolidate_data(tmp_dir_path, sat_data.extent(1), ta.get_order());
-    log_info("SGP4 file consolidation time: {}s", sw);
+    log_trace("SGP4 file consolidation time: {}s", sw);
 
     // Build and return the polyjectory.
     return polyjectory(std::filesystem::path((tmp_dir_path / "storage").string()), ta.get_order(),

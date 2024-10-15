@@ -36,6 +36,7 @@
 
 #include "common_utils.hpp"
 #include "conjunctions.hpp"
+#include "logging.hpp"
 #include "polyjectory.hpp"
 #include "sgp4_polyjectory.hpp"
 
@@ -554,6 +555,10 @@ PYBIND11_MODULE(core, m)
     conj_cl.def_property_readonly_static("aabb_collision",
                                          [](const py::object &) { return py::dtype::of<aabb_collision>(); });
     conj_cl.def_property_readonly_static("conj", [](const py::object &) { return py::dtype::of<conj>(); });
+
+    // Logging utils.
+    m.def("set_logger_level_info", &mz::set_logger_level_info);
+    m.def("set_logger_level_trace", &mz::set_logger_level_trace);
 
     // Register the polyjectory/conjunctions cleanup machinery on the Python side.
     auto atexit = py::module_::import("atexit");

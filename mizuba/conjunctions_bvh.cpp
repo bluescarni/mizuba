@@ -386,7 +386,7 @@ auto consolidate_tree_data(const auto &tmp_dir_path, const auto &tree_sizes)
     // Mark it as read-only.
     mark_file_read_only(storage_path);
 
-    log_info("BVH tree data consolidation time: {}", sw);
+    log_trace("BVH tree data consolidation time: {}", sw);
 
     // Return the offsets.
     return offsets;

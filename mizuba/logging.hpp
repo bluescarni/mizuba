@@ -22,8 +22,9 @@ namespace detail
 {
 
 void log_info_impl(const std::string &);
+void log_trace_impl(const std::string &);
 
-}
+} // namespace detail
 
 // Minimal stopwatch class inspired
 // by spdlog.
@@ -39,11 +40,22 @@ public:
     void reset();
 };
 
-// Log to INFO level.
+// Set the logger level.
+void set_logger_level_info();
+void set_logger_level_trace();
+
+// Log to info level.
 template <typename... T>
 void log_info(fmt::format_string<T...> fmt, T &&...args)
 {
     detail::log_info_impl(fmt::format(fmt, std::forward<T>(args)...));
+}
+
+// Log to trace level.
+template <typename... T>
+void log_trace(fmt::format_string<T...> fmt, T &&...args)
+{
+    detail::log_trace_impl(fmt::format(fmt, std::forward<T>(args)...));
 }
 
 } // namespace mizuba

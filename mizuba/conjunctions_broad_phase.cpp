@@ -129,7 +129,7 @@ auto consolidate_bp_data(const auto &tmp_dir_path, const auto &bp_coll_sizes)
     // Mark it as read-only.
     mark_file_read_only(storage_path);
 
-    log_info("Broad-phase data consolidation time: {}", sw);
+    log_trace("Broad-phase data consolidation time: {}", sw);
 
     // Return the offsets.
     return offsets;

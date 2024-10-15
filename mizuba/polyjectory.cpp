@@ -349,7 +349,7 @@ polyjectory::polyjectory(ptag,
         // Mark it as read-only.
         detail::mark_file_read_only(storage_path);
 
-        log_info("polyjectory copy from spans time: {}", sw);
+        log_trace("polyjectory copy from spans time: {}", sw);
 
         // Create the impl.
         // NOTE: here make_shared() first allocates, and then constructs. If there are no exceptions, the assignment
