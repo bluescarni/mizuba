@@ -7,11 +7,13 @@
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <tuple>
@@ -46,12 +48,28 @@ namespace mizuba
 namespace detail
 {
 
+namespace
+{
+
+// Helper to atomically set out to std::max(out, val).
+template <typename T>
+void atomic_max(std::atomic<T> &out, T val)
+{
+    // Load the current value from the atomic.
+    auto orig_val = out.load(std::memory_order_relaxed);
+    T new_val;
+
+    do {
+        // Compute the new value.
+        // NOTE: we are assuming no NaNs here.
+        new_val = std::max(val, orig_val);
+    } while (!out.compare_exchange_weak(orig_val, new_val, std::memory_order_relaxed, std::memory_order_relaxed));
+}
+
+} // namespace
+
 struct polyjectory_impl {
-    // This is a vector that will contain:
-    // - the offset (in number of double-precision values) in the mmap buffer
-    //   at which the trajectory data for an object begins,
-    // - the total number of steps in the trajectory data.
-    using traj_offset_vec_t = std::vector<std::tuple<std::size_t, std::size_t>>;
+    using traj_offset_vec_t = polyjectory::traj_offset_vec_t;
 
     // Path to the memory-mapped file.
     boost::filesystem::path m_file_path;
@@ -172,7 +190,7 @@ polyjectory::polyjectory(ptag,
         // - the duration of the longest trajectory.
 
         // Init the trajectories offset vector.
-        detail::polyjectory_impl::traj_offset_vec_t traj_offset_vec;
+        traj_offset_vec_t traj_offset_vec;
         traj_offset_vec.reserve(n_objs);
 
         // Keep track of the current offset into the file.
@@ -264,7 +282,7 @@ polyjectory::polyjectory(ptag,
         // we have not checked the time data yet. We will do this below.
 
         // Init the storage file.
-        auto storage_path = tmp_dir_path / "storage";
+        const auto storage_path = tmp_dir_path / "storage";
         detail::create_sized_file(storage_path, cur_offset * sizeof(double));
 
         // Memory-map it.
@@ -361,6 +379,225 @@ polyjectory::polyjectory(ptag,
         m_impl
             = std::make_shared<detail::polyjectory_impl>(std::move(storage_path), std::move(traj_offset_vec),
                                                          std::move(time_offset_vec), poly_op1, maxT, std::move(status));
+
+        // LCOV_EXCL_START
+    } catch (...) {
+        boost::filesystem::remove_all(tmp_dir_path);
+        throw;
+    }
+    // LCOV_EXCL_STOP
+}
+
+// Constructor from a data file at the location 'orig_file_path'.
+// The original file will be moved into the polyjectory's data dir.
+//
+// The layout of the trajectory data into the data file is described by traj_offsets, from which we
+// also deduce the layout of the time data. 'order' it the polynomial order of the polyjectory,
+// 'status' the vector of object statuses.
+polyjectory::polyjectory(const std::filesystem::path &orig_file_path, std::uint32_t order,
+                         traj_offset_vec_t traj_offsets, std::vector<std::int32_t> status)
+{
+    using safe_size_t = boost::safe_numerics::safe<std::size_t>;
+
+    // Check the polynomial order and compute order + 1.
+    if (order < 2u || order == std::numeric_limits<std::uint32_t>::max()) [[unlikely]] {
+        throw std::invalid_argument(
+            fmt::format("Invalid polynomial order {} specified during the construction of a polyjectory", order));
+    }
+    const auto op1 = order + 1u;
+
+    // Initial check on traj_offsets.
+    if (traj_offsets.empty()) [[unlikely]] {
+        throw std::invalid_argument(
+            "Invalid trajectory offsets vector passed to the constructor of a polyjectory: the vector cannot be empty");
+    }
+
+    // Check the status vector.
+    if (status.size() != traj_offsets.size()) [[unlikely]] {
+        throw std::invalid_argument(fmt::format("Invalid status vector passed to the constructor of a polyjectory: the "
+                                                "exepected size is {}, but the actual size is {}",
+                                                traj_offsets.size(), status.size()));
+    }
+
+    // Canonicalise the file path and turn it into a Boost fs path.
+    boost::filesystem::path file_path;
+    try {
+        file_path = std::filesystem::canonical(orig_file_path);
+        // LCOV_EXCL_START
+    } catch (...) {
+        throw std::invalid_argument(fmt::format(
+            "Invalid data file passed to the constructor of a polyjectory: the path '{}' could not be canonicalised",
+            orig_file_path.string()));
+    }
+    // LCOV_EXCL_STOP
+
+    // Iterate over the trajectory offsets, sanity-checking them and computing
+    // the total number of floating-point values expected in the file in the process.
+    safe_size_t expected_tot_num_values = 0;
+
+    for (decltype(traj_offsets.size()) i = 0; i < traj_offsets.size(); ++i) {
+        const auto [offset, n_steps] = traj_offsets[i];
+
+        // The number of steps must always be positive.
+        if (n_steps == 0u) [[unlikely]] {
+            throw std::invalid_argument(
+                fmt::format("Invalid trajectory offsets vector passed to the constructor of a polyjectory: the number "
+                            "of steps for the object at index {} is zero",
+                            i));
+        }
+
+        // Check the offset value.
+        if (i == 0u) {
+            // The offset at index 0 must be zero.
+            if (offset != 0u) [[unlikely]] {
+                throw std::invalid_argument(
+                    fmt::format("Invalid trajectory offsets vector passed to the constructor of a polyjectory: "
+                                "the initial offset value must be zero but it is {} instead",
+                                offset));
+            }
+        } else {
+            // An offset at index i > 0 must be consistent with the previous offset and n_steps.
+            const auto [prev_offset, prev_n_steps] = traj_offsets[i - 1u];
+
+            if (!(offset > prev_offset)) [[unlikely]] {
+                throw std::invalid_argument(fmt::format(
+                    "Invalid trajectory offsets vector passed to the constructor of a polyjectory: "
+                    "the offset of the object at index {} is not greater than the offset of the previous object",
+                    i));
+            }
+
+            if (offset - prev_offset != safe_size_t(prev_n_steps) * 7u * op1) [[unlikely]] {
+                throw std::invalid_argument(fmt::format(
+                    "Inconsistent data detected in the trajectory offsets vector passed to the constructor of "
+                    "a polyjectory: the offset of the object at index {} is inconsistent with the offset and "
+                    "number of steps of the previous object",
+                    i));
+            }
+        }
+
+        // Update expected_tot_num_values. The '+ n_steps' accounts for the time data.
+        expected_tot_num_values += safe_size_t(n_steps) * 7u * op1 + n_steps;
+    }
+
+    // Build the time offsets vector from the trajectory offsets.
+    // NOTE: all computations here are safe because we managed to compute
+    // expected_tot_num_values without overflow.
+    std::vector<std::size_t> time_offsets;
+    time_offsets.reserve(traj_offsets.size());
+    for (decltype(traj_offsets.size()) i = 0; i < traj_offsets.size(); ++i) {
+        if (i == 0u) {
+            const auto [last_traj_offset, last_n_steps] = traj_offsets.back();
+            time_offsets.push_back(last_traj_offset + last_n_steps * 7u * op1);
+        } else {
+            const auto [_, prev_nsteps] = traj_offsets[i - 1u];
+            time_offsets.push_back(time_offsets.back() + prev_nsteps);
+        }
+    }
+
+    // Check expected_tot_num_values.
+    assert(expected_tot_num_values == time_offsets.back() + std::get<1>(traj_offsets.back()));
+
+    // Assemble a "unique" dir path into the system temp dir.
+    const auto tmp_dir_path = detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
+
+    // From now on, we have to wrap everything in a try/catch in order to ensure
+    // proper cleanup of the temp dir in case of exceptions.
+    try {
+        // Change the permissions so that only the owner has access.
+        boost::filesystem::permissions(tmp_dir_path, boost::filesystem::owner_all);
+
+        // Init the storage file path and check that it does not exist already.
+        const auto storage_path = tmp_dir_path / "storage";
+        if (boost::filesystem::exists(storage_path)) [[unlikely]] {
+            // LCOV_EXCL_START
+            throw std::invalid_argument(
+                fmt::format("Cannot create the storage file '{}': the file exists already", storage_path.string()));
+            // LCOV_EXCL_STOP
+        }
+
+        // Move the original file into storage_path.
+        boost::filesystem::rename(file_path, storage_path);
+
+        // Check the file size. Do it now, after moving it into the private directory.
+        if (boost::filesystem::file_size(storage_path) != expected_tot_num_values * sizeof(double)) [[unlikely]] {
+            throw std::invalid_argument(fmt::format("Invalid data file passed to the constructor of a polyjectory: the "
+                                                    "expected size is bytes is '{}' but the actual size is {} instead",
+                                                    static_cast<std::size_t>(expected_tot_num_values * sizeof(double)),
+                                                    boost::filesystem::file_size(storage_path)));
+        }
+
+        // Memory-map the file.
+        boost::iostreams::mapped_file_source st_file(storage_path);
+        const auto *st_file_base_ptr = reinterpret_cast<const double *>(st_file.data());
+        assert(boost::alignment::is_aligned(st_file_base_ptr, alignof(double)));
+
+        // Atomic variable to compute maxT.
+        std::atomic maxT = -std::numeric_limits<double>::infinity();
+
+        // Check the data and compute maxT.
+        oneapi::tbb::parallel_for(
+            oneapi::tbb::blocked_range<decltype(traj_offsets.size())>(0, traj_offsets.size()),
+            [st_file_base_ptr, &maxT, &traj_offsets, &time_offsets, op1](const auto &range) {
+                // Local version of maxT.
+                auto local_maxT = -std::numeric_limits<double>::infinity();
+
+                for (auto i = range.begin(); i != range.end(); ++i) {
+                    const auto [traj_offset, n_steps] = traj_offsets[i];
+                    const auto time_offset = time_offsets[i];
+
+                    // Build a trajectory span and check the data.
+                    const traj_span_t cur_traj{st_file_base_ptr + traj_offset, n_steps, op1};
+
+                    // Check for non-finite trajectory data.
+                    for (std::size_t j = 0; j < cur_traj.extent(0); ++j) {
+                        for (std::size_t k = 0; k < cur_traj.extent(1); ++k) {
+                            for (std::size_t l = 0; l < op1; ++l) {
+                                if (!std::isfinite(cur_traj(j, k, l))) [[unlikely]] {
+                                    throw std::invalid_argument(
+                                        fmt::format("A non-finite value was found in the trajectory at index {}", i));
+                                }
+                            }
+                        }
+                    }
+
+                    // Build a time span and check the data.
+                    const time_span_t cur_time{st_file_base_ptr + time_offset, n_steps};
+
+                    for (std::size_t j = 0; j < cur_time.extent(0); ++j) {
+                        if (!std::isfinite(cur_time(j))) [[unlikely]] {
+                            throw std::invalid_argument(
+                                fmt::format("A non-finite time coordinate was found for the object at index {}", i));
+                        }
+
+                        if (cur_time(j) <= 0) [[unlikely]] {
+                            throw std::invalid_argument(
+                                fmt::format("A non-positive time coordinate was found for the object at index {}", i));
+                        }
+
+                        if (j > 0u && !(cur_time(j) > cur_time(j - 1u))) [[unlikely]] {
+                            throw std::invalid_argument(fmt::format(
+                                "The sequence of times for the object at index {} is not monotonically increasing", i));
+                        }
+                    }
+
+                    // Update local_maxT.
+                    local_maxT = std::max(local_maxT, cur_time(cur_time.extent(0) - 1u));
+                }
+
+                // Atomicaly update maxT.
+                detail::atomic_max(maxT, local_maxT);
+            });
+
+        // Close the storage file.
+        st_file.close();
+
+        // Mark it as read-only.
+        detail::mark_file_read_only(storage_path);
+
+        // Construct the implementation.
+        m_impl = std::make_shared<detail::polyjectory_impl>(std::move(storage_path), std::move(traj_offsets),
+                                                            std::move(time_offsets), op1,
+                                                            maxT.load(std::memory_order_relaxed), std::move(status));
 
         // LCOV_EXCL_START
     } catch (...) {

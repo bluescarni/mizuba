@@ -11,7 +11,6 @@
 #include <cstddef>
 #include <fstream>
 #include <ios>
-#include <ranges>
 #include <span>
 #include <stdexcept>
 #include <tuple>
@@ -751,41 +750,10 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
                                   }
                               });
 
-    // Return the offset vectors.
-    return std::make_pair(std::move(traj_offset), std::move(time_offset));
-}
-
-// Construct the polyjectory resulting from the ODE integration
-// of the SGP4 dynamics.
-template <typename TrajOffset, typename TimeOffset>
-polyjectory build_polyjectory(const boost::filesystem::path &tmp_dir_path, const TrajOffset &traj_offset,
-                              const TimeOffset &time_offset, const std::vector<int> &status, std::uint32_t order)
-{
-    const auto storage_path = tmp_dir_path / "storage";
-    boost::iostreams::mapped_file_source file(storage_path.string());
-    assert(boost::alignment::is_aligned(file.data(), alignof(double)));
-
-    // Fetch a pointer to the beginning of the data.
-    // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
-    // https://en.cppreference.com/w/cpp/memory/start_lifetime_as
-    const auto *base_ptr = reinterpret_cast<const double *>(file.data());
-    assert(boost::alignment::is_aligned(base_ptr, alignof(double)));
-
-    auto traj_transform = [base_ptr, order](const auto &p) {
-        const auto [offset, nsteps] = p;
-
-        return heyoka::mdspan<const double, heyoka::extents<std::size_t, std::dynamic_extent, 7, std::dynamic_extent>>{
-            base_ptr + offset, nsteps, order + 1u};
-    };
-
-    auto time_transform = [base_ptr](const auto &p) {
-        const auto [offset, nsteps] = p;
-
-        return heyoka::mdspan<const double, heyoka::dextents<std::size_t, 1>>{base_ptr + offset, nsteps};
-    };
-
-    return polyjectory(traj_offset | std::views::transform(traj_transform),
-                       time_offset | std::views::transform(time_transform), status);
+    // Return the trajectory offsets vector.
+    // NOTE: the time offset vector is not necessary, it will be reconstructed
+    // in the polyjectory constructor.
+    return traj_offset;
 }
 
 } // namespace
@@ -850,16 +818,17 @@ sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, st
 
     // Run the numerical integration.
     sw.reset();
-    const auto status = detail::perform_ode_integration(ta, tmp_dir_path, sat_data, jd_begin, jd_end, init_states);
+    auto status = detail::perform_ode_integration(ta, tmp_dir_path, sat_data, jd_begin, jd_end, init_states);
     log_info("SGP4 ODE integration time: {}s", sw);
 
     // Consolidate all the data files into a single file.
     sw.reset();
-    const auto [traj_offset, time_offset] = detail::consolidate_data(tmp_dir_path, sat_data.extent(1), ta.get_order());
+    auto traj_offset = detail::consolidate_data(tmp_dir_path, sat_data.extent(1), ta.get_order());
     log_info("SGP4 file consolidation time: {}s", sw);
 
     // Build and return the polyjectory.
-    return detail::build_polyjectory(tmp_dir_path, traj_offset, time_offset, status, ta.get_order());
+    return polyjectory(std::filesystem::path((tmp_dir_path / "storage").string()), ta.get_order(),
+                       std::move(traj_offset), std::move(status));
 }
 
 } // namespace mizuba
