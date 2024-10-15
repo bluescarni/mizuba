@@ -31,6 +31,7 @@
 #include <oneapi/tbb/blocked_range.h>
 #include <oneapi/tbb/parallel_for.h>
 
+#include "detail/atomic_minmax.hpp"
 #include "detail/file_utils.hpp"
 #include "logging.hpp"
 #include "polyjectory.hpp"
@@ -47,26 +48,6 @@ namespace mizuba
 
 namespace detail
 {
-
-namespace
-{
-
-// Helper to atomically set out to std::max(out, val).
-template <typename T>
-void atomic_max(std::atomic<T> &out, T val)
-{
-    // Load the current value from the atomic.
-    auto orig_val = out.load(std::memory_order_relaxed);
-    T new_val;
-
-    do {
-        // Compute the new value.
-        // NOTE: we are assuming no NaNs here.
-        new_val = std::max(val, orig_val);
-    } while (!out.compare_exchange_weak(orig_val, new_val, std::memory_order_relaxed, std::memory_order_relaxed));
-}
-
-} // namespace
 
 struct polyjectory_impl {
     using traj_offset_vec_t = polyjectory::traj_offset_vec_t;
@@ -585,6 +566,8 @@ polyjectory::polyjectory(const std::filesystem::path &orig_file_path, std::uint3
                 }
 
                 // Atomicaly update maxT.
+                // NOTE: atomic_max() usage here is safe because we checked that
+                // the time values are finite.
                 detail::atomic_max(maxT, local_maxT);
             });
 
