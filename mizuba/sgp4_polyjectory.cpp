@@ -627,6 +627,8 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
 
+    stopwatch sw;
+
     // This is a vector that will contain:
     // - the offset (in number of double-precision values) in the storage file
     //   at which the trajectory data for an object begins,
@@ -749,6 +751,8 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
                                       boost::filesystem::remove(time_path);
                                   }
                               });
+
+    log_info("SGP4 data consolidation time: {}", sw);
 
     // Return the trajectory offsets vector.
     // NOTE: the time offset vector is not necessary, it will be reconstructed

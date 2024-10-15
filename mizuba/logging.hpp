@@ -11,6 +11,7 @@
 
 #include <chrono>
 #include <string>
+#include <utility>
 
 #include <fmt/core.h>
 
@@ -42,7 +43,7 @@ public:
 template <typename... T>
 void log_info(fmt::format_string<T...> fmt, T &&...args)
 {
-    detail::log_info_impl(fmt::format(fmt, args...));
+    detail::log_info_impl(fmt::format(fmt, std::forward<T>(args)...));
 }
 
 } // namespace mizuba

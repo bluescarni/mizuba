@@ -36,6 +36,7 @@
 
 #include "conjunctions.hpp"
 #include "detail/file_utils.hpp"
+#include "logging.hpp"
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -61,6 +62,8 @@ auto consolidate_bp_data(const auto &tmp_dir_path, const auto &bp_coll_sizes)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
     using aabb_collision = conjunctions::aabb_collision;
+
+    stopwatch sw;
 
     // Do a first pass on bp_coll_sizes to determine the offsets into the global file
     // and the total required size.
@@ -125,6 +128,8 @@ auto consolidate_bp_data(const auto &tmp_dir_path, const auto &bp_coll_sizes)
 
     // Mark it as read-only.
     mark_file_read_only(storage_path);
+
+    log_info("Broad-phase data consolidation time: {}", sw);
 
     // Return the offsets.
     return offsets;
