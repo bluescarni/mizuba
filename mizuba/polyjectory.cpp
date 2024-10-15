@@ -50,12 +50,12 @@ namespace detail
 {
 
 struct polyjectory_impl {
-    using traj_offset_vec_t = polyjectory::traj_offset_vec_t;
+    using traj_offset_t = polyjectory::traj_offset_t;
 
     // Path to the memory-mapped file.
     boost::filesystem::path m_file_path;
     // Offsets for the trajectory data.
-    traj_offset_vec_t m_traj_offset_vec;
+    std::vector<traj_offset_t> m_traj_offset_vec;
     // Offsets for the time data.
     std::vector<std::size_t> m_time_offset_vec;
     // Polynomial order + 1 for the trajectory data.
@@ -69,7 +69,7 @@ struct polyjectory_impl {
     // Pointer to the beginning of m_file, cast to double.
     const double *m_base_ptr = nullptr;
 
-    explicit polyjectory_impl(boost::filesystem::path file_path, traj_offset_vec_t traj_offset_vec,
+    explicit polyjectory_impl(boost::filesystem::path file_path, std::vector<traj_offset_t> traj_offset_vec,
                               std::vector<std::size_t> time_offset_vec, std::uint32_t poly_op1, double maxT,
                               std::vector<std::int32_t> status)
         : m_file_path(std::move(file_path)), m_traj_offset_vec(std::move(traj_offset_vec)),
@@ -171,7 +171,7 @@ polyjectory::polyjectory(ptag,
         // - the duration of the longest trajectory.
 
         // Init the trajectories offset vector.
-        traj_offset_vec_t traj_offset_vec;
+        std::vector<traj_offset_t> traj_offset_vec;
         traj_offset_vec.reserve(n_objs);
 
         // Keep track of the current offset into the file.
@@ -304,7 +304,7 @@ polyjectory::polyjectory(ptag,
                     // Copy the data into the file.
                     std::ranges::copy(cur_traj.data_handle(),
                                       cur_traj.data_handle() + static_cast<std::size_t>(traj_size),
-                                      base_ptr + std::get<0>(traj_offset_vec[i]));
+                                      base_ptr + traj_offset_vec[i].offset);
 
                     // Time data.
                     const auto cur_time = time_spans[i];
@@ -376,7 +376,7 @@ polyjectory::polyjectory(ptag,
 // also deduce the layout of the time data. 'order' it the polynomial order of the polyjectory,
 // 'status' the vector of object statuses.
 polyjectory::polyjectory(const std::filesystem::path &orig_file_path, std::uint32_t order,
-                         traj_offset_vec_t traj_offsets, std::vector<std::int32_t> status)
+                         std::vector<traj_offset_t> traj_offsets, std::vector<std::int32_t> status)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
 
@@ -476,7 +476,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_file_path, std::uint3
     }
 
     // Check expected_tot_num_values.
-    assert(expected_tot_num_values == time_offsets.back() + std::get<1>(traj_offsets.back()));
+    assert(expected_tot_num_values == time_offsets.back() + traj_offsets.back().n_steps);
 
     // Assemble a "unique" dir path into the system temp dir.
     const auto tmp_dir_path = detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");

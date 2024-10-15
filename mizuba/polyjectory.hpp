@@ -57,11 +57,15 @@ public:
         = heyoka::mdspan<const double, heyoka::extents<std::size_t, std::dynamic_extent, 7, std::dynamic_extent>>;
     using time_span_t = heyoka::mdspan<const double, heyoka::dextents<std::size_t, 1>>;
 
-    // This is a vector that contains:
-    // - the offset (in number of double-precision values) in the data buffer
-    //   at which the trajectory data for an object begins,
-    // - the total number of steps in the trajectory data.
-    using traj_offset_vec_t = std::vector<std::tuple<std::size_t, std::size_t>>;
+    // Datatype representing:
+    // - the offset (in number of floating-point values) at which data for a
+    //   specific trajectory begins in a datafile,
+    // - the total number of steps in the trajectory.
+    // This is used for locating trajectories into a data file.
+    struct traj_offset_t {
+        std::size_t offset;
+        std::size_t n_steps;
+    };
 
 private:
     struct ptag {
@@ -97,7 +101,8 @@ public:
                                         std::forward<StatusRng>(status_rng)))
     {
     }
-    explicit polyjectory(const std::filesystem::path &, std::uint32_t, traj_offset_vec_t, std::vector<std::int32_t>);
+    explicit polyjectory(const std::filesystem::path &, std::uint32_t, std::vector<traj_offset_t>,
+                         std::vector<std::int32_t>);
     polyjectory(const polyjectory &);
     polyjectory(polyjectory &&) noexcept;
     polyjectory &operator=(const polyjectory &);

@@ -629,11 +629,8 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
 
     stopwatch sw;
 
-    // This is a vector that will contain:
-    // - the offset (in number of double-precision values) in the storage file
-    //   at which the trajectory data for an object begins,
-    // - the number of steps.
-    std::vector<std::tuple<std::size_t, std::size_t>> traj_offset;
+    // Init the trajectory offsets.
+    std::vector<polyjectory::traj_offset_t> traj_offset;
     traj_offset.reserve(n_sats);
 
     // Keep track of the offset in the storage file.
@@ -704,8 +701,7 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
                                       // Taylor coefficients.
 
                                       // Compute the file size.
-                                      const auto tc_size
-                                          = sizeof(double) * (order + 1u) * 7u * std::get<1>(traj_offset[i]);
+                                      const auto tc_size = sizeof(double) * (order + 1u) * 7u * traj_offset[i].n_steps;
 
                                       // Build the file path.
                                       const auto tc_path = tmp_dir_path / fmt::format("tc_{}", i);
@@ -717,7 +713,7 @@ auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n
                                       tc_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
                                       // Copy it into the mapped file.
-                                      tc_file.read(reinterpret_cast<char *>(base_ptr + std::get<0>(traj_offset[i])),
+                                      tc_file.read(reinterpret_cast<char *>(base_ptr + traj_offset[i].offset),
                                                    boost::numeric_cast<std::streamsize>(tc_size));
 
                                       // Close the file.
