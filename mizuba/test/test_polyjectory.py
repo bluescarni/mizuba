@@ -229,7 +229,6 @@ class polyjectory_test_case(_ut.TestCase):
         )
 
         self.assertEqual(pj.nobjs, 2)
-        pj.file_path
         self.assertEqual(pj.maxT, 3)
         self.assertEqual(pj.poly_order, 7)
 

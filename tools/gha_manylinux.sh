@@ -81,7 +81,7 @@ echo "REPAIRED_WHEEL_FILENAME: ${REPAIRED_WHEEL_FILENAME}"
 # Try to install it and run the tests.
 unset LD_LIBRARY_PATH
 cd /
-/opt/python/${PYTHON_DIR}/bin/pip install ${GITHUB_WORKSPACE}/repaired_wheel/${REPAIRED_WHEEL_FILENAME}[skyfield,heyoka]
+/opt/python/${PYTHON_DIR}/bin/pip install ${GITHUB_WORKSPACE}/repaired_wheel/${REPAIRED_WHEEL_FILENAME}[sgp4,heyoka]
 /opt/python/${PYTHON_DIR}/bin/python -c "import mizuba; mizuba.test.run_test_suite();" 
 
 # Upload to PyPI.

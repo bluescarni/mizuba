@@ -41,6 +41,7 @@
 #include "conjunctions.hpp"
 #include "detail/file_utils.hpp"
 #include "detail/get_n_effective_objects.hpp"
+#include "logging.hpp"
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -323,6 +324,8 @@ auto consolidate_tree_data(const auto &tmp_dir_path, const auto &tree_sizes)
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
     using bvh_node = conjunctions::bvh_node;
 
+    stopwatch sw;
+
     // Do a first pass on tree_sizes to determine the offsets into the global file
     // and the total required size.
     // NOTE: the offsets are measured in number of bvh_nodes.
@@ -382,6 +385,8 @@ auto consolidate_tree_data(const auto &tmp_dir_path, const auto &tree_sizes)
 
     // Mark it as read-only.
     mark_file_read_only(storage_path);
+
+    log_trace("BVH tree data consolidation time: {}", sw);
 
     // Return the offsets.
     return offsets;

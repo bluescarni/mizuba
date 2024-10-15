@@ -36,6 +36,7 @@
 
 #include "common_utils.hpp"
 #include "conjunctions.hpp"
+#include "logging.hpp"
 #include "polyjectory.hpp"
 #include "sgp4_polyjectory.hpp"
 
@@ -205,6 +206,10 @@ PYBIND11_MODULE(core, m)
 
     m.doc() = "The core mizuba module";
 
+    // Register polyjectory::traj_offset as a structured NumPy datatype.
+    using traj_offset = mz::polyjectory::traj_offset;
+    PYBIND11_NUMPY_DTYPE(traj_offset, offset, n_steps);
+
     // polyjectory.
     py::class_<mz::polyjectory> pt_cl(m, "polyjectory", py::dynamic_attr{});
     pt_cl.def(
@@ -287,8 +292,10 @@ PYBIND11_MODULE(core, m)
             return ret;
         }),
         "trajs"_a.noconvert(), "times"_a.noconvert(), "status"_a.noconvert());
+    pt_cl.def(
+        py::init<const std::filesystem::path &, std::uint32_t, std::vector<traj_offset>, std::vector<std::int32_t>>(),
+        "data_file"_a.noconvert(), "order"_a.noconvert(), "traj_offsets"_a.noconvert(), "status"_a.noconvert());
     pt_cl.def_property_readonly("nobjs", &mz::polyjectory::get_nobjs);
-    pt_cl.def_property_readonly("file_path", &mz::polyjectory::get_file_path);
     pt_cl.def_property_readonly("maxT", &mz::polyjectory::get_maxT);
     pt_cl.def_property_readonly("poly_order", &mz::polyjectory::get_poly_order);
     pt_cl.def(
@@ -320,6 +327,9 @@ PYBIND11_MODULE(core, m)
             return py::make_tuple(std::move(traj_ret), std::move(time_ret), status);
         },
         "i"_a.noconvert());
+
+    // Expose static getters for the structured types.
+    pt_cl.def_property_readonly_static("traj_offset", [](const py::object &) { return py::dtype::of<traj_offset>(); });
 
     // sgp4 polyjectory.
     m.def(
@@ -555,6 +565,10 @@ PYBIND11_MODULE(core, m)
     conj_cl.def_property_readonly_static("aabb_collision",
                                          [](const py::object &) { return py::dtype::of<aabb_collision>(); });
     conj_cl.def_property_readonly_static("conj", [](const py::object &) { return py::dtype::of<conj>(); });
+
+    // Logging utils.
+    m.def("set_logger_level_info", &mz::set_logger_level_info);
+    m.def("set_logger_level_trace", &mz::set_logger_level_trace);
 
     // Register the polyjectory/conjunctions cleanup machinery on the Python side.
     auto atexit = py::module_::import("atexit");

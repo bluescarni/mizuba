@@ -28,6 +28,7 @@
 #include <oneapi/tbb/parallel_for.h>
 
 #include "conjunctions.hpp"
+#include "detail/atomic_minmax.hpp"
 #include "detail/file_utils.hpp"
 #include "detail/ival.hpp"
 #include "detail/poly_utils.hpp"
@@ -48,40 +49,6 @@ namespace detail
 
 namespace
 {
-
-// Helper to atomically update the lower bound out with the
-// value in val.
-template <typename T>
-void lb_atomic_update(std::atomic<T> &out, T val)
-{
-    // Load the current value from the atomic.
-    auto orig_val = out.load(std::memory_order_relaxed);
-    T new_val;
-
-    do {
-        // Compute the new value.
-        // NOTE: min usage safe, we checked outside that
-        // there are no NaN values at this point.
-        new_val = std::min(val, orig_val);
-    } while (!out.compare_exchange_weak(orig_val, new_val, std::memory_order_relaxed, std::memory_order_relaxed));
-}
-
-// Helper to atomically update the upper bound out with the
-// value in val.
-template <typename T>
-void ub_atomic_update(std::atomic<T> &out, T val)
-{
-    // Load the current value from the atomic.
-    auto orig_val = out.load(std::memory_order_relaxed);
-    T new_val;
-
-    do {
-        // Compute the new value.
-        // NOTE: max usage safe, we checked outside that
-        // there are no NaN values at this point.
-        new_val = std::max(val, orig_val);
-    } while (!out.compare_exchange_weak(orig_val, new_val, std::memory_order_relaxed, std::memory_order_relaxed));
-}
 
 // Helper to compute the AABB for a single object within a conjunction timestep.
 //
@@ -371,9 +338,11 @@ std::vector<double> conjunctions::compute_aabbs(const polyjectory &pj, const boo
                     }
 
                     // Atomically update the global AABB for the current conjunction step.
+                    // NOTE: atomic_min/max() usage here is safe because we checked that
+                    // all lb/ub values are finite.
                     for (auto i = 0u; i < 4u; ++i) {
-                        detail::lb_atomic_update(cur_global_lb[i], cur_local_lb[i]);
-                        detail::ub_atomic_update(cur_global_ub[i], cur_local_ub[i]);
+                        detail::atomic_min(cur_global_lb[i], cur_local_lb[i]);
+                        detail::atomic_max(cur_global_ub[i], cur_local_ub[i]);
                     }
                 });
 

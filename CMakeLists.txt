@@ -9,7 +9,7 @@ if(NOT CMAKE_BUILD_TYPE)
 	FORCE)
 endif()
 
-project(mizuba VERSION 0.0.2 LANGUAGES CXX C)
+project(mizuba VERSION 0.0.3 LANGUAGES CXX C)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/yacma")
 
@@ -118,8 +118,11 @@ message(STATUS "Found heyoka version ${heyoka_VERSION}")
 # fmt.
 find_package(fmt REQUIRED CONFIG)
 
-# Mandatory dependency on TBB.
+# TBB.
 find_package(TBB REQUIRED CONFIG)
+
+# spdlog.
+find_package(spdlog REQUIRED CONFIG)
 
 # Boost.
 # NOTE: need 1.69 for safe numerics.
