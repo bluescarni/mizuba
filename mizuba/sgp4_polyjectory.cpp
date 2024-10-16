@@ -306,7 +306,7 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
             while (traj_fut.wait_for(wait_duration) != std::future_status::ready
                    || time_fut.wait_for(wait_duration) != std::future_status::ready) {
                 if (stop_writing) [[unlikely]] {
-                    return;
+                    return; // LCOV_EXCL_LINE
                 }
             }
 
@@ -694,6 +694,7 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
 
             start_block_idx = end_block_idx;
         }
+        // LCOV_EXCL_START
     } catch (...) {
         // Request a stop on the writer thread.
         stop_writing.store(true);
@@ -709,6 +710,7 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
         // Re-throw.
         throw;
     }
+    // LCOV_EXCL_STOP
 
     // Wait for the writer thread to finish.
     // NOTE: get() will throw any exception that might have been
