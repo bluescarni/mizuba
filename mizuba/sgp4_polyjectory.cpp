@@ -279,7 +279,7 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
     time_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
     // Setup the futures and promises to coordinate between the numerical integration and the
-    // file writing threads.
+    // file writing thread.
     std::vector<std::promise<std::vector<double>>> traj_promises, time_promises;
 
     traj_promises.resize(boost::numeric_cast<decltype(traj_promises.size())>(n_sats));
