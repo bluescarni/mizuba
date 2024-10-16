@@ -417,7 +417,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
     // Check the status vector.
     if (status.size() != traj_offsets.size()) [[unlikely]] {
         throw std::invalid_argument(fmt::format("Invalid status vector passed to the constructor of a polyjectory: the "
-                                                "exepected size is {}, but the actual size is {}",
+                                                "expected size is {}, but the actual size is {}",
                                                 traj_offsets.size(), status.size()));
     }
 
