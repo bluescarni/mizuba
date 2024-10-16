@@ -425,7 +425,6 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
                 oneapi::tbb::blocked_range<std::size_t>(start_block_idx, end_block_idx),
                 [&ets, batch_size, n_sats, sat_data, init_states, jd_begin, jd_end, &traj_promises, &time_promises,
                  &global_status](const auto &range) {
-                    using safe_size_t = boost::safe_numerics::safe<std::size_t>;
                     using dfloat = heyoka::detail::dfloat<double>;
 
                     // Fetch the thread-local data.
