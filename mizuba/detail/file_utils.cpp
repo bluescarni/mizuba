@@ -121,6 +121,8 @@ auto mmap_at_offset_impl(const boost::filesystem::path &path, std::size_t size, 
 
 } // namespace
 
+// NOTE: these are helpers to memory-map only part of of a file. The memory-mapped portion
+// starts at byte offset into the file, and it has size 'size'.
 std::pair<const char *, boost::iostreams::mapped_file_source> mmap_at_offset_ro(const boost::filesystem::path &path,
                                                                                 std::size_t size, std::size_t offset)
 {
