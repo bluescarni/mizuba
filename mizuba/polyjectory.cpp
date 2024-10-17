@@ -52,8 +52,8 @@ namespace detail
 struct polyjectory_impl {
     using traj_offset = polyjectory::traj_offset;
 
-    // Path to the memory-mapped file.
-    boost::filesystem::path m_file_path;
+    // The path to the temp dir containing the polyjectory data.
+    boost::filesystem::path m_temp_dir_path;
     // Offsets for the trajectory data.
     std::vector<traj_offset> m_traj_offset_vec;
     // Offsets for the time data.
@@ -64,27 +64,35 @@ struct polyjectory_impl {
     double m_maxT = 0;
     // Vector of trajectory statuses.
     std::vector<std::int32_t> m_status;
-    // The memory-mapped file.
-    boost::iostreams::mapped_file_source m_file;
-    // Pointer to the beginning of m_file, cast to double.
-    const double *m_base_ptr = nullptr;
+    // The memory-mapped file for the trajectory data.
+    boost::iostreams::mapped_file_source m_traj_file;
+    // The memory-mapped file for the time data.
+    boost::iostreams::mapped_file_source m_time_file;
+    // Pointer to the beginning of m_traj_file, cast to double.
+    const double *m_traj_ptr = nullptr;
+    // Pointer to the beginning of m_time_file, cast to double.
+    const double *m_time_ptr = nullptr;
 
-    explicit polyjectory_impl(boost::filesystem::path file_path, std::vector<traj_offset> traj_offset_vec,
+    explicit polyjectory_impl(boost::filesystem::path temp_dir_path, std::vector<traj_offset> traj_offset_vec,
                               std::vector<std::size_t> time_offset_vec, std::uint32_t poly_op1, double maxT,
                               std::vector<std::int32_t> status)
-        : m_file_path(std::move(file_path)), m_traj_offset_vec(std::move(traj_offset_vec)),
+        : m_temp_dir_path(std::move(temp_dir_path)), m_traj_offset_vec(std::move(traj_offset_vec)),
           m_time_offset_vec(std::move(time_offset_vec)), m_poly_op1(poly_op1), m_maxT(maxT),
-          m_status(std::move(status)), m_file(m_file_path.string())
+          m_status(std::move(status)), m_traj_file((m_temp_dir_path / "traj").string()),
+          m_time_file((m_temp_dir_path / "time").string())
     {
         // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
         // https://en.cppreference.com/w/cpp/memory/start_lifetime_as
-        m_base_ptr = reinterpret_cast<const double *>(m_file.data());
-        assert(boost::alignment::is_aligned(m_base_ptr, alignof(double)));
+        m_traj_ptr = reinterpret_cast<const double *>(m_traj_file.data());
+        assert(boost::alignment::is_aligned(m_traj_ptr, alignof(double)));
+
+        m_time_ptr = reinterpret_cast<const double *>(m_time_file.data());
+        assert(boost::alignment::is_aligned(m_time_ptr, alignof(double)));
     }
 
     [[nodiscard]] bool is_open() noexcept
     {
-        return m_file.is_open();
+        return m_traj_file.is_open();
     }
 
     void close() noexcept
@@ -93,11 +101,12 @@ struct polyjectory_impl {
         // more than once.
         assert(is_open());
 
-        // Close the memory mapped file.
-        m_file.close();
+        // Close all memory-mapped files.
+        m_traj_file.close();
+        m_time_file.close();
 
         // Remove the temp dir and everything within.
-        boost::filesystem::remove_all(m_file_path.parent_path());
+        boost::filesystem::remove_all(m_temp_dir_path);
     }
 
     polyjectory_impl(polyjectory_impl &&) noexcept = delete;
@@ -157,7 +166,7 @@ polyjectory::polyjectory(ptag,
     }
 
     // Assemble a "unique" dir path into the system temp dir.
-    const auto tmp_dir_path = detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
+    auto tmp_dir_path = detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
 
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the temp dir in case of exceptions.
@@ -174,8 +183,8 @@ polyjectory::polyjectory(ptag,
         std::vector<traj_offset> traj_offset_vec;
         traj_offset_vec.reserve(n_objs);
 
-        // Keep track of the current offset into the file.
-        safe_size_t cur_offset(0);
+        // Keep track of the current offset into the traj file.
+        safe_size_t cur_traj_offset(0);
 
         // Init the poly order + 1.
         std::uint32_t poly_op1 = 0;
@@ -214,15 +223,18 @@ polyjectory::polyjectory(ptag,
             const auto traj_size = safe_size_t(cur_traj.extent(0)) * cur_traj.extent(1) * op1;
 
             // Add entry to the offset vector.
-            traj_offset_vec.emplace_back(cur_offset, cur_traj.extent(0));
+            traj_offset_vec.emplace_back(cur_traj_offset, cur_traj.extent(0));
 
             // Update cur_offset.
-            cur_offset += traj_size;
+            cur_traj_offset += traj_size;
         }
 
         // Offset vector for the time data.
         std::vector<std::size_t> time_offset_vec;
         time_offset_vec.reserve(n_objs);
+
+        // Keep track of the current offset into the time file.
+        safe_size_t cur_time_offset(0);
 
         // Init maxT.
         double maxT = 0;
@@ -250,10 +262,10 @@ polyjectory::polyjectory(ptag,
             maxT = (curT > maxT) ? curT : maxT;
 
             // Add entry to the offset vector.
-            time_offset_vec.emplace_back(cur_offset);
+            time_offset_vec.emplace_back(cur_time_offset);
 
             // Update cur_offset.
-            cur_offset += time_size;
+            cur_time_offset += time_size;
         }
 
         // Time the data copy from the spans into the file.
@@ -262,23 +274,29 @@ polyjectory::polyjectory(ptag,
         // NOTE: at this point maxT could contain bogus/incorrect values because
         // we have not checked the time data yet. We will do this below.
 
-        // Init the storage file.
-        const auto storage_path = tmp_dir_path / "storage";
-        detail::create_sized_file(storage_path, cur_offset * sizeof(double));
+        // Init the storage files.
+        const auto traj_path = tmp_dir_path / "traj";
+        const auto time_path = tmp_dir_path / "time";
+        detail::create_sized_file(traj_path, cur_traj_offset * sizeof(double));
+        detail::create_sized_file(time_path, cur_time_offset * sizeof(double));
 
-        // Memory-map it.
-        boost::iostreams::mapped_file_sink file(storage_path.string());
+        // Memory-map them.
+        boost::iostreams::mapped_file_sink traj_file(traj_path.string());
+        boost::iostreams::mapped_file_sink time_file(time_path.string());
 
-        // Fetch a pointer to the beginning of the data.
+        // Fetch pointers to the beginning of the data.
         // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
         // https://en.cppreference.com/w/cpp/memory/start_lifetime_as
-        auto *base_ptr = reinterpret_cast<double *>(file.data());
-        assert(boost::alignment::is_aligned(base_ptr, alignof(double)));
+        auto *traj_base_ptr = reinterpret_cast<double *>(traj_file.data());
+        assert(boost::alignment::is_aligned(traj_base_ptr, alignof(double)));
+        auto *time_base_ptr = reinterpret_cast<double *>(time_file.data());
+        assert(boost::alignment::is_aligned(time_base_ptr, alignof(double)));
 
         // Check and copy over the data from the spans.
         oneapi::tbb::parallel_for(
             oneapi::tbb::blocked_range<decltype(traj_spans.size())>(0, n_objs),
-            [base_ptr, poly_op1, &traj_spans, &traj_offset_vec, &time_spans, &time_offset_vec](const auto &range) {
+            [traj_base_ptr, time_base_ptr, poly_op1, &traj_spans, &traj_offset_vec, &time_spans,
+             &time_offset_vec](const auto &range) {
                 for (auto i = range.begin(); i != range.end(); ++i) {
                     // Trajectory data.
                     const auto cur_traj = traj_spans[i];
@@ -304,7 +322,7 @@ polyjectory::polyjectory(ptag,
                     // Copy the data into the file.
                     std::ranges::copy(cur_traj.data_handle(),
                                       cur_traj.data_handle() + static_cast<std::size_t>(traj_size),
-                                      base_ptr + traj_offset_vec[i].offset);
+                                      traj_base_ptr + traj_offset_vec[i].offset);
 
                     // Time data.
                     const auto cur_time = time_spans[i];
@@ -336,18 +354,20 @@ polyjectory::polyjectory(ptag,
                     // Copy the data into the file.
                     std::ranges::copy(cur_time.data_handle(),
                                       cur_time.data_handle() + static_cast<std::size_t>(time_size),
-                                      base_ptr + time_offset_vec[i]);
+                                      time_base_ptr + time_offset_vec[i]);
                 }
             });
 
         // We can now assert that maxT must not be zero.
         assert(maxT != 0);
 
-        // Close the storage file.
-        file.close();
+        // Close the storage files.
+        traj_file.close();
+        time_file.close();
 
-        // Mark it as read-only.
-        detail::mark_file_read_only(storage_path);
+        // Mark them as read-only.
+        detail::mark_file_read_only(traj_path);
+        detail::mark_file_read_only(time_path);
 
         log_trace("polyjectory copy from spans time: {}", sw);
 
@@ -358,7 +378,7 @@ polyjectory::polyjectory(ptag,
         // been fully constructed and thus its dtor will not be invoked, and the cleanup of tmp_dir_path will be
         // performed in the catch block below.
         m_impl
-            = std::make_shared<detail::polyjectory_impl>(std::move(storage_path), std::move(traj_offset_vec),
+            = std::make_shared<detail::polyjectory_impl>(std::move(tmp_dir_path), std::move(traj_offset_vec),
                                                          std::move(time_offset_vec), poly_op1, maxT, std::move(status));
 
         // LCOV_EXCL_START
@@ -369,13 +389,14 @@ polyjectory::polyjectory(ptag,
     // LCOV_EXCL_STOP
 }
 
-// Constructor from a data file at the location 'orig_file_path'.
-// The original file will be moved into the polyjectory's data dir.
+// Constructor from a traj and time data files at the locations 'orig_traj_file_path'
+// and 'orig_time_file_path'. The original files will be moved into the polyjectory's data dir.
 //
 // The layout of the trajectory data into the data file is described by traj_offsets, from which we
 // also deduce the layout of the time data. 'order' it the polynomial order of the polyjectory,
 // 'status' the vector of object statuses.
-polyjectory::polyjectory(const std::filesystem::path &orig_file_path, std::uint32_t order,
+polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
+                         const std::filesystem::path &orig_time_file_path, std::uint32_t order,
                          std::vector<traj_offset> traj_offsets, std::vector<std::int32_t> status)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
@@ -396,25 +417,25 @@ polyjectory::polyjectory(const std::filesystem::path &orig_file_path, std::uint3
     // Check the status vector.
     if (status.size() != traj_offsets.size()) [[unlikely]] {
         throw std::invalid_argument(fmt::format("Invalid status vector passed to the constructor of a polyjectory: the "
-                                                "exepected size is {}, but the actual size is {}",
+                                                "expected size is {}, but the actual size is {}",
                                                 traj_offsets.size(), status.size()));
     }
 
-    // Canonicalise the file path and turn it into a Boost fs path.
-    boost::filesystem::path file_path;
+    // Canonicalise the file paths and turn them into Boost fs paths.
+    boost::filesystem::path traj_file_path, time_file_path;
     try {
-        file_path = std::filesystem::canonical(orig_file_path);
+        traj_file_path = std::filesystem::canonical(orig_traj_file_path);
+        time_file_path = std::filesystem::canonical(orig_time_file_path);
         // LCOV_EXCL_START
     } catch (...) {
-        throw std::invalid_argument(fmt::format(
-            "Invalid data file passed to the constructor of a polyjectory: the path '{}' could not be canonicalised",
-            orig_file_path.string()));
+        throw std::invalid_argument(
+            "Invalid data file(s) passed to the constructor of a polyjectory: the path(s) could not be canonicalised");
     }
     // LCOV_EXCL_STOP
 
     // Iterate over the trajectory offsets, sanity-checking them and computing
-    // the total number of floating-point values expected in the file in the process.
-    safe_size_t expected_tot_num_values = 0;
+    // the total number of floating-point values expected in the files.
+    safe_size_t tot_num_traj_values = 0, tot_num_time_values = 0;
 
     for (decltype(traj_offsets.size()) i = 0; i < traj_offsets.size(); ++i) {
         const auto [offset, n_steps] = traj_offsets[i];
@@ -456,8 +477,9 @@ polyjectory::polyjectory(const std::filesystem::path &orig_file_path, std::uint3
             }
         }
 
-        // Update expected_tot_num_values. The '+ n_steps' accounts for the time data.
-        expected_tot_num_values += safe_size_t(n_steps) * 7u * op1 + n_steps;
+        // Update tot_num_traj_values and tot_num_time_values.
+        tot_num_traj_values += safe_size_t(n_steps) * 7u * op1;
+        tot_num_time_values += n_steps;
     }
 
     // Build the time offsets vector from the trajectory offsets.
@@ -467,19 +489,15 @@ polyjectory::polyjectory(const std::filesystem::path &orig_file_path, std::uint3
     time_offsets.reserve(traj_offsets.size());
     for (decltype(traj_offsets.size()) i = 0; i < traj_offsets.size(); ++i) {
         if (i == 0u) {
-            const auto [last_traj_offset, last_n_steps] = traj_offsets.back();
-            time_offsets.push_back(last_traj_offset + last_n_steps * 7u * op1);
+            time_offsets.push_back(0);
         } else {
             const auto [_, prev_nsteps] = traj_offsets[i - 1u];
             time_offsets.push_back(time_offsets.back() + prev_nsteps);
         }
     }
 
-    // Check expected_tot_num_values.
-    assert(expected_tot_num_values == time_offsets.back() + traj_offsets.back().n_steps);
-
     // Assemble a "unique" dir path into the system temp dir.
-    const auto tmp_dir_path = detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
+    auto tmp_dir_path = detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
 
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the temp dir in case of exceptions.
@@ -487,30 +505,50 @@ polyjectory::polyjectory(const std::filesystem::path &orig_file_path, std::uint3
         // Change the permissions so that only the owner has access.
         boost::filesystem::permissions(tmp_dir_path, boost::filesystem::owner_all);
 
-        // Init the storage file path and check that it does not exist already.
-        const auto storage_path = tmp_dir_path / "storage";
-        if (boost::filesystem::exists(storage_path)) [[unlikely]] {
+        // Init the storages file paths and check that they do not exist already.
+        const auto traj_path = tmp_dir_path / "traj";
+        if (boost::filesystem::exists(traj_path)) [[unlikely]] {
             // LCOV_EXCL_START
             throw std::invalid_argument(
-                fmt::format("Cannot create the storage file '{}': the file exists already", storage_path.string()));
+                fmt::format("Cannot create the storage file '{}': the file exists already", traj_path.string()));
+            // LCOV_EXCL_STOP
+        }
+        const auto time_path = tmp_dir_path / "time";
+        if (boost::filesystem::exists(time_path)) [[unlikely]] {
+            // LCOV_EXCL_START
+            throw std::invalid_argument(
+                fmt::format("Cannot create the storage file '{}': the file exists already", time_path.string()));
             // LCOV_EXCL_STOP
         }
 
-        // Move the original file into storage_path.
-        boost::filesystem::rename(file_path, storage_path);
+        // Move the original files.
+        boost::filesystem::rename(traj_file_path, traj_path);
+        boost::filesystem::rename(time_file_path, time_path);
 
-        // Check the file size. Do it now, after moving it into the private directory.
-        if (boost::filesystem::file_size(storage_path) != expected_tot_num_values * sizeof(double)) [[unlikely]] {
-            throw std::invalid_argument(fmt::format("Invalid data file passed to the constructor of a polyjectory: the "
-                                                    "expected size is bytes is '{}' but the actual size is {} instead",
-                                                    static_cast<std::size_t>(expected_tot_num_values * sizeof(double)),
-                                                    boost::filesystem::file_size(storage_path)));
+        // Check the file sizes. Do it now, after moving the files into the private directory.
+        if (boost::filesystem::file_size(traj_path) != tot_num_traj_values * sizeof(double)) [[unlikely]] {
+            throw std::invalid_argument(
+                fmt::format("Invalid trajectory data file passed to the constructor of a polyjectory: the "
+                            "expected size is bytes is '{}' but the actual size is {} instead",
+                            static_cast<std::size_t>(tot_num_traj_values * sizeof(double)),
+                            boost::filesystem::file_size(traj_path)));
+        }
+        if (boost::filesystem::file_size(time_path) != tot_num_time_values * sizeof(double)) [[unlikely]] {
+            throw std::invalid_argument(
+                fmt::format("Invalid time data file passed to the constructor of a polyjectory: the "
+                            "expected size is bytes is '{}' but the actual size is {} instead",
+                            static_cast<std::size_t>(tot_num_time_values * sizeof(double)),
+                            boost::filesystem::file_size(time_path)));
         }
 
-        // Memory-map the file.
-        boost::iostreams::mapped_file_source st_file(storage_path);
-        const auto *st_file_base_ptr = reinterpret_cast<const double *>(st_file.data());
-        assert(boost::alignment::is_aligned(st_file_base_ptr, alignof(double)));
+        // Memory-map the files.
+        boost::iostreams::mapped_file_source traj_file(traj_path);
+        const auto *traj_file_base_ptr = reinterpret_cast<const double *>(traj_file.data());
+        assert(boost::alignment::is_aligned(traj_file_base_ptr, alignof(double)));
+
+        boost::iostreams::mapped_file_source time_file(time_path);
+        const auto *time_file_base_ptr = reinterpret_cast<const double *>(time_file.data());
+        assert(boost::alignment::is_aligned(time_file_base_ptr, alignof(double)));
 
         // Atomic variable to compute maxT.
         std::atomic maxT = -std::numeric_limits<double>::infinity();
@@ -518,7 +556,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_file_path, std::uint3
         // Check the data and compute maxT.
         oneapi::tbb::parallel_for(
             oneapi::tbb::blocked_range<decltype(traj_offsets.size())>(0, traj_offsets.size()),
-            [st_file_base_ptr, &maxT, &traj_offsets, &time_offsets, op1](const auto &range) {
+            [traj_file_base_ptr, time_file_base_ptr, &maxT, &traj_offsets, &time_offsets, op1](const auto &range) {
                 // Local version of maxT.
                 auto local_maxT = -std::numeric_limits<double>::infinity();
 
@@ -527,7 +565,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_file_path, std::uint3
                     const auto time_offset = time_offsets[i];
 
                     // Build a trajectory span and check the data.
-                    const traj_span_t cur_traj{st_file_base_ptr + t_offset, n_steps, op1};
+                    const traj_span_t cur_traj{traj_file_base_ptr + t_offset, n_steps, op1};
 
                     // Check for non-finite trajectory data.
                     for (std::size_t j = 0; j < cur_traj.extent(0); ++j) {
@@ -542,7 +580,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_file_path, std::uint3
                     }
 
                     // Build a time span and check the data.
-                    const time_span_t cur_time{st_file_base_ptr + time_offset, n_steps};
+                    const time_span_t cur_time{time_file_base_ptr + time_offset, n_steps};
 
                     for (std::size_t j = 0; j < cur_time.extent(0); ++j) {
                         if (!std::isfinite(cur_time(j))) [[unlikely]] {
@@ -571,14 +609,16 @@ polyjectory::polyjectory(const std::filesystem::path &orig_file_path, std::uint3
                 detail::atomic_max(maxT, local_maxT);
             });
 
-        // Close the storage file.
-        st_file.close();
+        // Close the storage files.
+        traj_file.close();
+        time_file.close();
 
-        // Mark it as read-only.
-        detail::mark_file_read_only(storage_path);
+        // Mark them as read-only.
+        detail::mark_file_read_only(traj_path);
+        detail::mark_file_read_only(time_path);
 
         // Construct the implementation.
-        m_impl = std::make_shared<detail::polyjectory_impl>(std::move(storage_path), std::move(traj_offsets),
+        m_impl = std::make_shared<detail::polyjectory_impl>(std::move(tmp_dir_path), std::move(traj_offsets),
                                                             std::move(time_offsets), op1,
                                                             maxT.load(std::memory_order_relaxed), std::move(status));
 
@@ -614,15 +654,16 @@ polyjectory::operator[](std::size_t i) const
                         m_impl->m_traj_offset_vec.size()));
     }
 
-    // Fetch the base pointer.
-    const auto *base_ptr = m_impl->m_base_ptr;
+    // Fetch the base pointers.
+    const auto *traj_base_ptr = m_impl->m_traj_ptr;
+    const auto *time_base_ptr = m_impl->m_time_ptr;
 
     // Fetch the traj offset and nsteps.
     const auto [t_offset, nsteps] = m_impl->m_traj_offset_vec[i];
 
     // Compute the pointers.
-    const auto *traj_ptr = base_ptr + t_offset;
-    const auto *time_ptr = base_ptr + m_impl->m_time_offset_vec[i];
+    const auto *traj_ptr = traj_base_ptr + t_offset;
+    const auto *time_ptr = time_base_ptr + m_impl->m_time_offset_vec[i];
 
     // Return the spans.
     return {traj_span_t{traj_ptr, nsteps,

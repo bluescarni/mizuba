@@ -6,22 +6,23 @@
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+#include <atomic>
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <fstream>
+#include <future>
 #include <ios>
+#include <ranges>
 #include <span>
 #include <stdexcept>
 #include <tuple>
 #include <utility>
 #include <vector>
 
-#include <boost/align.hpp>
-#include <boost/filesystem/file_status.hpp>
 #include <boost/filesystem/operations.hpp>
 #include <boost/filesystem/path.hpp>
-#include <boost/iostreams/device/mapped_file.hpp>
 #include <boost/numeric/conversion/cast.hpp>
 #include <boost/safe_numerics/safe_integer.hpp>
 
@@ -217,8 +218,10 @@ auto construct_sgp4_ode_integrator(const ODESys &sys, double exit_radius, double
 // (e.g., for producing the dynamics in ICRF instead of TEME one day).
 template <typename TA, typename Path, typename SatData, typename InitStates>
 auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatData sat_data, double jd_begin,
-                             double jd_end, InitStates init_states)
+                             double jd_end, InitStates init_states, std::uint32_t order)
 {
+    using safe_size_t = boost::safe_numerics::safe<std::size_t>;
+
     // Cache the batch size.
     const auto batch_size = tmpl_ta.get_batch_size();
 
@@ -249,73 +252,6 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
     // NOTE: round up if batch_size does not divide exactly n_sats.
     const auto n_blocks = n_sats / batch_size + static_cast<unsigned>((n_sats % batch_size) != 0u);
 
-    // Bag of thread-specific data to be used in the batch parallel iterations.
-    struct batch_data {
-        // The ODE integrator.
-        TA ta;
-        // The sgp4 propagator.
-        prop_t prop;
-        // Buffer used to set up new data in prop.
-        std::vector<double> new_sat_data;
-        // Vector of output files.
-        std::vector<std::pair<std::ofstream, std::ofstream>> out_files;
-        // Vector of max timestep sizes.
-        std::vector<double> max_h;
-        // Vector of active batch element flags.
-        std::vector<int> active_flags;
-        // Vector of Julian dates for use in the sgp4 prop.
-        std::vector<prop_t::date> jdates;
-        // Buffers used to temporarily store the Taylor coefficients
-        // and the time data for each element of a batch. The contents
-        // of these buffers will be flushed to file at the end of
-        // the integration of a batch.
-        std::vector<std::pair<std::vector<double>, std::vector<double>>> tmp_write_buffers;
-    };
-
-    // Set up the thread-specific data machinery via TBB.
-    using ets_t = oneapi::tbb::enumerable_thread_specific<batch_data, oneapi::tbb::cache_aligned_allocator<batch_data>,
-                                                          oneapi::tbb::ets_key_usage_type::ets_key_per_instance>;
-    ets_t ets([&tmpl_ta, &tmpl_prop, batch_size]() {
-        // Make a copy of the template integrator.
-        auto ta = tmpl_ta;
-
-        // Make a copy of the template sgp4 propagator.
-        auto prop = tmpl_prop;
-
-        // Prepare new_sat_data with the appropriate size.
-        std::vector<double> new_sat_data;
-        new_sat_data.resize(boost::safe_numerics::safe<decltype(new_sat_data.size())>(batch_size) * 9);
-
-        // Prepare storage for the output files.
-        std::vector<std::pair<std::ofstream, std::ofstream>> out_files;
-        out_files.reserve(boost::numeric_cast<decltype(out_files.size())>(batch_size));
-
-        // Prepare max_h with the appropriate size.
-        std::vector<double> max_h;
-        max_h.resize(boost::numeric_cast<decltype(max_h.size())>(batch_size));
-
-        // Prepare active_flags with the appropriate size.
-        std::vector<int> active_flags;
-        active_flags.resize(boost::numeric_cast<decltype(active_flags.size())>(batch_size));
-
-        // Prepare jdates with the appropriate size.
-        std::vector<prop_t::date> jdates;
-        jdates.resize(boost::numeric_cast<decltype(jdates.size())>(batch_size));
-
-        // Prepare tmp_write_buffers with the appropriate size.
-        std::vector<std::pair<std::vector<double>, std::vector<double>>> tmp_write_buffers;
-        tmp_write_buffers.resize(boost::numeric_cast<decltype(tmp_write_buffers.size())>(batch_size));
-
-        return batch_data{.ta = std::move(ta),
-                          .prop = std::move(prop),
-                          .new_sat_data = std::move(new_sat_data),
-                          .out_files = std::move(out_files),
-                          .max_h = std::move(max_h),
-                          .active_flags = std::move(active_flags),
-                          .jdates = std::move(jdates),
-                          .tmp_write_buffers = std::move(tmp_write_buffers)};
-    });
-
     // A **global** vector of statuses, one per object.
     // We do not need to protect writes into this, as each status
     // will be written to exactly at most once.
@@ -324,430 +260,484 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
     std::vector<int> global_status;
     global_status.resize(boost::numeric_cast<decltype(global_status.size())>(n_sats));
 
-    // Run the numerical integration.
-    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, n_blocks), [&ets, batch_size, n_sats, sat_data,
-                                                                                     init_states, jd_begin, jd_end,
-                                                                                     &tmp_dir_path, &global_status](
-                                                                                        const auto &range) {
-        using safe_size_t = boost::safe_numerics::safe<std::size_t>;
-        using dfloat = heyoka::detail::dfloat<double>;
+    // Create the traj and time data files.
+    if (boost::filesystem::exists(tmp_dir_path / "traj")) [[unlikely]] {
+        // LCOV_EXCL_START
+        throw std::invalid_argument(fmt::format("Cannot create the storage file '{}': the file exists already",
+                                                (tmp_dir_path / "traj").string()));
+        // LCOV_EXCL_STOP
+    }
+    std::ofstream traj_file((tmp_dir_path / "traj").string(), std::ios::binary | std::ios::out);
+    traj_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
+    if (boost::filesystem::exists(tmp_dir_path / "time")) [[unlikely]] {
+        // LCOV_EXCL_START
+        throw std::invalid_argument(fmt::format("Cannot create the storage file '{}': the file exists already",
+                                                (tmp_dir_path / "time").string()));
+        // LCOV_EXCL_STOP
+    }
+    std::ofstream time_file((tmp_dir_path / "time").string(), std::ios::binary | std::ios::out);
+    time_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
-        // Fetch the thread-local data.
-        // NOTE: no need to isolate here, as we are not
-        // invoking any other TBB primitive from within this
-        // scope. Keep in mind though that if we ever enable parallel
-        // operations in heyoka during ODE integration, we will
-        // have to isolate.
-        auto &[ta, prop, new_sat_data, out_files, max_h, active_flags, jdates, tmp_write_buffers] = ets.local();
+    // Setup the futures and promises to coordinate between the numerical integration and the writer thread.
+    std::vector<std::promise<std::vector<double>>> traj_promises, time_promises;
 
-        // View on the state variables.
-        const auto state_view = heyoka::mdspan<double, heyoka::dextents<std::size_t, 2>>{
-            ta.get_state_data(), boost::numeric_cast<std::size_t>(ta.get_dim()),
-            boost::numeric_cast<std::size_t>(batch_size)};
+    traj_promises.resize(boost::numeric_cast<decltype(traj_promises.size())>(n_sats));
+    time_promises.resize(boost::numeric_cast<decltype(time_promises.size())>(n_sats));
 
-        // View on the pars.
-        const auto pars_view = heyoka::mdspan<double, heyoka::dextents<std::size_t, 2>>{
-            ta.get_pars_data(), 8, boost::numeric_cast<std::size_t>(batch_size)};
+    auto traj_fut_view = traj_promises | std::views::transform([](auto &p) { return p.get_future(); });
+    auto time_fut_view = time_promises | std::views::transform([](auto &p) { return p.get_future(); });
 
-        // View on the Taylor coefficients.
-        const auto tc_view = heyoka::mdspan<const double, heyoka::dextents<std::size_t, 3>>{
-            ta.get_tc().data(), boost::numeric_cast<std::size_t>(ta.get_dim()),
-            boost::numeric_cast<std::size_t>(ta.get_order() + 1u), boost::numeric_cast<std::size_t>(batch_size)};
+    std::vector traj_futures(std::ranges::begin(traj_fut_view), std::ranges::end(traj_fut_view));
+    std::vector time_futures(std::ranges::begin(time_fut_view), std::ranges::end(time_fut_view));
 
-        for (auto block_idx = range.begin(); block_idx != range.end(); ++block_idx) {
-            // Compute begin/end indices for this block.
-            const auto b_idx = block_idx * batch_size;
-            auto e_idx = static_cast<std::size_t>(safe_size_t(b_idx) + batch_size);
+    // Flag to signal that the writer thread should stop writing.
+    std::atomic<bool> stop_writing = false;
 
-            // Clamp e_idx if we are dealing with the irregular block.
-            if (e_idx > n_sats) {
-                e_idx = n_sats;
-            }
-
-            // The effective batch size.
-            const auto e_batch_size = static_cast<std::uint32_t>(e_idx - b_idx);
-
-            // Prepare out_files and tmp_write_buffers.
-            out_files.clear();
-            for (std::uint32_t i = 0; i < e_batch_size; ++i) {
-                const auto tc_path = tmp_dir_path / fmt::format("tc_{}", b_idx + i);
-                // LCOV_EXCL_START
-                if (boost::filesystem::exists(tc_path)) [[unlikely]] {
-                    throw std::runtime_error(
-                        fmt::format("Cannot create the storage file '{}', as it exists already", tc_path.string()));
-                }
-                // LCOV_EXCL_STOP
-                std::ofstream tc_file(tc_path.string(), std::ios::binary | std::ios::out);
-                tc_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
-
-                const auto time_path = tmp_dir_path / fmt::format("time_{}", b_idx + i);
-                // LCOV_EXCL_START
-                if (boost::filesystem::exists(time_path)) [[unlikely]] {
-                    throw std::runtime_error(
-                        fmt::format("Cannot create the storage file '{}', as it exists already", time_path.string()));
-                }
-                // LCOV_EXCL_STOP
-                std::ofstream time_file(time_path.string(), std::ios::binary | std::ios::out);
-                time_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
-
-                out_files.emplace_back(std::move(tc_file), std::move(time_file));
-
-                // Clear out the temp buffers.
-                tmp_write_buffers[i].first.clear();
-                tmp_write_buffers[i].second.clear();
-            }
-
-            // Set up:
-            // - the propagator TLEs,
-            // - the initial state in the integrator,
-            // - the parameter array in the integrator.
-            for (std::uint32_t i = 0; i < e_batch_size; ++i) {
-                // The propagator TLEs.
-                for (decltype(new_sat_data.size()) j = 0u; j < 9u; ++j) {
-                    new_sat_data[i + j * batch_size] = sat_data(j, b_idx + i);
-                }
-
-                // Initial Cartesian state + error code.
-                for (std::size_t j = 0; j < 7u; ++j) {
-                    state_view(j, i) = init_states(j, b_idx + i);
-                }
-                // NOTE: the error code should always be zero
-                // since we checked the initial states.
-                assert(state_view(6, i) == 0.);
-                // Set the initial radius.
-                state_view(7, i) = std::sqrt(state_view(0, i) * state_view(0, i) + state_view(1, i) * state_view(1, i)
-                                             + state_view(2, i) * state_view(2, i));
-
-                // Pars. These are 8 in total: 6 TLE elements, the bstar
-                // and the time offset.
-                for (std::size_t j = 0; j < 7u; ++j) {
-                    pars_view(j, i) = sat_data(j, b_idx + i);
-                }
-                // Compute and set the time offset.
-                pars_view(7, i)
-                    = static_cast<double>(dfloat(jd_begin)
-                                          - normalise(dfloat(sat_data(7, b_idx + i), sat_data(8, b_idx + i))))
-                      * 1440;
-            }
-
-            // Fill the remainder of the irregular block with data
-            // from the first satellite.
-            for (auto i = e_batch_size; i < batch_size; ++i) {
-                for (decltype(new_sat_data.size()) j = 0u; j < 9u; ++j) {
-                    new_sat_data[i + j * batch_size] = sat_data(j, 0);
-                }
-
-                for (std::size_t j = 0; j < 7u; ++j) {
-                    state_view(j, i) = init_states(j, 0);
-                }
-                state_view(7, i) = std::sqrt(state_view(0, i) * state_view(0, i) + state_view(1, i) * state_view(1, i)
-                                             + state_view(2, i) * state_view(2, i));
-
-                for (std::size_t j = 0; j < 7u; ++j) {
-                    pars_view(j, i) = sat_data(j, 0);
-                }
-                pars_view(7, i)
-                    = static_cast<double>(dfloat(jd_begin) - normalise(dfloat(sat_data(7, 0), sat_data(8, 0)))) * 1440;
-            }
-
-            // Set the new sat data in the propagator.
-            prop.replace_sat_data(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, std::dynamic_extent>>{
-                new_sat_data.data(), boost::numeric_cast<std::size_t>(batch_size)});
-
-            // Initial setup of max_h and active flags.
-            const auto final_time = (jd_end - jd_begin) * 1440;
-            for (std::uint32_t i = 0; i < e_batch_size; ++i) {
-                max_h[i] = final_time;
-                active_flags[i] = 1;
-            }
-            // NOTE: for the remainder of the irregular block, set the max timestep
-            // to zero as we do not need to perform any integration.
-            for (auto i = e_batch_size; i < batch_size; ++i) {
-                max_h[i] = 0;
-                active_flags[i] = 0;
-            }
-
-            // Reset all cooldowns.
-            ta.reset_cooldowns();
-
-            // Setup the initial time.
-            ta.set_time(0);
-
-            // Run the integration step by step.
-            while (true) {
-                // First we take the step, capping the timestep size and writing the Taylor coefficients.
-                ta.step(max_h, true);
-
-                // Next, we want to re-compute the state at the end of the timestep with the sgp4
-                // propagator. This avoids the accumulation of numerical errors
-                // due to ODE integration.
-
-                // Setup the Julian dates for the propagation.
-                for (std::uint32_t i = 0; i < batch_size; ++i) {
-                    const auto jd
-                        = dfloat(jd_begin) + dfloat(ta.get_dtime().first[i] / 1440., ta.get_dtime().second[i] / 1440.);
-                    jdates[i] = {jd.hi, jd.lo};
-                }
-
-                // Propagate writing directly into the state vector of the integrator.
-                const auto prop_out_span
-                    = std::experimental::submdspan(state_view, std::pair{0, 7}, std::experimental::full_extent);
-                prop(prop_out_span, heyoka::mdspan<const prop_t::date, heyoka::dextents<std::size_t, 1>>(
-                                        jdates.data(), boost::numeric_cast<std::size_t>(batch_size)));
-
-                // Compute by hand the value of the radius.
-                for (std::uint32_t i = 0; i < batch_size; ++i) {
-                    state_view(7, i)
-                        = std::sqrt(state_view(0, i) * state_view(0, i) + state_view(1, i) * state_view(1, i)
-                                    + state_view(2, i) * state_view(2, i));
-                }
-
-                // Analyze the integration/propagation outcomes, keeping
-                // track of how many objects are still active at the
-                // end of the step.
-                std::uint32_t n_active = 0;
-                for (std::uint32_t i = 0; i < e_batch_size; ++i) {
-                    // No need to do anything for an inactive object.
-                    if (active_flags[i] == 0) {
-                        continue;
-                    }
-
-                    // Fetch the SGP4 error code.
-                    // NOTE: this is the error code coming out of the propagator,
-                    // not the ODE integrator, as we just replaced by hand the
-                    // state vector.
-                    const auto ecode = state_view(6, i);
-
-                    if (ecode != 0. && ecode != 6.) {
-                        // sgp4 propagation error: set the inactive flag, zero out
-                        // max_h, set the status, and continue.
-                        active_flags[i] = 0;
-                        max_h[i] = 0;
-                        global_status[b_idx + i] = 10 + static_cast<int>(ecode);
-
-                        continue;
-                    }
-
-                    // Fetch the ODE integration outcome.
-                    const auto oc = std::get<0>(ta.get_step_res()[i]);
-
-                    if (oc == heyoka::taylor_outcome::success) {
-                        // If the outcome is success, then we are not done
-                        // with the current object and we still need to integrate more.
-                        ++n_active;
-
-                        // Update the remaining time.
-                        const auto rem_time = static_cast<double>(
-                            final_time - dfloat(ta.get_dtime().first[i], ta.get_dtime().second[i]));
-                        max_h[i] = rem_time;
-                    } else if (oc == heyoka::taylor_outcome::time_limit) {
-                        // We safely arrived at the time limit, deactivate. No need to
-                        // set status as it is by default zero already.
-                        active_flags[i] = 0;
-                        max_h[i] = 0;
-                    } else if (oc < heyoka::taylor_outcome{0}) {
-                        // Stopping terminal event. Deactivate and set status.
-                        assert(oc == heyoka::taylor_outcome{-1} || oc == heyoka::taylor_outcome{-2});
-                        active_flags[i] = 0;
-                        max_h[i] = 0;
-                        global_status[b_idx + i] = (oc == heyoka::taylor_outcome{-1}) ? 1 : 2;
-                    } else {
-                        // If we generated a non-finite state during the integration,
-                        // we cannot trust the output. Set the inactive flag, zero out
-                        // max_h, set the status, and continue.
-                        assert(oc == heyoka::taylor_outcome::err_nf_state);
-                        active_flags[i] = 0;
-                        max_h[i] = 0;
-                        global_status[b_idx + i] = 3;
-
-                        continue;
-                    }
-
-                    if (ecode == 6.) {
-                        // NOTE: if we get here, we are in the following situation:
-                        //
-                        // - neither SGP4 nor our ODE integration errored out,
-                        // - the ODE integration might or might not have reached the time limit or
-                        //   a stopping terminal event,
-                        // - the SGP4 algorithm detected a decay.
-                        //
-                        // We treat this equivalently to a decay detected by the ODE
-                        // integration.
-                        active_flags[i] = 0;
-                        max_h[i] = 0;
-                        global_status[b_idx + i] = 1;
-                    }
-
-                    // NOTE: if we are here, it means that we need to record the Taylor
-                    // coefficients and the step end times for the current object.
-                    auto &[tc_buf, time_buf] = tmp_write_buffers[i];
-
-                    for (std::size_t j = 0; j < tc_view.extent(0); ++j) {
-                        // NOTE: we don't want to store the Taylor coefficients
-                        // of the error code (at index 6).
-                        if (j == 6u) {
-                            continue;
-                        }
-
-                        for (std::size_t k = 0; k < tc_view.extent(1); ++k) {
-                            tc_buf.push_back(tc_view(j, k, i));
-                        }
-                    }
-
-                    time_buf.push_back(ta.get_time()[i]);
-                }
-
-                if (n_active == 0u) {
-                    // No more active objects in the batch, exit the endless loop.
-                    break;
-                }
-            }
-
-            // Flush the temp buffers to file.
-            for (std::uint32_t i = 0; i < e_batch_size; ++i) {
-                auto &[tc_file, time_file] = out_files[i];
-                const auto &[tc_buf, time_buf] = tmp_write_buffers[i];
-
-                tc_file.write(reinterpret_cast<const char *>(tc_buf.data()),
-                              boost::safe_numerics::safe<std::streamsize>(tc_buf.size()) * sizeof(double));
-
-                time_file.write(reinterpret_cast<const char *>(time_buf.data()),
-                                boost::safe_numerics::safe<std::streamsize>(time_buf.size()) * sizeof(double));
-            }
-        }
-    });
-
-    // Return the status flags.
-    return global_status;
-}
-
-// Copy all trajectory/time data generated in perform_ode_integration() into
-// a single storage file.
-auto consolidate_data(const boost::filesystem::path &tmp_dir_path, std::size_t n_sats, std::uint32_t order)
-{
-    using safe_size_t = boost::safe_numerics::safe<std::size_t>;
-
-    // Init the trajectory offsets.
+    // Prepare the traj_offsets vector.
     std::vector<polyjectory::traj_offset> traj_offsets;
     traj_offsets.reserve(n_sats);
 
-    // Keep track of the offset in the storage file.
-    safe_size_t cur_offset = 0;
+    // Launch the writer thread.
+    auto writer_future = std::async(std::launch::async, [&traj_file, &traj_futures, &traj_offsets, &time_file,
+                                                         &time_futures, order, &stop_writing, n_sats]() {
+        using namespace std::chrono_literals;
 
-    // Taylor coefficients.
-    for (std::size_t i = 0; i < n_sats; ++i) {
-        // Build the file path.
-        const auto tc_path = tmp_dir_path / fmt::format("tc_{}", i);
+        // How long should we wait before checking if we should stop writing.
+        const auto wait_duration = 250ms;
 
-        // Fetch the file size in bytes.
-        assert(boost::filesystem::exists(tc_path));
-        assert(boost::filesystem::is_regular_file(tc_path));
-        const auto tc_size = boost::filesystem::file_size(tc_path);
-        assert(tc_size % (safe_size_t(sizeof(double)) * (order + 1u) * 7u) == 0u);
+        // Track the trajectory offsets to build up traj_offsets.
+        safe_size_t cur_traj_offset = 0;
 
-        // Update traj_offsets.
-        const auto n_steps = boost::numeric_cast<std::size_t>(
-            tc_size / static_cast<std::size_t>(safe_size_t(sizeof(double)) * (order + 1u) * 7u));
-        traj_offsets.emplace_back(cur_offset, n_steps);
+        for (std::size_t i = 0; i < n_sats; ++i) {
+            // Fetch the futures.
+            auto &traj_fut = traj_futures[i];
+            auto &time_fut = time_futures[i];
 
-        // Update cur_offset.
-        cur_offset += tc_size / sizeof(double);
+            // Wait until the futures become available, or return if a stop is requested.
+            while (traj_fut.wait_for(wait_duration) != std::future_status::ready
+                   || time_fut.wait_for(wait_duration) != std::future_status::ready) {
+                // LCOV_EXCL_START
+                if (stop_writing) [[unlikely]] {
+                    return;
+                }
+                // LCOV_EXCL_STOP
+            }
+
+            // Fetch the data in the futures.
+            auto v_traj = traj_fut.get();
+            auto v_time = time_fut.get();
+
+            // Write the traj data.
+            traj_file.write(reinterpret_cast<const char *>(v_traj.data()),
+                            boost::safe_numerics::safe<std::streamsize>(v_traj.size()) * sizeof(double));
+
+            // Compute the number of steps, and update traj_offsets and cur_traj_offset.
+            assert(v_traj.size() % ((safe_size_t(order) + 1u) * 7u) == 0u);
+            const auto n_steps = v_traj.size() / ((safe_size_t(order) + 1u) * 7u);
+
+            traj_offsets.emplace_back(cur_traj_offset, n_steps);
+            cur_traj_offset += v_traj.size();
+
+            // Write the time data.
+            time_file.write(reinterpret_cast<const char *>(v_time.data()),
+                            boost::safe_numerics::safe<std::streamsize>(v_time.size()) * sizeof(double));
+        }
+    });
+
+    // NOTE: at this point, the writer thread has started. From now on, we wrap everything in a try/catch block
+    // so that, if any exception is thrown, we can safely stop the writer thread before re-throwing.
+    try {
+        // Bag of thread-specific data to be used in the batch parallel iterations.
+        struct batch_data {
+            // The ODE integrator.
+            TA ta;
+            // The sgp4 propagator.
+            prop_t prop;
+            // Buffer used to set up new data in prop.
+            std::vector<double> new_sat_data;
+            // Vector of max timestep sizes.
+            std::vector<double> max_h;
+            // Vector of active batch element flags.
+            std::vector<int> active_flags;
+            // Vector of Julian dates for use in the sgp4 prop.
+            std::vector<prop_t::date> jdates;
+            // Buffers used to temporarily store the Taylor coefficients
+            // and the time data for each element of a batch. The contents
+            // of these buffers will be sent to the writer thread at the end of
+            // the integration of a batch.
+            std::vector<std::pair<std::vector<double>, std::vector<double>>> tmp_write_buffers;
+        };
+
+        // Set up the thread-specific data machinery via TBB.
+        using ets_t
+            = oneapi::tbb::enumerable_thread_specific<batch_data, oneapi::tbb::cache_aligned_allocator<batch_data>,
+                                                      oneapi::tbb::ets_key_usage_type::ets_key_per_instance>;
+        ets_t ets([&tmpl_ta, &tmpl_prop, batch_size]() {
+            // Make a copy of the template integrator.
+            auto ta = tmpl_ta;
+
+            // Make a copy of the template sgp4 propagator.
+            auto prop = tmpl_prop;
+
+            // Prepare new_sat_data with the appropriate size.
+            std::vector<double> new_sat_data;
+            new_sat_data.resize(boost::safe_numerics::safe<decltype(new_sat_data.size())>(batch_size) * 9);
+
+            // Prepare max_h with the appropriate size.
+            std::vector<double> max_h;
+            max_h.resize(boost::numeric_cast<decltype(max_h.size())>(batch_size));
+
+            // Prepare active_flags with the appropriate size.
+            std::vector<int> active_flags;
+            active_flags.resize(boost::numeric_cast<decltype(active_flags.size())>(batch_size));
+
+            // Prepare jdates with the appropriate size.
+            std::vector<prop_t::date> jdates;
+            jdates.resize(boost::numeric_cast<decltype(jdates.size())>(batch_size));
+
+            // Prepare tmp_write_buffers with the appropriate size.
+            std::vector<std::pair<std::vector<double>, std::vector<double>>> tmp_write_buffers;
+            tmp_write_buffers.resize(boost::numeric_cast<decltype(tmp_write_buffers.size())>(batch_size));
+
+            return batch_data{.ta = std::move(ta),
+                              .prop = std::move(prop),
+                              .new_sat_data = std::move(new_sat_data),
+                              .max_h = std::move(max_h),
+                              .active_flags = std::move(active_flags),
+                              .jdates = std::move(jdates),
+                              .tmp_write_buffers = std::move(tmp_write_buffers)};
+        });
+
+        // Run the numerical integration.
+        //
+        // NOTE: we process the blocks of objects in chunks because we want the writer thread to make steady progress.
+        //
+        // If we don't do the chunking, what happens is that TBB starts immediately processing blocks throughout
+        // the *entire* range, whereas the writer thread must proceed strictly sequentially. We thus end up in a
+        // situation in which a lot of file writing happens at the very end while not overlapping with the
+        // computation, and memory usage is high because we have to keep around for long unwritten data.
+        //
+        // With chunking, the writer thread can fully process chunk N while chunk N+1 is computing.
+        //
+        // NOTE: there are tradeoffs in selecting the chunk size. If it is too large, we are negating the benefits
+        // of chunking wrt computation/transfer overlap and memory usage. If it is too small, we are limiting
+        // parallel speedup. The current value is based on preliminary performance evaluation with the full LEO
+        // catalog, but I am not sure if this can be made more robust/general. In general, the "optimal" chunking
+        // will depend on several variables such as the number of CPU cores, the available memory,
+        // the integration length, the batch size and so on.
+        //
+        // NOTE: I am also not sure whether or not it is possible to achieve the same result more elegantly
+        // with some TBB partitioner/range wizardry.
+        constexpr auto chunk_size = 256u;
+
+        for (std::size_t start_block_idx = 0; start_block_idx != n_blocks;) {
+            const auto n_rem_blocks = n_blocks - start_block_idx;
+            const auto end_block_idx = start_block_idx + (n_rem_blocks < chunk_size ? n_rem_blocks : chunk_size);
+
+            oneapi::tbb::parallel_for(
+                oneapi::tbb::blocked_range<std::size_t>(start_block_idx, end_block_idx),
+                [&ets, batch_size, n_sats, sat_data, init_states, jd_begin, jd_end, &traj_promises, &time_promises,
+                 &global_status](const auto &range) {
+                    using dfloat = heyoka::detail::dfloat<double>;
+
+                    // Fetch the thread-local data.
+                    // NOTE: no need to isolate here, as we are not
+                    // invoking any other TBB primitive from within this
+                    // scope. Keep in mind though that if we ever enable parallel
+                    // operations in heyoka during ODE integration, we will
+                    // have to isolate.
+                    auto &[ta, prop, new_sat_data, max_h, active_flags, jdates, tmp_write_buffers] = ets.local();
+
+                    // View on the state variables.
+                    const auto state_view = heyoka::mdspan<double, heyoka::dextents<std::size_t, 2>>{
+                        ta.get_state_data(), boost::numeric_cast<std::size_t>(ta.get_dim()),
+                        boost::numeric_cast<std::size_t>(batch_size)};
+
+                    // View on the pars.
+                    const auto pars_view = heyoka::mdspan<double, heyoka::dextents<std::size_t, 2>>{
+                        ta.get_pars_data(), 8, boost::numeric_cast<std::size_t>(batch_size)};
+
+                    // View on the Taylor coefficients.
+                    const auto tc_view = heyoka::mdspan<const double, heyoka::dextents<std::size_t, 3>>{
+                        ta.get_tc().data(), boost::numeric_cast<std::size_t>(ta.get_dim()),
+                        boost::numeric_cast<std::size_t>(ta.get_order() + 1u),
+                        boost::numeric_cast<std::size_t>(batch_size)};
+
+                    for (auto block_idx = range.begin(); block_idx != range.end(); ++block_idx) {
+                        // Compute begin/end indices for this block.
+                        const auto b_idx = block_idx * batch_size;
+                        auto e_idx = static_cast<std::size_t>(safe_size_t(b_idx) + batch_size);
+
+                        // Clamp e_idx if we are dealing with the irregular block.
+                        if (e_idx > n_sats) {
+                            e_idx = n_sats;
+                        }
+
+                        // The effective batch size.
+                        const auto e_batch_size = static_cast<std::uint32_t>(e_idx - b_idx);
+
+                        // Clear out tmp_write_buffers.
+                        for (std::uint32_t i = 0; i < e_batch_size; ++i) {
+                            tmp_write_buffers[i].first.clear();
+                            tmp_write_buffers[i].second.clear();
+                        }
+
+                        // Set up:
+                        // - the propagator TLEs,
+                        // - the initial state in the integrator,
+                        // - the parameter array in the integrator.
+                        for (std::uint32_t i = 0; i < e_batch_size; ++i) {
+                            // The propagator TLEs.
+                            for (decltype(new_sat_data.size()) j = 0u; j < 9u; ++j) {
+                                new_sat_data[i + j * batch_size] = sat_data(j, b_idx + i);
+                            }
+
+                            // Initial Cartesian state + error code.
+                            for (std::size_t j = 0; j < 7u; ++j) {
+                                state_view(j, i) = init_states(j, b_idx + i);
+                            }
+                            // NOTE: the error code should always be zero
+                            // since we checked the initial states.
+                            assert(state_view(6, i) == 0.);
+                            // Set the initial radius.
+                            state_view(7, i)
+                                = std::sqrt(state_view(0, i) * state_view(0, i) + state_view(1, i) * state_view(1, i)
+                                            + state_view(2, i) * state_view(2, i));
+
+                            // Pars. These are 8 in total: 6 TLE elements, the bstar
+                            // and the time offset.
+                            for (std::size_t j = 0; j < 7u; ++j) {
+                                pars_view(j, i) = sat_data(j, b_idx + i);
+                            }
+                            // Compute and set the time offset.
+                            pars_view(7, i) = static_cast<double>(
+                                                  dfloat(jd_begin)
+                                                  - normalise(dfloat(sat_data(7, b_idx + i), sat_data(8, b_idx + i))))
+                                              * 1440;
+                        }
+
+                        // Fill the remainder of the irregular block with data
+                        // from the first satellite.
+                        for (auto i = e_batch_size; i < batch_size; ++i) {
+                            for (decltype(new_sat_data.size()) j = 0u; j < 9u; ++j) {
+                                new_sat_data[i + j * batch_size] = sat_data(j, 0);
+                            }
+
+                            for (std::size_t j = 0; j < 7u; ++j) {
+                                state_view(j, i) = init_states(j, 0);
+                            }
+                            state_view(7, i)
+                                = std::sqrt(state_view(0, i) * state_view(0, i) + state_view(1, i) * state_view(1, i)
+                                            + state_view(2, i) * state_view(2, i));
+
+                            for (std::size_t j = 0; j < 7u; ++j) {
+                                pars_view(j, i) = sat_data(j, 0);
+                            }
+                            pars_view(7, i) = static_cast<double>(dfloat(jd_begin)
+                                                                  - normalise(dfloat(sat_data(7, 0), sat_data(8, 0))))
+                                              * 1440;
+                        }
+
+                        // Set the new sat data in the propagator.
+                        prop.replace_sat_data(
+                            heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, std::dynamic_extent>>{
+                                new_sat_data.data(), boost::numeric_cast<std::size_t>(batch_size)});
+
+                        // Initial setup of max_h and active flags.
+                        const auto final_time = (jd_end - jd_begin) * 1440;
+                        for (std::uint32_t i = 0; i < e_batch_size; ++i) {
+                            max_h[i] = final_time;
+                            active_flags[i] = 1;
+                        }
+                        // NOTE: for the remainder of the irregular block, set the max timestep
+                        // to zero as we do not need to perform any integration.
+                        for (auto i = e_batch_size; i < batch_size; ++i) {
+                            max_h[i] = 0;
+                            active_flags[i] = 0;
+                        }
+
+                        // Reset all cooldowns.
+                        ta.reset_cooldowns();
+
+                        // Setup the initial time.
+                        ta.set_time(0);
+
+                        // Run the integration step by step.
+                        while (true) {
+                            // First we take the step, capping the timestep size and writing the Taylor coefficients.
+                            ta.step(max_h, true);
+
+                            // Next, we want to re-compute the state at the end of the timestep with the sgp4
+                            // propagator. This avoids the accumulation of numerical errors
+                            // due to ODE integration.
+
+                            // Setup the Julian dates for the propagation.
+                            for (std::uint32_t i = 0; i < batch_size; ++i) {
+                                const auto jd
+                                    = dfloat(jd_begin)
+                                      + dfloat(ta.get_dtime().first[i] / 1440., ta.get_dtime().second[i] / 1440.);
+                                jdates[i] = {jd.hi, jd.lo};
+                            }
+
+                            // Propagate writing directly into the state vector of the integrator.
+                            const auto prop_out_span = std::experimental::submdspan(state_view, std::pair{0, 7},
+                                                                                    std::experimental::full_extent);
+                            prop(prop_out_span, heyoka::mdspan<const prop_t::date, heyoka::dextents<std::size_t, 1>>(
+                                                    jdates.data(), boost::numeric_cast<std::size_t>(batch_size)));
+
+                            // Compute by hand the value of the radius.
+                            for (std::uint32_t i = 0; i < batch_size; ++i) {
+                                state_view(7, i) = std::sqrt(state_view(0, i) * state_view(0, i)
+                                                             + state_view(1, i) * state_view(1, i)
+                                                             + state_view(2, i) * state_view(2, i));
+                            }
+
+                            // Analyze the integration/propagation outcomes, keeping
+                            // track of how many objects are still active at the
+                            // end of the step.
+                            std::uint32_t n_active = 0;
+                            for (std::uint32_t i = 0; i < e_batch_size; ++i) {
+                                // No need to do anything for an inactive object.
+                                if (active_flags[i] == 0) {
+                                    continue;
+                                }
+
+                                // Fetch the SGP4 error code.
+                                // NOTE: this is the error code coming out of the propagator,
+                                // not the ODE integrator, as we just replaced by hand the
+                                // state vector.
+                                const auto ecode = state_view(6, i);
+
+                                if (ecode != 0. && ecode != 6.) {
+                                    // sgp4 propagation error: set the inactive flag, zero out
+                                    // max_h, set the status, and continue.
+                                    active_flags[i] = 0;
+                                    max_h[i] = 0;
+                                    global_status[b_idx + i] = 10 + static_cast<int>(ecode);
+
+                                    continue;
+                                }
+
+                                // Fetch the ODE integration outcome.
+                                const auto oc = std::get<0>(ta.get_step_res()[i]);
+
+                                if (oc == heyoka::taylor_outcome::success) {
+                                    // If the outcome is success, then we are not done
+                                    // with the current object and we still need to integrate more.
+                                    ++n_active;
+
+                                    // Update the remaining time.
+                                    const auto rem_time = static_cast<double>(
+                                        final_time - dfloat(ta.get_dtime().first[i], ta.get_dtime().second[i]));
+                                    max_h[i] = rem_time;
+                                } else if (oc == heyoka::taylor_outcome::time_limit) {
+                                    // We safely arrived at the time limit, deactivate. No need to
+                                    // set status as it is by default zero already.
+                                    active_flags[i] = 0;
+                                    max_h[i] = 0;
+                                } else if (oc < heyoka::taylor_outcome{0}) {
+                                    // Stopping terminal event. Deactivate and set status.
+                                    assert(oc == heyoka::taylor_outcome{-1} || oc == heyoka::taylor_outcome{-2});
+                                    active_flags[i] = 0;
+                                    max_h[i] = 0;
+                                    global_status[b_idx + i] = (oc == heyoka::taylor_outcome{-1}) ? 1 : 2;
+                                } else {
+                                    // If we generated a non-finite state during the integration,
+                                    // we cannot trust the output. Set the inactive flag, zero out
+                                    // max_h, set the status, and continue.
+                                    assert(oc == heyoka::taylor_outcome::err_nf_state);
+                                    active_flags[i] = 0;
+                                    max_h[i] = 0;
+                                    global_status[b_idx + i] = 3;
+
+                                    continue;
+                                }
+
+                                if (ecode == 6.) {
+                                    // NOTE: if we get here, we are in the following situation:
+                                    //
+                                    // - neither SGP4 nor our ODE integration errored out,
+                                    // - the ODE integration might or might not have reached the time limit or
+                                    //   a stopping terminal event,
+                                    // - the SGP4 algorithm detected a decay.
+                                    //
+                                    // We treat this equivalently to a decay detected by the ODE
+                                    // integration.
+                                    active_flags[i] = 0;
+                                    max_h[i] = 0;
+                                    global_status[b_idx + i] = 1;
+                                }
+
+                                // NOTE: if we are here, it means that we need to record the Taylor
+                                // coefficients and the step end times for the current object.
+                                auto &[tc_buf, time_buf] = tmp_write_buffers[i];
+
+                                for (std::size_t j = 0; j < tc_view.extent(0); ++j) {
+                                    // NOTE: we don't want to store the Taylor coefficients
+                                    // of the error code (at index 6).
+                                    if (j == 6u) {
+                                        continue;
+                                    }
+
+                                    for (std::size_t k = 0; k < tc_view.extent(1); ++k) {
+                                        tc_buf.push_back(tc_view(j, k, i));
+                                    }
+                                }
+
+                                time_buf.push_back(ta.get_time()[i]);
+                            }
+
+                            if (n_active == 0u) {
+                                // No more active objects in the batch, exit the endless loop.
+                                break;
+                            }
+                        }
+
+                        // Move the trajectory and time data for this batch
+                        // into the futures.
+                        for (std::uint32_t i = 0; i < e_batch_size; ++i) {
+                            auto &[tc_buf, time_buf] = tmp_write_buffers[i];
+                            const auto out_idx = b_idx + i;
+
+                            traj_promises[out_idx].set_value(std::move(tc_buf));
+                            time_promises[out_idx].set_value(std::move(time_buf));
+                        }
+                    }
+                });
+
+            start_block_idx = end_block_idx;
+        }
+        // LCOV_EXCL_START
+    } catch (...) {
+        // Request a stop on the writer thread.
+        stop_writing.store(true);
+
+        // Wait for it to actually stop.
+        // NOTE: we use wait() here, because, if the writer thread
+        // also threw, get() would throw the exception here. We are
+        // not interested in reporting that, as the exception from the numerical
+        // integration is likely more interesting.
+        // NOTE: in principle wait() could also raise platform-specific exceptions.
+        writer_future.wait();
+
+        // Re-throw.
+        throw;
     }
+    // LCOV_EXCL_STOP
 
-    // Init the time offsets vector.
-    std::vector<std::size_t> time_offsets;
-    time_offsets.reserve(n_sats);
+    // Wait for the writer thread to finish.
+    // NOTE: get() will throw any exception that might have been
+    // raised in the writer thread.
+    writer_future.get();
 
-    // Times.
-    for (std::size_t i = 0; i < n_sats; ++i) {
-        // Build the file path.
-        const auto time_path = tmp_dir_path / fmt::format("time_{}", i);
+    // Close the data files.
+    // NOTE: this is of course unnecessary as the dtors will do the
+    // closing themselves, but let us be explicit.
+    traj_file.close();
+    time_file.close();
 
-        // Fetch the file size in bytes.
-        assert(boost::filesystem::exists(time_path));
-        assert(boost::filesystem::is_regular_file(time_path));
-        const auto time_size = boost::filesystem::file_size(time_path);
-        assert(time_size % sizeof(double) == 0u);
-        assert(time_size / sizeof(double) == traj_offsets[i].n_steps);
-
-        // Update time_offset.
-        time_offsets.push_back(cur_offset);
-
-        // Update cur_offset.
-        cur_offset += time_size / sizeof(double);
-    }
-
-    // Create the storage file.
-    const auto storage_path = tmp_dir_path / "storage";
-    detail::create_sized_file(storage_path, cur_offset * sizeof(double));
-
-    // Memory-map it.
-    boost::iostreams::mapped_file_sink file(storage_path.string());
-
-    // Fetch a pointer to the beginning of the data.
-    // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
-    // https://en.cppreference.com/w/cpp/memory/start_lifetime_as
-    auto *base_ptr = reinterpret_cast<double *>(file.data());
-    assert(boost::alignment::is_aligned(base_ptr, alignof(double)));
-
-    // Copy over the data from the individual files.
-    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, n_sats),
-                              [&tmp_dir_path, base_ptr, order, &traj_offsets, &time_offsets](const auto &range) {
-                                  for (auto i = range.begin(); i != range.end(); ++i) {
-                                      // Taylor coefficients.
-
-                                      // Compute the file size.
-                                      const auto tc_size = sizeof(double) * (order + 1u) * 7u * traj_offsets[i].n_steps;
-
-                                      // Build the file path.
-                                      const auto tc_path = tmp_dir_path / fmt::format("tc_{}", i);
-                                      assert(boost::filesystem::exists(tc_path));
-                                      assert(boost::filesystem::file_size(tc_path) == tc_size);
-
-                                      // Open it.
-                                      std::ifstream tc_file(tc_path.string(), std::ios::binary | std::ios::in);
-                                      tc_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
-
-                                      // Copy it into the mapped file.
-                                      tc_file.read(reinterpret_cast<char *>(base_ptr + traj_offsets[i].offset),
-                                                   boost::numeric_cast<std::streamsize>(tc_size));
-
-                                      // Close the file.
-                                      tc_file.close();
-
-                                      // Remove the file.
-                                      boost::filesystem::remove(tc_path);
-
-                                      // Time data.
-
-                                      // Compute the file size.
-                                      const auto time_size = sizeof(double) * traj_offsets[i].n_steps;
-
-                                      // Build the file path.
-                                      const auto time_path = tmp_dir_path / fmt::format("time_{}", i);
-                                      assert(boost::filesystem::exists(time_path));
-                                      assert(boost::filesystem::file_size(time_path) == time_size);
-
-                                      // Open it.
-                                      std::ifstream time_file(time_path.string(), std::ios::binary | std::ios::in);
-                                      time_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
-
-                                      // Copy it into the mapped file.
-                                      time_file.read(reinterpret_cast<char *>(base_ptr + time_offsets[i]),
-                                                     boost::numeric_cast<std::streamsize>(time_size));
-
-                                      // Close the file.
-                                      time_file.close();
-
-                                      // Remove the file.
-                                      boost::filesystem::remove(time_path);
-                                  }
-                              });
-
-    // Return the trajectory offsets vector.
-    // NOTE: the time offset vector is not necessary, it will be reconstructed
-    // in the polyjectory constructor.
-    return traj_offsets;
+    // Return the status flags and the trajectory offsets.
+    return std::make_pair(std::move(global_status), std::move(traj_offsets));
 }
 
 } // namespace
@@ -812,17 +802,14 @@ sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, st
 
     // Run the numerical integration.
     sw.reset();
-    auto status = detail::perform_ode_integration(ta, tmp_dir_path, sat_data, jd_begin, jd_end, init_states);
+    auto [status, traj_offsets]
+        = detail::perform_ode_integration(ta, tmp_dir_path, sat_data, jd_begin, jd_end, init_states, ta.get_order());
     log_trace("SGP4 ODE integration time: {}s", sw);
 
-    // Consolidate all the data files into a single file.
-    sw.reset();
-    auto traj_offsets = detail::consolidate_data(tmp_dir_path, sat_data.extent(1), ta.get_order());
-    log_trace("SGP4 file consolidation time: {}s", sw);
-
     // Build and return the polyjectory.
-    return polyjectory(std::filesystem::path((tmp_dir_path / "storage").string()), ta.get_order(),
-                       std::move(traj_offsets), std::move(status));
+    return polyjectory(std::filesystem::path((tmp_dir_path / "traj").string()),
+                       std::filesystem::path((tmp_dir_path / "time").string()), ta.get_order(), std::move(traj_offsets),
+                       std::move(status));
 }
 
 } // namespace mizuba

@@ -101,8 +101,8 @@ public:
                                         std::forward<StatusRng>(status_rng)))
     {
     }
-    explicit polyjectory(const std::filesystem::path &, std::uint32_t, std::vector<traj_offset>,
-                         std::vector<std::int32_t>);
+    explicit polyjectory(const std::filesystem::path &, const std::filesystem::path &, std::uint32_t,
+                         std::vector<traj_offset>, std::vector<std::int32_t>);
     polyjectory(const polyjectory &);
     polyjectory(polyjectory &&) noexcept;
     polyjectory &operator=(const polyjectory &);
