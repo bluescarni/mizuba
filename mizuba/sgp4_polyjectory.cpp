@@ -278,8 +278,7 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
     std::ofstream time_file((tmp_dir_path / "time").string(), std::ios::binary | std::ios::out);
     time_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
-    // Setup the futures and promises to coordinate between the numerical integration and the
-    // file writing thread.
+    // Setup the futures and promises to coordinate between the numerical integration and the writer thread.
     std::vector<std::promise<std::vector<double>>> traj_promises, time_promises;
 
     traj_promises.resize(boost::numeric_cast<decltype(traj_promises.size())>(n_sats));
@@ -728,6 +727,12 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
     // NOTE: get() will throw any exception that might have been
     // raised in the writer thread.
     writer_future.get();
+
+    // Close the data files.
+    // NOTE: this is of course unnecessary as the dtors will do the
+    // closing themselves, but let us be explicit.
+    traj_file.close();
+    time_file.close();
 
     // Return the status flags and the trajectory offsets.
     return std::make_pair(std::move(global_status), std::move(traj_offsets));
