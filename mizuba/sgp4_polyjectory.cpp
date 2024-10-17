@@ -316,9 +316,11 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
             // Wait until the futures become available, or return if a stop is requested.
             while (traj_fut.wait_for(wait_duration) != std::future_status::ready
                    || time_fut.wait_for(wait_duration) != std::future_status::ready) {
+                // LCOV_EXCL_START
                 if (stop_writing) [[unlikely]] {
-                    return; // LCOV_EXCL_LINE
+                    return;
                 }
+                // LCOV_EXCL_STOP
             }
 
             // Fetch the data in the futures.
