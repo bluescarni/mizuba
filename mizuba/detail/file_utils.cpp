@@ -6,16 +6,26 @@
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <fstream>
 #include <ios>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
+#if defined(_WIN32)
+
+#include <windows.h>
+
+#else
+
 #include <fcntl.h>
 #include <unistd.h>
+
+#endif
 
 #if defined(__linux__) || defined(__APPLE__)
 
@@ -153,6 +163,19 @@ file_pwrite::file_pwrite(boost::filesystem::path path) : m_path(std::move(path))
     assert(boost::filesystem::exists(m_path));
     assert(boost::filesystem::is_regular_file(m_path));
 
+#if defined(_WIN32)
+
+    // Attempt to open the file.
+    m_fd = CreateFileW(m_path.c_str(), GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
+                       nullptr);
+    if (m_fd == INVALID_HANDLE_VALUE) [[unlikely]] {
+        // LCOV_EXCL_START
+        throw std::runtime_error(fmt::format("Could not open the file '{}'", m_path.string()));
+        // LCOV_EXCL_STOP
+    }
+
+#else
+
     // Attempt to open the file.
     m_fd = ::open(m_path.c_str(), O_WRONLY);
     if (m_fd == -1) [[unlikely]] {
@@ -160,11 +183,19 @@ file_pwrite::file_pwrite(boost::filesystem::path path) : m_path(std::move(path))
         throw std::runtime_error(fmt::format("Could not open the file '{}'", m_path.string()));
         // LCOV_EXCL_STOP
     }
+
+#endif
 }
 
 bool file_pwrite::is_closed() const noexcept
 {
-    return m_fd == -1;
+    return m_fd ==
+#if defined(_WIN32)
+           INVALID_HANDLE_VALUE
+#else
+           -1
+#endif
+        ;
 }
 
 file_pwrite::~file_pwrite()
@@ -174,6 +205,21 @@ file_pwrite::~file_pwrite()
 
 void file_pwrite::close() noexcept
 {
+#if defined(_WIN32)
+
+    if (m_fd != INVALID_HANDLE_VALUE) {
+        if (CloseHandle(m_fd) == 0) [[unlikely]] {
+            // LCOV_EXCL_START
+            std::cerr << "An error was detected while trying to close the file '" << m_path.string() << "'"
+                      << std::endl;
+            // LCOV_EXCL_STOP
+        }
+
+        m_fd = INVALID_HANDLE_VALUE;
+    }
+
+#else
+
     if (m_fd != -1) {
         if (::close(m_fd) == -1) [[unlikely]] {
             // LCOV_EXCL_START
@@ -184,6 +230,8 @@ void file_pwrite::close() noexcept
 
         m_fd = -1;
     }
+
+#endif
 }
 
 void file_pwrite::pwrite(const void *buffer, std::size_t size, std::size_t offset)
@@ -196,6 +244,44 @@ void file_pwrite::pwrite(const void *buffer, std::size_t size, std::size_t offse
 
     // Check that we don't end up writing past the end of the file.
     assert(sz + offset <= boost::filesystem::file_size(m_path));
+
+#if defined(_WIN32)
+
+    // Initial setup the offset in the OVERLAPPED structure.
+    auto oset = boost::safe_numerics::safe<std::uint64_t>(offset);
+    OVERLAPPED overlapped{};
+    overlapped.Offset = oset & 0xFFFFFFFF;
+    overlapped.OffsetHigh = (oset >> 32) & 0xFFFFFFFF;
+
+    // NOTE: the WriteFile() function uses DWORD (a 32-bit integer) to
+    // represent the number of bytes to write. Thus, we may need to split
+    // the write operation in multiple chunks.
+    DWORD bytes_written = 0;
+
+    do {
+        const auto ret
+            = WriteFile(m_fd, buffer, static_cast<DWORD>(std::min(sz, safe_size_t(std::numeric_limits<DWORD>::max()))),
+                        &bytes_written, &overlapped);
+
+        if (!ret) [[unlikely]] {
+            // LCOV_EXCL_START
+            throw std::runtime_error(
+                fmt::format("An error was detected while trying to pwrite() into the file '{}'", m_path.string()));
+            // LCOV_EXCL_STOP
+        }
+
+        // Update size, offset and buffer pointer for
+        // the next iteration, if needed.
+        sz -= bytes_written;
+        oset += bytes_written;
+        buffer = static_cast<const void *>(reinterpret_cast<const char *>(buffer) + bytes_written);
+
+        // Re-set the offset in overlapped.
+        overlapped.Offset = oset & 0xFFFFFFFF;
+        overlapped.OffsetHigh = (oset >> 32) & 0xFFFFFFFF;
+    } while (sz != 0);
+
+#else
 
     using safe_off_t = boost::safe_numerics::safe<::off_t>;
     safe_off_t oset = offset;
@@ -211,10 +297,14 @@ void file_pwrite::pwrite(const void *buffer, std::size_t size, std::size_t offse
             // LCOV_EXCL_STOP
         }
 
+        // Update size, offset and buffer pointer for
+        // the next iteration, if needed.
         sz -= written_sz;
         oset += written_sz;
         buffer = static_cast<const void *>(reinterpret_cast<const char *>(buffer) + written_sz);
     } while (sz != 0);
+
+#endif
 }
 
 void madvise_dontneed([[maybe_unused]] const boost::iostreams::mapped_file_source &file)

@@ -12,6 +12,12 @@
 #include <cstddef>
 #include <utility>
 
+#if defined(_WIN32)
+
+#include <windows.h>
+
+#endif
+
 #include <boost/filesystem/path.hpp>
 #include <boost/iostreams/device/mapped_file.hpp>
 
@@ -35,7 +41,13 @@ void madvise_dontneed(const boost::iostreams::mapped_file_source &);
 class file_pwrite
 {
     boost::filesystem::path m_path;
-    int m_fd;
+
+#if defined(_WIN32)
+    HANDLE
+#else
+    int
+#endif
+    m_fd;
 
     [[nodiscard]] bool is_closed() const noexcept;
 
