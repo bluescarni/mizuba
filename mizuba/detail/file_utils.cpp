@@ -17,6 +17,14 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#if defined(__linux__) || defined(__APPLE__)
+
+#define MIZUBA_HAS_MADVISE
+
+#include <sys/mman.h>
+
+#endif
+
 #include <boost/cstdint.hpp>
 #include <boost/filesystem/file_status.hpp>
 #include <boost/filesystem/operations.hpp>
@@ -207,6 +215,28 @@ void file_pwrite::pwrite(const void *buffer, std::size_t size, std::size_t offse
         oset += written_sz;
         buffer = static_cast<const void *>(reinterpret_cast<const char *>(buffer) + written_sz);
     } while (sz != 0);
+}
+
+void madvise_dontneed([[maybe_unused]] const boost::iostreams::mapped_file_source &file)
+{
+#if defined(MIZUBA_HAS_MADVISE)
+
+    // NOTE: we have to be really careful about madvise() with MADV_DONTNEED
+    // on Linux, because of its peculiar semantics: MADV_DONTNEED on anonymous private
+    // mappings will result in zero-filling the memory range.
+    // Here we are dealing with a non-private, non-anonymous mapping, so we should
+    // be alright.
+
+    auto *ptr = const_cast<void *>(static_cast<const void *>(file.data()));
+    const auto size = boost::numeric_cast<std::size_t>(file.size());
+
+    if (::madvise(ptr, size, MADV_DONTNEED) == -1) [[unlikely]] {
+        // LCOV_EXCL_START
+        throw std::runtime_error("madvise() call failed");
+        // LCOV_EXCL_STOP
+    }
+
+#endif
 }
 
 } // namespace mizuba::detail

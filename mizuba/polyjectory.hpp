@@ -114,6 +114,8 @@ public:
     [[nodiscard]] std::uint32_t get_poly_order() const noexcept;
 
     [[nodiscard]] std::tuple<traj_span_t, time_span_t, std::int32_t> operator[](std::size_t) const;
+
+    void drop_memory_caches() const noexcept;
 };
 
 } // namespace mizuba

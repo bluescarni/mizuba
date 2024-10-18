@@ -29,6 +29,8 @@ std::pair<const char *, boost::iostreams::mapped_file_source> mmap_at_offset_ro(
 std::pair<char *, boost::iostreams::mapped_file_sink> mmap_at_offset_rw(const boost::filesystem::path &, std::size_t,
                                                                         std::size_t);
 
+void madvise_dontneed(const boost::iostreams::mapped_file_source &);
+
 // Wrapper to perform a pwrite()-like operation on an existing file.
 class file_pwrite
 {

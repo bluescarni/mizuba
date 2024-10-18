@@ -388,6 +388,11 @@ std::vector<double> conjunctions::compute_aabbs(const polyjectory &pj, const boo
     // Mark it as read-only.
     detail::mark_file_read_only(storage_path);
 
+    // NOTE: we do not need any more the polyjectory data
+    // for the next steps of conjunction detection. Mark the memory
+    // as candidate for freeing.
+    pj.drop_memory_caches();
+
     // Return the end times of the conjunction steps.
     assert(cd_end_times.size() == n_cd_steps);
     return cd_end_times;
