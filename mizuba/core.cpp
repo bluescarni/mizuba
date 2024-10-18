@@ -328,6 +328,7 @@ PYBIND11_MODULE(core, m)
             return py::make_tuple(std::move(traj_ret), std::move(time_ret), status);
         },
         "i"_a.noconvert());
+    pt_cl.def("drop_memory_caches", &mz::polyjectory::drop_memory_caches);
 
     // Expose static getters for the structured types.
     pt_cl.def_property_readonly_static("traj_offset", [](const py::object &) { return py::dtype::of<traj_offset>(); });
