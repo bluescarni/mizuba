@@ -691,12 +691,6 @@ std::uint32_t polyjectory::get_poly_order() const noexcept
     return m_impl->m_poly_op1 - 1u;
 }
 
-void polyjectory::drop_memory_caches() const noexcept
-{
-    detail::madvise_dontneed(m_impl->m_traj_file);
-    detail::madvise_dontneed(m_impl->m_time_file);
-}
-
 } // namespace mizuba
 
 #if defined(__GNUC__)
