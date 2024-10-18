@@ -10,8 +10,12 @@
 #include <cstddef>
 #include <fstream>
 #include <ios>
+#include <iostream>
 #include <stdexcept>
 #include <utility>
+
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <boost/cstdint.hpp>
 #include <boost/filesystem/file_status.hpp>
@@ -133,6 +137,76 @@ std::pair<char *, boost::iostreams::mapped_file_sink> mmap_at_offset_rw(const bo
                                                                         std::size_t size, std::size_t offset)
 {
     return mmap_at_offset_impl<boost::iostreams::mapped_file_sink>(path, size, offset);
+}
+
+file_pwrite::file_pwrite(boost::filesystem::path path) : m_path(std::move(path))
+{
+    // Debug checks.
+    assert(boost::filesystem::exists(m_path));
+    assert(boost::filesystem::is_regular_file(m_path));
+
+    // Attempt to open the file.
+    m_fd = ::open(m_path.c_str(), O_WRONLY);
+    if (m_fd == -1) [[unlikely]] {
+        // LCOV_EXCL_START
+        throw std::runtime_error(fmt::format("Could not open the file '{}'", m_path.string()));
+        // LCOV_EXCL_STOP
+    }
+}
+
+bool file_pwrite::is_closed() const noexcept
+{
+    return m_fd == -1;
+}
+
+file_pwrite::~file_pwrite()
+{
+    close();
+}
+
+void file_pwrite::close() noexcept
+{
+    if (m_fd != -1) {
+        if (::close(m_fd) == -1) [[unlikely]] {
+            // LCOV_EXCL_START
+            std::cerr << "An error was detected while trying to close the file '" << m_path.string() << "'"
+                      << std::endl;
+            // LCOV_EXCL_STOP
+        }
+
+        m_fd = -1;
+    }
+}
+
+void file_pwrite::pwrite(const void *buffer, std::size_t size, std::size_t offset)
+{
+    // Check that we are not writing into a closed file.
+    assert(!is_closed());
+
+    using safe_size_t = boost::safe_numerics::safe<std::size_t>;
+    safe_size_t sz(size);
+
+    // Check that we don't end up writing past the end of the file.
+    assert(sz + offset <= boost::filesystem::file_size(m_path));
+
+    using safe_off_t = boost::safe_numerics::safe<::off_t>;
+    safe_off_t oset = offset;
+
+    // NOTE: pwrite() may produce partial writes, in which case we are supposed to try again.
+    do {
+        const auto written_sz = ::pwrite(m_fd, buffer, sz, oset);
+
+        if (written_sz == -1) [[unlikely]] {
+            // LCOV_EXCL_START
+            throw std::runtime_error(
+                fmt::format("An error was detected while trying to pwrite() into the file '{}'", m_path.string()));
+            // LCOV_EXCL_STOP
+        }
+
+        sz -= written_sz;
+        oset += written_sz;
+        buffer = static_cast<const void *>(reinterpret_cast<const char *>(buffer) + written_sz);
+    } while (sz != 0);
 }
 
 } // namespace mizuba::detail
