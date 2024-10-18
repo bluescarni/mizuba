@@ -98,6 +98,8 @@ struct aux_node_data {
     // 1 object split_idx must be 64, because all morton codes will be
     // identical.
     std::uint32_t split_idx;
+    // The parent.
+    std::int32_t parent;
 };
 
 // Data structure used to temporarily store certain
@@ -207,11 +209,12 @@ void verify_bvh_tree(auto cd_idx, auto srt_mcodes, const auto &bvh_tree, const a
             // split_idx must be zero if this is the root node,
             // otherwise it must be the split_idx of the parent + 1.
             if (i == 0u) {
-                assert(cur_node.parent == -1);
+                assert(cur_aux_data.parent == -1);
                 assert(cur_aux_data.split_idx == 0u);
             } else {
-                assert(cur_node.parent >= 0);
-                assert(cur_aux_data.split_idx == aux_data[static_cast<std::uint32_t>(cur_node.parent)].split_idx + 1u);
+                assert(cur_aux_data.parent >= 0);
+                assert(cur_aux_data.split_idx
+                       == aux_data[static_cast<std::uint32_t>(cur_aux_data.parent)].split_idx + 1u);
             }
 
             // Add the object to the global object set,
@@ -288,11 +291,11 @@ void verify_bvh_tree(auto cd_idx, auto srt_mcodes, const auto &bvh_tree, const a
 
         // Check the parent info.
         if (i == 0u) {
-            assert(cur_node.parent == -1);
+            assert(cur_aux_data.parent == -1);
         } else {
-            assert(cur_node.parent >= 0);
+            assert(cur_aux_data.parent >= 0);
 
-            const auto upar = static_cast<std::uint32_t>(cur_node.parent);
+            const auto upar = static_cast<std::uint32_t>(cur_aux_data.parent);
 
             assert(upar < i);
             assert(cur_node.begin >= bvh_tree[upar].begin);
@@ -505,10 +508,10 @@ conjunctions::construct_bvh_trees(const polyjectory &pj, const boost::filesystem
 
                             // Insert the root node.
                             // NOTE: this is inited as a leaf node without a parent.
-                            tree.emplace_back(0, nobjs, -1, -1, -1, detail::default_lb, detail::default_ub);
+                            tree.emplace_back(0, nobjs, -1, -1, detail::default_lb, detail::default_ub);
                             // NOTE: nn_level is inited to zero, even if we already know it will be set
                             // to 1 eventually. split_idx is inited to zero (though it may increase later).
-                            aux_data.emplace_back(0, 0);
+                            aux_data.emplace_back(0, 0, -1);
 
                             // The number of nodes at the current level.
                             std::uint32_t cur_n_nodes = 1;
@@ -775,23 +778,23 @@ conjunctions::construct_bvh_trees(const polyjectory &pj, const boost::filesystem
                                                 // because we know we can represent the
                                                 // total number of objects as a std::uint32_t.
                                                 lc.end = cur_node.begin + lsize;
-                                                lc.parent = boost::numeric_cast<std::int32_t>(node_idx);
                                                 lc.left = -1;
                                                 lc.right = -1;
                                                 lc.lb = detail::default_lb;
                                                 lc.ub = detail::default_ub;
                                                 lc_adata.nn_level = 0;
                                                 lc_adata.split_idx = adata.split_idx + 1u;
+                                                lc_adata.parent = boost::numeric_cast<std::int32_t>(node_idx);
 
                                                 rc.begin = cur_node.begin + lsize;
                                                 rc.end = cur_node.end;
-                                                rc.parent = boost::numeric_cast<std::int32_t>(node_idx);
                                                 rc.left = -1;
                                                 rc.right = -1;
                                                 rc.lb = detail::default_lb;
                                                 rc.ub = detail::default_ub;
                                                 rc_adata.nn_level = 0;
                                                 rc_adata.split_idx = adata.split_idx + 1u;
+                                                rc_adata.parent = boost::numeric_cast<std::int32_t>(node_idx);
                                             }
                                         }
                                     });

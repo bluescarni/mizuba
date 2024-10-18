@@ -367,7 +367,7 @@ PYBIND11_MODULE(core, m)
 
     // Register conjunctions::bvh_node as a structured NumPy datatype.
     using bvh_node = mz::conjunctions::bvh_node;
-    PYBIND11_NUMPY_DTYPE(bvh_node, begin, end, parent, left, right, lb, ub);
+    PYBIND11_NUMPY_DTYPE(bvh_node, begin, end, left, right, lb, ub);
     // Same for conjunctions::aabb_collision.
     using aabb_collision = mz::conjunctions::aabb_collision;
     PYBIND11_NUMPY_DTYPE(aabb_collision, i, j);

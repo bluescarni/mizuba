@@ -102,8 +102,8 @@ public:
     struct bvh_node {
         // Object range.
         std::uint32_t begin, end;
-        // Pointers to parent and children nodes.
-        std::int32_t parent, left, right;
+        // Pointers to the children nodes.
+        std::int32_t left, right;
         // AABB.
         std::array<float, 4> lb, ub;
     };
