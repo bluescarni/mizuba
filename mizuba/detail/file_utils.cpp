@@ -14,7 +14,6 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
-#include <utility>
 
 #if defined(_WIN32)
 
@@ -93,60 +92,6 @@ void mark_file_read_only(const boost::filesystem::path &path)
     assert(boost::filesystem::is_regular_file(path));
 
     boost::filesystem::permissions(path, boost::filesystem::perms::owner_read);
-}
-
-namespace
-{
-
-template <typename FileType>
-auto mmap_at_offset_impl(const boost::filesystem::path &path, std::size_t size, std::size_t offset)
-{
-    using safe_size_t = boost::safe_numerics::safe<std::size_t>;
-
-    // Run a few sanity checks.
-    assert(size > 0u);
-    assert(boost::filesystem::exists(path));
-    assert(boost::filesystem::is_regular_file(path));
-    assert(safe_size_t(offset) + size <= boost::filesystem::file_size(path));
-
-    // Fetch the page alignment value.
-    const auto palign = safe_size_t(FileType::alignment());
-
-    // offset in general will not be a multiple of the page alignment value.
-    // We need to decrease it until we get to a multiple of the page alignment value.
-    const auto rem = offset % palign;
-    const auto new_offset = offset - rem;
-
-    // Correspondingly, we need to increase the mapping size to account for the
-    // decrease in offset.
-    const auto new_size = size + rem;
-
-    // We are now ready to memory-map.
-    FileType file(path.string(), new_size, new_offset);
-
-    // Fetch the pointer to the beginning of the mapped region.
-    auto *ptr = file.data();
-
-    // Increase it by rem to get to the desired offset.
-    ptr += static_cast<std::size_t>(rem);
-
-    return std::make_pair(ptr, std::move(file));
-}
-
-} // namespace
-
-// NOTE: these are helpers to memory-map only part of of a file. The memory-mapped portion
-// starts at byte offset into the file, and it has size 'size'.
-std::pair<const char *, boost::iostreams::mapped_file_source> mmap_at_offset_ro(const boost::filesystem::path &path,
-                                                                                std::size_t size, std::size_t offset)
-{
-    return mmap_at_offset_impl<boost::iostreams::mapped_file_source>(path, size, offset);
-}
-
-std::pair<char *, boost::iostreams::mapped_file_sink> mmap_at_offset_rw(const boost::filesystem::path &path,
-                                                                        std::size_t size, std::size_t offset)
-{
-    return mmap_at_offset_impl<boost::iostreams::mapped_file_sink>(path, size, offset);
 }
 
 file_pwrite::file_pwrite(boost::filesystem::path path) : m_path(std::move(path))
