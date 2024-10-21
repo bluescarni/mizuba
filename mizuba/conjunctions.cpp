@@ -489,6 +489,16 @@ conjunctions::whitelist_span_t conjunctions::get_whitelist() const noexcept
     return whitelist_span_t{m_impl->m_whitelist.data(), static_cast<std::size_t>(m_impl->m_whitelist.size())};
 }
 
+double conjunctions::get_conj_thresh() const noexcept
+{
+    return m_impl->m_conj_thresh;
+}
+
+double conjunctions::get_conj_det_interval() const noexcept
+{
+    return m_impl->m_conj_det_interval;
+}
+
 } // namespace mizuba
 
 #if defined(__GNUC__)

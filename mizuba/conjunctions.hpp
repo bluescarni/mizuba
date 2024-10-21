@@ -180,6 +180,8 @@ public:
     [[nodiscard]] conj_span_t get_conjunctions() const noexcept;
     using whitelist_span_t = heyoka::mdspan<const std::uint32_t, heyoka::dextents<std::size_t, 1>>;
     [[nodiscard]] whitelist_span_t get_whitelist() const noexcept;
+    [[nodiscard]] double get_conj_thresh() const noexcept;
+    [[nodiscard]] double get_conj_det_interval() const noexcept;
 };
 
 } // namespace mizuba

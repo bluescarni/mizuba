@@ -560,6 +560,8 @@ PYBIND11_MODULE(core, m)
 
         return ret;
     }); // LCOV_EXCL_LINE
+    conj_cl.def_property_readonly("conj_thresh", &mz::conjunctions::get_conj_thresh);
+    conj_cl.def_property_readonly("conj_det_interval", &mz::conjunctions::get_conj_det_interval);
 
     // Expose static getters for the structured types.
     conj_cl.def_property_readonly_static("bvh_node", [](const py::object &) { return py::dtype::of<bvh_node>(); });
