@@ -38,6 +38,8 @@ struct conj_jit_data {
     pt1_t pt1 = nullptr;
 };
 
+const conj_jit_data &get_conj_jit_data(std::uint32_t);
+
 } // namespace mizuba::detail
 
 #endif
