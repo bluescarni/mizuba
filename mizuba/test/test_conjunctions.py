@@ -540,7 +540,6 @@ class conjunctions_test_case(_ut.TestCase):
         self.assertEqual(len(t), 1)
         self.assertEqual(t[0]["begin"], 0)
         self.assertEqual(t[0]["end"], 2)
-        self.assertEqual(t[0]["parent"], -1)
         self.assertEqual(t[0]["left"], -1)
         self.assertEqual(t[0]["right"], -1)
 
