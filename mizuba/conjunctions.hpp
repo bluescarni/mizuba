@@ -84,7 +84,7 @@ class conjunctions
         }
     }
 
-    [[nodiscard]] std::array<double, 2> get_cd_begin_end(double, std::size_t, double, std::size_t) const;
+    [[nodiscard]] static std::array<double, 2> get_cd_begin_end(double, std::size_t, double, std::size_t);
     std::vector<double> compute_aabbs(const polyjectory &, const boost::filesystem::path &, std::size_t, double,
                                       double) const;
     void morton_encode_sort(const polyjectory &, const boost::filesystem::path &, std::size_t) const;

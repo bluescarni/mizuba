@@ -372,7 +372,7 @@ conjunctions::~conjunctions() = default;
 
 // Helper to compute the begin and end time coordinates for a conjunction step.
 std::array<double, 2> conjunctions::get_cd_begin_end(double maxT, std::size_t cd_idx, double conj_det_interval,
-                                                     std::size_t n_cd_steps) const
+                                                     std::size_t n_cd_steps)
 {
     assert(n_cd_steps > 0u);
     assert(std::isfinite(maxT) && maxT > 0);
