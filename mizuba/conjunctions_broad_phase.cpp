@@ -36,6 +36,8 @@
 
 #include "conjunctions.hpp"
 #include "detail/file_utils.hpp"
+#include "detail/fmv_attributes.hpp"
+#include "half.hpp"
 #include "logging.hpp"
 #include "polyjectory.hpp"
 
@@ -252,8 +254,8 @@ conjunctions::broad_phase(const polyjectory &pj, const boost::filesystem::path &
 
     // Fetch read-only spans to the sorted aabbs and indices vectors.
     boost::iostreams::mapped_file_source file_srt_aabbs((tmp_dir_path / "srt_aabbs").string());
-    const auto *srt_aabbs_base_ptr = reinterpret_cast<const float *>(file_srt_aabbs.data());
-    assert(boost::alignment::is_aligned(srt_aabbs_base_ptr, alignof(float)));
+    const auto *srt_aabbs_base_ptr = reinterpret_cast<const float16_t *>(file_srt_aabbs.data());
+    assert(boost::alignment::is_aligned(srt_aabbs_base_ptr, alignof(float16_t)));
     const aabbs_span_t srt_aabbs{srt_aabbs_base_ptr, n_cd_steps, tot_nobjs + 1u};
 
     boost::iostreams::mapped_file_source file_srt_idx((tmp_dir_path / "vidx").string());
@@ -266,8 +268,8 @@ conjunctions::broad_phase(const polyjectory &pj, const boost::filesystem::path &
     // Fetch a read-only span to the unsorted aabbs.
     // This is used only in debug mode.
     boost::iostreams::mapped_file_source file_aabbs((tmp_dir_path / "aabbs").string());
-    const auto *aabbs_base_ptr = reinterpret_cast<const float *>(file_aabbs.data());
-    assert(boost::alignment::is_aligned(aabbs_base_ptr, alignof(float)));
+    const auto *aabbs_base_ptr = reinterpret_cast<const float16_t *>(file_aabbs.data());
+    assert(boost::alignment::is_aligned(aabbs_base_ptr, alignof(float16_t)));
     const aabbs_span_t aabbs{aabbs_base_ptr, n_cd_steps, tot_nobjs + 1u};
 
 #endif
@@ -326,109 +328,110 @@ conjunctions::broad_phase(const polyjectory &pj, const boost::filesystem::path &
             // identify collisions between its aabb and the aabbs of the other objects.
             oneapi::tbb::parallel_for(
                 oneapi::tbb::blocked_range<std::uint32_t>(0, nobjs),
-                [&ets, srt_idx, cd_idx, &conj_active, srt_aabbs, tree, &bp_cv_c](const auto &obj_range) {
-                    // Fetch the thread-local data.
-                    // NOTE: no need to isolate here, as we are not
-                    // invoking any other TBB primitive from within this
-                    // scope.
-                    auto &[local_bp, stack] = ets.local();
+                [&ets, srt_idx, cd_idx, &conj_active, srt_aabbs, tree, &bp_cv_c](const auto &obj_range)
+                    MIZUBA_FMV_ATTRIBUTES {
+                        // Fetch the thread-local data.
+                        // NOTE: no need to isolate here, as we are not
+                        // invoking any other TBB primitive from within this
+                        // scope.
+                        auto &[local_bp, stack] = ets.local();
 
-                    // Clear the local list of aabbs collisions.
-                    // NOTE: the stack will be cleared at the beginning
-                    // of the traversal for each object.
-                    local_bp.clear();
+                        // Clear the local list of aabbs collisions.
+                        // NOTE: the stack will be cleared at the beginning
+                        // of the traversal for each object.
+                        local_bp.clear();
 
-                    // NOTE: the object indices in this for loop refer
-                    // to the Morton-ordered data.
-                    for (auto obj_idx = obj_range.begin(); obj_idx != obj_range.end(); ++obj_idx) {
-                        // Load the original object index.
-                        const auto orig_obj_idx = srt_idx(cd_idx, obj_idx);
+                        // NOTE: the object indices in this for loop refer
+                        // to the Morton-ordered data.
+                        for (auto obj_idx = obj_range.begin(); obj_idx != obj_range.end(); ++obj_idx) {
+                            // Load the original object index.
+                            const auto orig_obj_idx = srt_idx(cd_idx, obj_idx);
 
-                        // Check if the object is active for conjunction
-                        // detection.
-                        const auto obj_is_active = conj_active[orig_obj_idx];
+                            // Check if the object is active for conjunction
+                            // detection.
+                            const auto obj_is_active = conj_active[orig_obj_idx];
 
-                        // Reset the stack, and add the root node to it.
-                        stack.clear();
-                        stack.push_back(0);
+                            // Reset the stack, and add the root node to it.
+                            stack.clear();
+                            stack.push_back(0);
 
-                        // Cache the AABB of the current object.
-                        const auto x_lb = srt_aabbs(cd_idx, obj_idx, 0, 0);
-                        const auto y_lb = srt_aabbs(cd_idx, obj_idx, 0, 1);
-                        const auto z_lb = srt_aabbs(cd_idx, obj_idx, 0, 2);
-                        const auto r_lb = srt_aabbs(cd_idx, obj_idx, 0, 3);
+                            // Cache the AABB of the current object.
+                            const auto x_lb = srt_aabbs(cd_idx, obj_idx, 0, 0);
+                            const auto y_lb = srt_aabbs(cd_idx, obj_idx, 0, 1);
+                            const auto z_lb = srt_aabbs(cd_idx, obj_idx, 0, 2);
+                            const auto r_lb = srt_aabbs(cd_idx, obj_idx, 0, 3);
 
-                        const auto x_ub = srt_aabbs(cd_idx, obj_idx, 1, 0);
-                        const auto y_ub = srt_aabbs(cd_idx, obj_idx, 1, 1);
-                        const auto z_ub = srt_aabbs(cd_idx, obj_idx, 1, 2);
-                        const auto r_ub = srt_aabbs(cd_idx, obj_idx, 1, 3);
+                            const auto x_ub = srt_aabbs(cd_idx, obj_idx, 1, 0);
+                            const auto y_ub = srt_aabbs(cd_idx, obj_idx, 1, 1);
+                            const auto z_ub = srt_aabbs(cd_idx, obj_idx, 1, 2);
+                            const auto r_ub = srt_aabbs(cd_idx, obj_idx, 1, 3);
 
-                        do {
-                            // Pop a node.
-                            const auto cur_node_idx = stack.back();
-                            stack.pop_back();
+                            do {
+                                // Pop a node.
+                                const auto cur_node_idx = stack.back();
+                                stack.pop_back();
 
-                            // Fetch the AABB of the node.
-                            const auto &cur_node = tree(static_cast<std::uint32_t>(cur_node_idx));
-                            const auto &n_lb = cur_node.lb;
-                            const auto &n_ub = cur_node.ub;
+                                // Fetch the AABB of the node.
+                                const auto &cur_node = tree(static_cast<std::uint32_t>(cur_node_idx));
+                                const auto &n_lb = cur_node.lb;
+                                const auto &n_ub = cur_node.ub;
 
-                            // Check for overlap with the AABB of the current object.
-                            // NOTE: as explained during the computation of the AABBs, the
-                            // AABBs we produce via interval arithmetic consist of
-                            // closed intervals, and thus we compare with <= and >=.
-                            const bool overlap
-                                = (x_ub >= n_lb[0] && x_lb <= n_ub[0]) && (y_ub >= n_lb[1] && y_lb <= n_ub[1])
-                                  && (z_ub >= n_lb[2] && z_lb <= n_ub[2]) && (r_ub >= n_lb[3] && r_lb <= n_ub[3]);
+                                // Check for overlap with the AABB of the current object.
+                                // NOTE: as explained during the computation of the AABBs, the
+                                // AABBs we produce via interval arithmetic consist of
+                                // closed intervals, and thus we compare with <= and >=.
+                                const bool overlap
+                                    = (x_ub >= n_lb[0] && x_lb <= n_ub[0]) && (y_ub >= n_lb[1] && y_lb <= n_ub[1])
+                                      && (z_ub >= n_lb[2] && z_lb <= n_ub[2]) && (r_ub >= n_lb[3] && r_lb <= n_ub[3]);
 
-                            if (overlap) {
-                                if (cur_node.left == -1) {
-                                    // Leaf node: mark the object as a conjunction
-                                    // candidate with all objects in the node, unless either:
-                                    //
-                                    // - obj_idx is having a conjunction with itself (obj_idx == i), or
-                                    // - obj_idx > i, in order to avoid counting twice
-                                    //   the conjunctions (obj_idx, i) and (i, obj_idx), or
-                                    // - obj_idx and i are both inactive.
-                                    //
-                                    // NOTE: in case of a multi-object leaf,
-                                    // the node's AABB is the composition of the AABBs
-                                    // of all objects in the node, and thus, in general,
-                                    // it is not strictly true that obj_idx will overlap with
-                                    // *all* objects in the node. In other words, we will
-                                    // be detecting AABB collisions which are not actually there.
-                                    // This is ok, as they will be filtered out in the
-                                    // next stages of conjunction detection.
-                                    // NOTE: like in the outer loop, the index i here refers
-                                    // to the morton-ordered data.
-                                    for (auto i = cur_node.begin; i != cur_node.end; ++i) {
-                                        // Fetch index i in the original order.
-                                        const auto orig_i = srt_idx(cd_idx, i);
+                                if (overlap) {
+                                    if (cur_node.left == -1) {
+                                        // Leaf node: mark the object as a conjunction
+                                        // candidate with all objects in the node, unless either:
+                                        //
+                                        // - obj_idx is having a conjunction with itself (obj_idx == i), or
+                                        // - obj_idx > i, in order to avoid counting twice
+                                        //   the conjunctions (obj_idx, i) and (i, obj_idx), or
+                                        // - obj_idx and i are both inactive.
+                                        //
+                                        // NOTE: in case of a multi-object leaf,
+                                        // the node's AABB is the composition of the AABBs
+                                        // of all objects in the node, and thus, in general,
+                                        // it is not strictly true that obj_idx will overlap with
+                                        // *all* objects in the node. In other words, we will
+                                        // be detecting AABB collisions which are not actually there.
+                                        // This is ok, as they will be filtered out in the
+                                        // next stages of conjunction detection.
+                                        // NOTE: like in the outer loop, the index i here refers
+                                        // to the morton-ordered data.
+                                        for (auto i = cur_node.begin; i != cur_node.end; ++i) {
+                                            // Fetch index i in the original order.
+                                            const auto orig_i = srt_idx(cd_idx, i);
 
-                                        if (orig_obj_idx >= orig_i) {
-                                            continue;
+                                            if (orig_obj_idx >= orig_i) {
+                                                continue;
+                                            }
+
+                                            // Check if i is active for conjunctions.
+                                            const auto conj_active_i = conj_active[orig_i];
+
+                                            if (obj_is_active || conj_active_i) {
+                                                local_bp.emplace_back(orig_obj_idx, orig_i);
+                                            }
                                         }
-
-                                        // Check if i is active for conjunctions.
-                                        const auto conj_active_i = conj_active[orig_i];
-
-                                        if (obj_is_active || conj_active_i) {
-                                            local_bp.emplace_back(orig_obj_idx, orig_i);
-                                        }
+                                    } else {
+                                        // Internal node: add both children to the
+                                        // stack and iterate.
+                                        stack.push_back(cur_node.left);
+                                        stack.push_back(cur_node.right);
                                     }
-                                } else {
-                                    // Internal node: add both children to the
-                                    // stack and iterate.
-                                    stack.push_back(cur_node.left);
-                                    stack.push_back(cur_node.right);
                                 }
-                            }
-                        } while (!stack.empty());
-                    }
+                            } while (!stack.empty());
+                        }
 
-                    // Append the detected aabbs collisions to bp_cv_c.
-                    bp_cv_c.grow_by(local_bp.begin(), local_bp.end());
-                });
+                        // Append the detected aabbs collisions to bp_cv_c.
+                        bp_cv_c.grow_by(local_bp.begin(), local_bp.end());
+                    });
 
             // Make a copy of bp_cv_c for faster sorting and dumping.
             std::vector bp_cv(bp_cv_c.begin(), bp_cv_c.end());

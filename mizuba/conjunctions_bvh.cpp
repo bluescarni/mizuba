@@ -11,6 +11,7 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -42,7 +43,8 @@
 
 #include "conjunctions.hpp"
 #include "detail/file_utils.hpp"
-#include "detail/get_n_effective_objects.hpp"
+#include "detail/fmv_attributes.hpp"
+#include "half.hpp"
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -62,9 +64,9 @@ namespace
 {
 
 // Initial values for the nodes' bounding boxes.
-constexpr auto finf = std::numeric_limits<float>::infinity();
-constexpr std::array<float, 4> default_lb = {finf, finf, finf, finf};
-constexpr std::array<float, 4> default_ub = {-finf, -finf, -finf, -finf};
+constexpr auto finf = static_cast<float16_t>(std::numeric_limits<float>::infinity());
+constexpr std::array<float16_t, 4> default_lb = {finf, finf, finf, finf};
+constexpr std::array<float16_t, 4> default_ub = {-finf, -finf, -finf, -finf};
 
 // This is auxiliary data attached to each node of a BVH tree,
 // used only during construction/verification.
@@ -360,8 +362,8 @@ conjunctions::construct_bvh_trees(const polyjectory &pj, const boost::filesystem
 
     // Fetch read-only spans to the sorted aabbs and mcodes.
     boost::iostreams::mapped_file_source file_srt_aabbs((tmp_dir_path / "srt_aabbs").string());
-    const auto *srt_aabbs_base_ptr = reinterpret_cast<const float *>(file_srt_aabbs.data());
-    assert(boost::alignment::is_aligned(srt_aabbs_base_ptr, alignof(float)));
+    const auto *srt_aabbs_base_ptr = reinterpret_cast<const float16_t *>(file_srt_aabbs.data());
+    assert(boost::alignment::is_aligned(srt_aabbs_base_ptr, alignof(float16_t)));
     const aabbs_span_t srt_aabbs{srt_aabbs_base_ptr, n_cd_steps, tot_nobjs + 1u};
 
     boost::iostreams::mapped_file_source file_srt_mcodes((tmp_dir_path / "srt_mcodes").string());
@@ -487,11 +489,50 @@ conjunctions::construct_bvh_trees(const polyjectory &pj, const boost::filesystem
 
             oneapi::tbb::parallel_for(
                 oneapi::tbb::blocked_range<std::size_t>(start_cd_step_idx, end_cd_step_idx),
-                [&ets, tot_nobjs, srt_aabbs, srt_mcodes, &tree_promises](const auto &cd_range) {
+                [&ets, tot_nobjs, srt_aabbs, srt_mcodes, &tree_promises](const auto &cd_range) MIZUBA_FMV_ATTRIBUTES {
                     for (auto cd_idx = cd_range.begin(); cd_idx != cd_range.end(); ++cd_idx) {
-                        // Fetch the number of objects with trajectory data for the current
+                        // Some objects may have no trajectory data during a conjunction step,
+                        // and thus they can (and must) not be included in the tree.
+                        //
+                        // The aabbs of these objects will contain infinities, and they will be placed
+                        // at the tail end of srt_aabbs - we make sure of this when morton-sorting
+                        // the data.
+                        //
+                        // Thus, we can look for the first infinite aabb in srt_aabbs in order to
+                        // determine how many objects with trajectory data we have in the
                         // conjunction step.
-                        const auto nobjs = detail::get_n_effective_objects(tot_nobjs, srt_aabbs, cd_idx);
+
+                        // This is a view that transforms the sorted aabbs in the current conjunction
+                        // step in something like [false, false, ..., false, true, true, ...], where
+                        // "true" begins with the first infinite aabb.
+                        // NOTE: it is important we iota up to tot_nobjs here, even though the aabbs data
+                        // goes up to tot_nobjs + 1 - the last slot is the global aabb for the current
+                        // conjunction step.
+                        const auto isinf_view = std::views::iota(static_cast<std::size_t>(0), tot_nobjs)
+                                                | std::views::transform([srt_aabbs, cd_idx](std::size_t n) {
+                                                      return detail::isinf(srt_aabbs(cd_idx, n, 0, 0));
+                                                  });
+                        assert(std::ranges::is_sorted(isinf_view));
+                        static_assert(std::ranges::random_access_range<decltype(isinf_view)>);
+
+                        // Overflow check.
+                        try {
+                            // Make sure the difference type of isinf_view can represent tot_nobjs.
+                            static_cast<void>(
+                                boost::numeric_cast<std::ranges::range_difference_t<decltype(isinf_view)>>(tot_nobjs));
+                            // LCOV_EXCL_START
+                        } catch (...) {
+                            throw std::overflow_error(
+                                "Overflow detected during the computation of the number of effective objects");
+                        }
+                        // LCOV_EXCL_STOP
+
+                        // Determine the position of the first infinite aabb.
+                        const auto it_inf = std::ranges::lower_bound(isinf_view, true);
+                        // Compute the total number of objects with trajectory data.
+                        const auto nobjs = boost::numeric_cast<std::uint32_t>(it_inf - std::ranges::begin(isinf_view));
+                        // NOTE: we cannot have conjunction steps without trajectory data.
+                        assert(nobjs > 0u);
 
                         // Fetch the thread-local data.
                         auto &[tree, aux_data, l_buffer] = ets.local();
@@ -499,7 +540,7 @@ conjunctions::construct_bvh_trees(const polyjectory &pj, const boost::filesystem
                         // NOTE: isolate to avoid issues with thread-local data. See:
                         // https://oneapi-src.github.io/oneTBB/main/tbb_userguide/work_isolation.html
                         oneapi::tbb::this_task_arena::isolate([srt_aabbs, cd_idx, srt_mcodes, nobjs, &tree, &aux_data,
-                                                               &l_buffer, &tree_promises]() {
+                                                               &l_buffer, &tree_promises]() MIZUBA_FMV_ATTRIBUTES {
                             // Clear out the tree.
                             // NOTE: no need to clear out l_buffer as it is appropriately
                             // resized and written to at every new level during tree construction.
@@ -541,7 +582,7 @@ conjunctions::construct_bvh_trees(const polyjectory &pj, const boost::filesystem
                                 oneapi::tbb::parallel_for(
                                     oneapi::tbb::blocked_range(n_begin, n_end),
                                     [cd_idx, srt_aabbs, srt_mcodes, n_begin, cur_n_nodes, &tree, &aux_data, &l_buffer,
-                                     &n_leaf_nodes_atm](const auto &node_range) {
+                                     &n_leaf_nodes_atm](const auto &node_range) MIZUBA_FMV_ATTRIBUTES {
                                         // Local accumulator for the number of leaf nodes
                                         // detected at the current level.
                                         std::uint32_t loc_n_leaf_nodes = 0;
@@ -559,8 +600,8 @@ conjunctions::construct_bvh_trees(const polyjectory &pj, const boost::filesystem
                                             // Flag to signal that this is a leaf node.
                                             bool is_leaf_node = false;
 
-                                            // Pointer to detect where, in the morton codes range for the current node,
-                                            // the bit flip takes place.
+                                            // Pointer to detect where, in the morton codes range for the current
+                                            // node, the bit flip takes place.
                                             const std::uint64_t *split_ptr = nullptr;
 
                                             // Fetch the morton codes range for the current node.
@@ -684,9 +725,9 @@ conjunctions::construct_bvh_trees(const polyjectory &pj, const boost::filesystem
                                 assert(n_leaf_nodes * 2u <= nn_next_level);
                                 nn_next_level -= n_leaf_nodes * 2u;
 
-                                // Step 2: prepare the tree for the new children nodes in the next level. This will add
-                                // new nodes at the end of the tree containing indeterminate values. The properties of
-                                // these new nodes will be set up in step 4.
+                                // Step 2: prepare the tree for the new children nodes in the next level. This will
+                                // add new nodes at the end of the tree containing indeterminate values. The
+                                // properties of these new nodes will be set up in step 4.
                                 tree.resize(boost::safe_numerics::safe<decltype(tree.size())>(cur_tree_size)
                                             + nn_next_level);
                                 aux_data.resize(boost::safe_numerics::safe<decltype(aux_data.size())>(cur_tree_size)

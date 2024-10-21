@@ -62,6 +62,16 @@ set_target_properties(core PROPERTIES VISIBILITY_INLINES_HIDDEN TRUE)
 target_compile_features(core PRIVATE cxx_std_20)
 set_property(TARGET core PROPERTY CXX_EXTENSIONS NO)
 
+# Setup the definition to signal the presence of the target_clones attribute.
+if(MIZUBA_HAVE_TARGET_CLONES_ATTRIBUTE)
+    target_compile_definitions(core PRIVATE "MIZUBA_HAVE_TARGET_CLONES_ATTRIBUTE")
+endif()
+
+# Setup the definition to signal the presence of the _Float16 type.
+if(MIZUBA_HAVE__FLOAT16)
+    target_compile_definitions(core PRIVATE "MIZUBA_HAVE__FLOAT16")
+endif()
+
 if (MIZUBA_ENABLE_IPO)
     include(CheckIPOSupported)
     check_ipo_supported(RESULT _MIZUBA_IPO_RESULT OUTPUT _MIZUBA_IPO_OUTPUT)

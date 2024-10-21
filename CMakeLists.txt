@@ -109,6 +109,31 @@ if(MINGW)
     list(APPEND MIZUBA_CXX_FLAGS_RELEASE "-Wa,-mbig-obj")
 endif()
 
+# Check if we have the _Float16 type.
+include(CheckTypeSize)
+check_type_size("_Float16" MIZUBA_HAVE__FLOAT16)
+if(MIZUBA_HAVE__FLOAT16)
+    message(STATUS "The '_Float16' type is available")
+else()
+    message(STATUS "The '_Float16' type is not available")
+endif()
+
+# Check if the compiler supports the GCC-style target_clones attribute.
+# This is used to implement function multiversioning.
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles(
+    "
+        void f() __attribute__((target_clones(\"default\")));
+        int main() {return 0;}
+    "
+    MIZUBA_HAVE_TARGET_CLONES_ATTRIBUTE
+)
+if(MIZUBA_HAVE_TARGET_CLONES_ATTRIBUTE)
+    message(STATUS "The 'target_clones' function attribute is available")
+else()
+    message(STATUS "The 'target_clones' function attribute is not available")
+endif()
+
 # Find the dependencies.
 
 # heyoka.

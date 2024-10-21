@@ -36,9 +36,53 @@
 
 #include "common_utils.hpp"
 #include "conjunctions.hpp"
+#include "half.hpp"
 #include "logging.hpp"
 #include "polyjectory.hpp"
 #include "sgp4_polyjectory.hpp"
+
+namespace pybind11::detail
+{
+
+// NOTE: this seems to be the minimal setup necessary
+// to make PYBIND11_NUMPY_DTYPE() work with structs containing
+// a mizuba::float16_t data member. This is all we need at this
+// time - we do not scalar exposition or automatic conversion
+// of mizuba::float16_t.
+//
+// NOTE: a couple of useful references:
+//
+// https://github.com/pybind/pybind11/discussions/4627
+// https://github.com/pybind/pybind11/issues/1776
+template <>
+struct npy_format_descriptor<mizuba::float16_t> {
+    static constexpr auto name = _("float16");
+
+    static pybind11::dtype dtype()
+    {
+        // NOTE: pybind11 does not expose directly NPY_HALF in npy_api,
+        // but we can infer its value from here:
+        //
+        // https://github.com/numpy/numpy/blob/main/numpy/_core/include/numpy/ndarraytypes.h
+        //
+        // NPY_HALF is available since NumPy 1.6, but I don't think we care
+        // to support earlier versions here.
+        return pybind11::dtype(npy_api::NPY_VOID_ + 3);
+    }
+
+    // NOTE: the format descriptor for NPY_HALF is 'e', this can be confermed
+    // by looking at the output of np.dtype('e').
+    static std::string format()
+    {
+        return "e";
+    }
+
+    // NOTE: make extra sure that float16_t is 2 bytes, as
+    // NumPy expects an IEEE-conformant type.
+    static_assert(sizeof(mizuba::float16_t) == 2u);
+};
+
+} // namespace pybind11::detail
 
 namespace mizuba_py::detail
 {
@@ -399,11 +443,12 @@ PYBIND11_MODULE(core, m)
         const auto aabbs_span = p->get_aabbs();
 
         // Turn into an array.
-        auto ret = py::array_t<float>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(aabbs_span.extent(0)),
-                                                                boost::numeric_cast<py::ssize_t>(aabbs_span.extent(1)),
-                                                                boost::numeric_cast<py::ssize_t>(aabbs_span.extent(2)),
-                                                                boost::numeric_cast<py::ssize_t>(aabbs_span.extent(3))},
-                                      aabbs_span.data_handle(), self);
+        auto ret = py::array_t<mz::float16_t>(
+            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(aabbs_span.extent(0)),
+                                      boost::numeric_cast<py::ssize_t>(aabbs_span.extent(1)),
+                                      boost::numeric_cast<py::ssize_t>(aabbs_span.extent(2)),
+                                      boost::numeric_cast<py::ssize_t>(aabbs_span.extent(3))},
+            aabbs_span.data_handle(), self);
 
         // Ensure the returned array is read-only.
         ret.attr("flags").attr("writeable") = false;
@@ -434,12 +479,12 @@ PYBIND11_MODULE(core, m)
         const auto srt_aabbs_span = p->get_srt_aabbs();
 
         // Turn into an array.
-        auto ret
-            = py::array_t<float>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(0)),
-                                                           boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(1)),
-                                                           boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(2)),
-                                                           boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(3))},
-                                 srt_aabbs_span.data_handle(), self);
+        auto ret = py::array_t<mz::float16_t>(
+            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(0)),
+                                      boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(1)),
+                                      boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(2)),
+                                      boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(3))},
+            srt_aabbs_span.data_handle(), self);
 
         // Ensure the returned array is read-only.
         ret.attr("flags").attr("writeable") = false;

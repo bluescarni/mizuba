@@ -28,6 +28,7 @@
 
 #include <heyoka/mdspan.hpp>
 
+#include "half.hpp"
 #include "polyjectory.hpp"
 
 namespace mizuba
@@ -105,7 +106,7 @@ public:
         // Pointers to the children nodes.
         std::int32_t left, right;
         // AABB.
-        std::array<float, 4> lb, ub;
+        std::array<float16_t, 4> lb, ub;
     };
 
     // Struct to represent collisions between AABBs.
@@ -161,7 +162,7 @@ public:
     // - the number of elements in the bounds (which is
     //   always 4).
     using aabbs_span_t
-        = heyoka::mdspan<const float, heyoka::extents<std::size_t, std::dynamic_extent, std::dynamic_extent, 2, 4>>;
+        = heyoka::mdspan<const float16_t, heyoka::extents<std::size_t, std::dynamic_extent, std::dynamic_extent, 2, 4>>;
     [[nodiscard]] aabbs_span_t get_aabbs() const noexcept;
     using cd_end_times_span_t = heyoka::mdspan<const double, heyoka::dextents<std::size_t, 1>>;
     [[nodiscard]] cd_end_times_span_t get_cd_end_times() const noexcept;

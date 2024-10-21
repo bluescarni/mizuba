@@ -33,6 +33,7 @@
 #include "conjunctions.hpp"
 #include "detail/conjunctions_jit.hpp"
 #include "detail/file_utils.hpp"
+#include "half.hpp"
 #include "logging.hpp"
 #include "polyjectory.hpp"
 
@@ -106,10 +107,10 @@ struct conjunctions_impl {
     boost::iostreams::mapped_file_source m_file_bp;
     // The memory-mapped file for the detected conjunctions.
     boost::iostreams::mapped_file_source m_file_conjs;
-    // Pointer to the beginning of m_file_aabbs, cast to float.
-    const float *m_aabbs_base_ptr = nullptr;
-    // Pointer to the beginning of m_file_srt_aabbs, cast to float.
-    const float *m_srt_aabbs_base_ptr = nullptr;
+    // Pointer to the beginning of m_file_aabbs, cast to float16_t.
+    const float16_t *m_aabbs_base_ptr = nullptr;
+    // Pointer to the beginning of m_file_srt_aabbs, cast to float16_t.
+    const float16_t *m_srt_aabbs_base_ptr = nullptr;
     // Pointer to the beginning of m_file_mcodes, cast to std::uint64_t.
     const std::uint64_t *m_mcodes_base_ptr = nullptr;
     // Pointer to the beginning of m_file_srt_mcodes, cast to std::uint64_t.
@@ -147,11 +148,11 @@ struct conjunctions_impl {
 
         // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
         // https://en.cppreference.com/w/cpp/memory/start_lifetime_as
-        m_aabbs_base_ptr = reinterpret_cast<const float *>(m_file_aabbs.data());
-        assert(boost::alignment::is_aligned(m_aabbs_base_ptr, alignof(float)));
+        m_aabbs_base_ptr = reinterpret_cast<const float16_t *>(m_file_aabbs.data());
+        assert(boost::alignment::is_aligned(m_aabbs_base_ptr, alignof(float16_t)));
 
-        m_srt_aabbs_base_ptr = reinterpret_cast<const float *>(m_file_srt_aabbs.data());
-        assert(boost::alignment::is_aligned(m_srt_aabbs_base_ptr, alignof(float)));
+        m_srt_aabbs_base_ptr = reinterpret_cast<const float16_t *>(m_file_srt_aabbs.data());
+        assert(boost::alignment::is_aligned(m_srt_aabbs_base_ptr, alignof(float16_t)));
 
         m_mcodes_base_ptr = reinterpret_cast<const std::uint64_t *>(m_file_mcodes.data());
         assert(boost::alignment::is_aligned(m_mcodes_base_ptr, alignof(std::uint64_t)));

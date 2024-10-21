@@ -34,8 +34,10 @@
 #include "conjunctions.hpp"
 #include "detail/atomic_minmax.hpp"
 #include "detail/file_utils.hpp"
+#include "detail/fmv_attributes.hpp"
 #include "detail/ival.hpp"
 #include "detail/poly_utils.hpp"
+#include "half.hpp"
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -64,9 +66,9 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
     const auto order = pj.get_poly_order();
 
     // Init the return values.
-    constexpr auto finf = std::numeric_limits<float>::infinity();
-    std::array<float, 4> lb{{finf, finf, finf, finf}};
-    std::array<float, 4> ub{{-finf, -finf, -finf, -finf}};
+    constexpr auto finf = static_cast<float16_t>(std::numeric_limits<float>::infinity());
+    std::array<float16_t, 4> lb{{finf, finf, finf, finf}};
+    std::array<float16_t, 4> ub{{-finf, -finf, -finf, -finf}};
 
     // Fetch the traj and time spans from pj.
     const auto [traj_span, time_span, _] = pj[obj_idx];
@@ -175,30 +177,30 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
             val.upper += conj_radius;
         }
 
-        // A couple of helpers to cast lower/upper bounds from double to float. After
-        // the cast, we will also move slightly the bounds to add a safety margin to account
-        // for possible truncation in the conversion.
-        auto lb_make_float = [&](double lb) {
-            auto ret = std::nextafter(static_cast<float>(lb), -finf);
+        // A couple of helpers to cast lower/upper bounds from double to float16_t. After
+        // the cast, we will also move slightly the bounds to add a safety margin in order
+        // to account for possible truncation in the conversion.
+        auto lb_make_float16 = [&](double lb) {
+            auto ret = detail::nextafter(static_cast<float16_t>(lb), -finf);
 
-            if (!std::isfinite(ret)) [[unlikely]] {
+            if (!detail::isfinite(ret)) [[unlikely]] {
                 // LCOV_EXCL_START
                 throw std::invalid_argument(fmt::format("The computation of the bounding box for the object at index "
                                                         "{} produced the non-finite lower bound {}",
-                                                        obj_idx, ret));
+                                                        obj_idx, static_cast<float>(ret)));
                 // LCOV_EXCL_STOP
             }
 
             return ret;
         };
-        auto ub_make_float = [&](double ub) {
-            auto ret = std::nextafter(static_cast<float>(ub), finf);
+        auto ub_make_float16 = [&](double ub) {
+            auto ret = detail::nextafter(static_cast<float16_t>(ub), finf);
 
-            if (!std::isfinite(ret)) [[unlikely]] {
+            if (!detail::isfinite(ret)) [[unlikely]] {
                 // LCOV_EXCL_START
                 throw std::invalid_argument(fmt::format("The computation of the bounding box for the object at index "
                                                         "{} produced the non-finite upper bound {}",
-                                                        obj_idx, ret));
+                                                        obj_idx, static_cast<float>(ret)));
                 // LCOV_EXCL_STOP
             }
 
@@ -206,11 +208,11 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
         };
 
         // Update the bounding box for the current object.
-        // NOTE: min/max is fine: the make_float() helpers check for finiteness,
+        // NOTE: min/max is fine: the make_float16() helpers check for finiteness,
         // and the other operand is never NaN.
         for (auto i = 0u; i < 4u; ++i) {
-            lb[i] = std::min(lb[i], lb_make_float(xyzr_int[i].lower));
-            ub[i] = std::max(ub[i], ub_make_float(xyzr_int[i].upper));
+            lb[i] = std::min(lb[i], lb_make_float16(xyzr_int[i].lower));
+            ub[i] = std::max(ub[i], ub_make_float16(xyzr_int[i].upper));
         }
     }
 
@@ -225,7 +227,7 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
 // for the conjunction step.
 void validate_global_aabbs(auto cd_aabbs_span)
 {
-    constexpr auto finf = std::numeric_limits<float>::infinity();
+    constexpr auto finf = static_cast<float16_t>(std::numeric_limits<float>::infinity());
 
     std::array lb = {finf, finf, finf, finf};
     std::array ub = {-finf, -finf, -finf, -finf};
@@ -278,7 +280,7 @@ std::vector<double> conjunctions::compute_aabbs(const polyjectory &pj, const boo
     const auto n_tot_aabbs = (safe_size_t(nobjs) + 1) * n_cd_steps;
 
     // The total required size in bytes.
-    const auto tot_size = static_cast<std::size_t>(n_tot_aabbs * sizeof(float) * 8u);
+    const auto tot_size = static_cast<std::size_t>(n_tot_aabbs * sizeof(float16_t) * 8u);
 
     // Init the storage file and open it for pwriting.
     auto storage_path = tmp_dir_path / "aabbs";
@@ -292,13 +294,13 @@ std::vector<double> conjunctions::compute_aabbs(const polyjectory &pj, const boo
     // We will be using thread-specific data to store the results of intermediate
     // computations in memory, before eventually flushing them to disk.
     struct ets_data {
-        std::vector<float> aabbs;
+        std::vector<float16_t> aabbs;
     };
     using ets_t = oneapi::tbb::enumerable_thread_specific<ets_data, oneapi::tbb::cache_aligned_allocator<ets_data>,
                                                           oneapi::tbb::ets_key_usage_type::ets_key_per_instance>;
     ets_t ets([nobjs]() {
         // Setup aabbs.
-        std::vector<float> aabbs;
+        std::vector<float16_t> aabbs;
         aabbs.resize(boost::numeric_cast<decltype(aabbs.size())>((nobjs + 1u) * 8u));
 
         return ets_data{.aabbs = std::move(aabbs)};
@@ -315,10 +317,10 @@ std::vector<double> conjunctions::compute_aabbs(const polyjectory &pj, const boo
                                                                                        &ets](const auto &cd_range) {
         for (auto cd_idx = cd_range.begin(); cd_idx != cd_range.end(); ++cd_idx) {
             // Prepare the global AABB for the current conjunction step.
-            constexpr auto finf = std::numeric_limits<float>::infinity();
+            constexpr auto finf = static_cast<float16_t>(std::numeric_limits<float>::infinity());
             // NOTE: the global AABB needs to be updated atomically.
-            std::array<std::atomic<float>, 4> cur_global_lb{{finf, finf, finf, finf}};
-            std::array<std::atomic<float>, 4> cur_global_ub{{-finf, -finf, -finf, -finf}};
+            std::array<std::atomic<float16_t>, 4> cur_global_lb{{finf, finf, finf, finf}};
+            std::array<std::atomic<float16_t>, 4> cur_global_ub{{-finf, -finf, -finf, -finf}};
 
             // Fetch the begin/end times for the current conjunction step.
             const auto [cd_begin, cd_end] = get_cd_begin_end(maxT, cd_idx, conj_det_interval, n_cd_steps);
@@ -332,19 +334,21 @@ std::vector<double> conjunctions::compute_aabbs(const polyjectory &pj, const boo
             // NOTE: isolate to avoid issues with thread-local data. See:
             // https://oneapi-src.github.io/oneTBB/main/tbb_userguide/work_isolation.html
             oneapi::tbb::this_task_arena::isolate([cd_idx, &aabbs_file, nobjs, &pj, cd_begin, cd_end, conj_thresh,
-                                                   &cur_global_lb, &cur_global_ub, &cd_aabbs, &cd_end_times]() {
+                                                   &cur_global_lb, &cur_global_ub, &cd_aabbs,
+                                                   &cd_end_times]() MIZUBA_FMV_ATTRIBUTES {
                 // Create a mutable span into cd_aabbs.
-                using mut_aabbs_span_t = heyoka::mdspan<float, heyoka::extents<std::size_t, std::dynamic_extent, 2, 4>>;
+                using mut_aabbs_span_t
+                    = heyoka::mdspan<float16_t, heyoka::extents<std::size_t, std::dynamic_extent, 2, 4>>;
                 mut_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), nobjs + 1u};
 
                 // Iterate over all objects to determine their AABBs for the current conjunction step.
                 oneapi::tbb::parallel_for(
                     oneapi::tbb::blocked_range<std::size_t>(0, nobjs),
                     [&pj, cd_begin, cd_end, conj_thresh, &cur_global_lb, &cur_global_ub,
-                     cd_aabbs_span](const auto &obj_range) {
+                     cd_aabbs_span](const auto &obj_range) MIZUBA_FMV_ATTRIBUTES {
                         // Init the local AABB for the current obj range.
-                        std::array<float, 4> cur_local_lb{{finf, finf, finf, finf}};
-                        std::array<float, 4> cur_local_ub{{-finf, -finf, -finf, -finf}};
+                        std::array<float16_t, 4> cur_local_lb{{finf, finf, finf, finf}};
+                        std::array<float16_t, 4> cur_local_ub{{-finf, -finf, -finf, -finf}};
 
                         for (auto obj_idx = obj_range.begin(); obj_idx != obj_range.end(); ++obj_idx) {
                             // Compute the AABB for the current object.
@@ -378,15 +382,15 @@ std::vector<double> conjunctions::compute_aabbs(const polyjectory &pj, const boo
                     const auto cur_ub = cur_global_ub[i].load(std::memory_order_relaxed);
 
                     // NOTE: this is ensured by the safety margins we added when converting
-                    // the double-precision AABB to single-precision. That is, even if the original
+                    // the double-precision AABB to half-precision. That is, even if the original
                     // double-precision AABB has a size of zero in any dimension, the conversion
-                    // to single precision resulted in a small but nonzero size in every dimension.
+                    // to half precision resulted in a small but nonzero size in every dimension.
                     assert(cur_ub > cur_lb);
 
-                    // Check that we can safely compute the difference between ub and lb. This is
-                    // needed when computing morton codes.
+                    // Check that we can safely compute the difference between ub and lb after
+                    // casting to single precision. This is needed when computing morton codes.
                     // LCOV_EXCL_START
-                    if (!std::isfinite(cur_ub - cur_lb)) [[unlikely]] {
+                    if (!std::isfinite(static_cast<float>(cur_ub) - static_cast<float>(cur_lb))) [[unlikely]] {
                         throw std::invalid_argument("A global bounding box with non-finite size was generated");
                     }
                     // LCOV_EXCL_STOP
@@ -406,8 +410,8 @@ std::vector<double> conjunctions::compute_aabbs(const polyjectory &pj, const boo
                 cd_end_times[cd_idx] = cd_end;
 
                 // Write cd_aabbs to file.
-                aabbs_file.pwrite(cd_aabbs_span.data_handle(), (nobjs + 1u) * 8u * sizeof(float),
-                                  cd_idx * (nobjs + 1u) * 8u * sizeof(float));
+                aabbs_file.pwrite(cd_aabbs_span.data_handle(), (nobjs + 1u) * 8u * sizeof(float16_t),
+                                  cd_idx * (nobjs + 1u) * 8u * sizeof(float16_t));
             });
         }
     });
