@@ -23,11 +23,14 @@
 #include <utility>
 #include <vector>
 
+#include <boost/container/small_vector.hpp>
 #include <boost/filesystem/path.hpp>
 #include <boost/numeric/conversion/cast.hpp>
 
 #include <heyoka/mdspan.hpp>
 
+#include "detail/conjunctions_jit.hpp"
+#include "detail/poly_utils.hpp"
 #include "polyjectory.hpp"
 
 namespace mizuba
@@ -53,6 +56,128 @@ class conjunctions
     std::shared_ptr<detail::conjunctions_impl> m_impl;
 
     friend const std::shared_ptr<detail::conjunctions_impl> &detail::fetch_cj_impl(const conjunctions &) noexcept;
+
+public:
+    // The BVH node struct.
+    struct bvh_node {
+        // Object range.
+        std::uint32_t begin, end;
+        // Pointers to the children nodes.
+        std::int32_t left, right;
+        // AABB.
+        std::array<float, 4> lb, ub;
+    };
+
+    // Struct to represent collisions between AABBs.
+    struct aabb_collision {
+        // Indices of the objects whose AABBs collide.
+        std::uint32_t i, j;
+        auto operator<=>(const aabb_collision &) const = default;
+    };
+
+    // Struct to represent a conjunction between two objects.
+    struct conj {
+        // Time of closest approach.
+        double tca;
+        // Distance of closest approach.
+        double dca;
+        // The objects involved in the conjunction.
+        std::uint32_t i, j;
+        // The state vectors of i and j
+        // at TCA.
+        std::array<double, 3> ri, vi;
+        std::array<double, 3> rj, vj;
+    };
+
+private:
+    // This is auxiliary data attached to each node of a BVH tree,
+    // used only during construction/verification.
+    // It will not be present in the final tree, hence it is kept
+    // separate.
+    struct bvh_aux_node_data {
+        // Total number of nodes in the tree level the
+        // node belongs to.
+        std::uint32_t nn_level;
+        // Index of the split bit. This has several meanings and properties:
+        //
+        // 1) all morton codes in the node will share the same common
+        //    initial sequence of split_idx bits (measured from MSB);
+        //
+        // 2) if the node is internal, split_idx is the bit index in the morton
+        //    code (counted from the MSB) used for partitioning the objects
+        //    in the node into the left and right children. For instance,
+        //    split_idx == 3 means that the objects in the left child will
+        //    have morton codes whose fourth bit (from MSB) is 0, while the objects in the
+        //    right child will have morton codes whose fourth bit is 1;
+        //
+        // 3) if the node is a leaf with a single object, then split_idx is the
+        //    split_idx of the parent + 1.
+        //
+        // Property 3) follows immediately from the fact that the split_idx
+        // of a node is always initialised as the split_idx of the parent
+        // + 1. split_idx is modified after initialisation only if the node
+        // contains more than 1 object.
+        //
+        // From property 1), it follows that in a leaf node with more than
+        // 1 object split_idx must be 64, because all morton codes will be
+        // identical.
+        std::uint32_t split_idx;
+        // The parent.
+        std::int32_t parent;
+    };
+
+    // Data structure used to temporarily store certain
+    // properties of a node during the construction of a
+    // BVH tree level by level. The data stored in here will eventually
+    // be transferred to a bvh_node.
+    struct bvh_level_data {
+        // Number of children.
+        std::uint32_t nc;
+        // Number of objects in the left child.
+        std::uint32_t nolc;
+        // Storage used in the computation of the prefix
+        // sum over the number of children for each node
+        // in the current level.
+        std::uint32_t ps;
+    };
+
+    // Handy alias for boost's small vector.
+    template <typename T>
+    using small_vec = boost::container::small_vector<T, 1>;
+
+    // Bag of per-object data used during narrow-phase conjunction detection.
+    struct np_data {
+        // Local vector of detected conjunctions.
+        small_vec<conj> conj_vec;
+        // Polynomial cache for use during real root isolation.
+        // NOTE: it is *really* important that this is declared
+        // *before* wlist, because wlist will contain references
+        // to and interact with r_iso_cache during destruction,
+        // and we must be sure that wlist is destroyed *before*
+        // r_iso_cache.
+        detail::poly_cache r_iso_cache;
+        // The working list.
+        detail::wlist_t wlist;
+        // The list of isolating intervals.
+        detail::isol_t isol;
+        // Buffers used as temporary storage for the results
+        // of operations on polynomials.
+        // NOTE: if we restructure the code to use JIT more,
+        // we should probably re-implement this as a flat
+        // 1D buffer rather than a collection of vectors.
+        std::array<std::vector<double>, 14> pbuffers;
+        // Vector to store the input for the cfunc used to compute
+        // the distance square polynomial.
+        std::vector<double> diff_input;
+        // The vector into which detected conjunctions are
+        // temporarily written during polynomial root finding.
+        // The tuple contains:
+        // - the indices of the 2 objects,
+        // - the time coordinate of the conjunction (relative
+        //   to the time interval in which root finding is performed,
+        //   i.e., **NOT** the absolute time in the polyjectory).
+        std::vector<std::tuple<std::uint32_t, std::uint32_t, double>> tmp_conj_vec;
+    };
 
     // Private ctor.
     struct ptag {
@@ -97,38 +222,28 @@ class conjunctions
                       const std::vector<std::tuple<std::size_t, std::size_t>> &, const std::vector<double> &,
                       const detail::conj_jit_data &, double);
 
+    static std::tuple<std::vector<double>, std::vector<std::tuple<std::size_t, std::size_t>>,
+                      std::vector<std::tuple<std::size_t, std::size_t>>>
+    detect_conjunctions(const boost::filesystem::path &, const polyjectory &, std::size_t, double, double,
+                        const std::vector<bool> &);
+    static void detect_conjunctions_aabbs(std::size_t, std::vector<float> &, const polyjectory &, double, double,
+                                          std::size_t, std::vector<double> &);
+    static void detect_conjunctions_morton(std::vector<std::uint64_t> &, std::vector<std::uint32_t> &,
+                                           std::vector<float> &, std::vector<std::uint64_t> &,
+                                           const std::vector<float> &, const polyjectory &);
+    static void detect_conjunctions_bvh(std::vector<bvh_node> &, std::vector<bvh_aux_node_data> &,
+                                        std::vector<bvh_level_data> &, const std::vector<float> &,
+                                        const std::vector<std::uint64_t> &);
+    static std::vector<aabb_collision>
+    detect_conjunctions_broad_phase(std::vector<small_vec<aabb_collision>> &, std::vector<std::vector<std::int32_t>> &,
+                                    const std::vector<bvh_node> &, const std::vector<std::uint32_t> &,
+                                    const std::vector<bool> &, const std::vector<float> &, const std::vector<float> &);
+    static std::vector<conj> detect_conjunctions_narrow_phase(std::vector<np_data> &, std::size_t, const polyjectory &,
+                                                              const std::vector<small_vec<aabb_collision>> &,
+                                                              const detail::conj_jit_data &, double, double,
+                                                              std::size_t);
+
 public:
-    // The BVH node struct.
-    struct bvh_node {
-        // Object range.
-        std::uint32_t begin, end;
-        // Pointers to the children nodes.
-        std::int32_t left, right;
-        // AABB.
-        std::array<float, 4> lb, ub;
-    };
-
-    // Struct to represent collisions between AABBs.
-    struct aabb_collision {
-        // Indices of the objects whose AABBs collide.
-        std::uint32_t i, j;
-        auto operator<=>(const aabb_collision &) const = default;
-    };
-
-    // Struct to represent a conjunction between two objects.
-    struct conj {
-        // Time of closest approach.
-        double tca;
-        // Distance of closest approach.
-        double dca;
-        // The objects involved in the conjunction.
-        std::uint32_t i, j;
-        // The state vectors of i and j
-        // at TCA.
-        std::array<double, 3> ri, vi;
-        std::array<double, 3> rj, vj;
-    };
-
     template <typename WRange = std::vector<std::uint32_t>>
         requires std::ranges::input_range<WRange>
                  && std::integral<std::remove_cvref_t<std::ranges::range_reference_t<WRange>>>

@@ -303,6 +303,10 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
         // Change the permissions so that only the owner has access.
         boost::filesystem::permissions(tmp_dir_path, boost::filesystem::owner_all);
 
+        auto [cd_end_times, tree_offsets, bp_offsets]
+            = detect_conjunctions(tmp_dir_path, pj, n_cd_steps, conj_thresh, conj_det_interval, conj_active);
+
+#if 0
         // NOTE: narrow-phase conjunction detection requires JIT compilation
         // of several functions. Run the compilation in parallel with the initial
         // phases of conjunction detection.
@@ -346,6 +350,7 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
         sw.reset();
         narrow_phase(pj, tmp_dir_path, bp_offsets, cd_end_times, *cjd, conj_thresh);
         log_trace("Narrow-phase conjunction detection time: {}s", sw);
+#endif
 
         // Create the impl.
         m_impl = std::make_shared<detail::conjunctions_impl>(
