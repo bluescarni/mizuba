@@ -309,7 +309,7 @@ std::vector<double> conjunctions::compute_aabbs(const polyjectory &pj, const boo
     // The rationale is that typically the polyjectory data will be much larger than the aabb data, and for
     // locality reasons it might be better to process the trajectory data first by object and then by
     // conjunction step.
-    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, n_cd_steps), [this, maxT, conj_det_interval,
+    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, n_cd_steps), [maxT, conj_det_interval,
                                                                                        n_cd_steps, &aabbs_file, nobjs,
                                                                                        &pj, conj_thresh, &cd_end_times,
                                                                                        &ets](const auto &cd_range) {
