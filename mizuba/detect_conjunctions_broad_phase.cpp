@@ -128,6 +128,7 @@ void verify_broad_phase(auto nobjs, const auto &bp_cv, auto aabbs, const auto &c
 
 } // namespace detail
 
+// Detect aabbs collisions within a conjunction step.
 std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broad_phase(
     std::vector<small_vec<aabb_collision>> &bp_collisions, std::vector<std::vector<std::int32_t>> &bp_stacks,
     const std::vector<bvh_node> &tree, const std::vector<std::uint32_t> &cd_vidx, const std::vector<bool> &conj_active,

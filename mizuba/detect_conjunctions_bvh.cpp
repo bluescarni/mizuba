@@ -27,7 +27,6 @@
 #include <oneapi/tbb/blocked_range.h>
 #include <oneapi/tbb/parallel_for.h>
 #include <oneapi/tbb/parallel_scan.h>
-#include <oneapi/tbb/task_arena.h>
 
 #include <heyoka/mdspan.hpp>
 
@@ -250,6 +249,10 @@ void verify_bvh_tree(const auto &srt_mcodes, const auto &bvh_tree, const auto &a
 
 } // namespace detail
 
+// Construct the bvh for a conjunction step and write it into 'tree'.
+//
+// aux_data and l_buffer are temporary buffers used during tree construction, cd_srt_aabbs
+// are the morton-sorted aabbs for all objects, cd_srt_mcodes the sorted morton codes for all objects.
 void conjunctions::detect_conjunctions_bvh(std::vector<bvh_node> &tree, std::vector<bvh_aux_node_data> &aux_data,
                                            std::vector<bvh_level_data> &l_buffer,
                                            const std::vector<float> &cd_srt_aabbs,
