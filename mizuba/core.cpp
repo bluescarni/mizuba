@@ -50,8 +50,8 @@ namespace
 //
 // Python does not guarantee that all objects are garbage-collected at
 // shutdown. This means that we may find ourselves in a situation where
-// the temporary memory-mapped files used internally by a polyjectory
-// are not deleted when the program terminates.
+// the temporary memory-mapped files used internally by the polyjectory
+// and conjunction classes are not deleted when the program terminates.
 //
 // In order to avoid this, we adopt the following approach:
 //
