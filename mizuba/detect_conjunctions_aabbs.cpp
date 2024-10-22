@@ -52,7 +52,7 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
     const auto order = pj.get_poly_order();
 
     // Init the return values.
-    constexpr auto finf = std::numeric_limits<float>::infinity();
+    const auto finf = std::numeric_limits<float>::infinity();
     std::array<float, 4> lb{{finf, finf, finf, finf}};
     std::array<float, 4> ub{{-finf, -finf, -finf, -finf}};
 
@@ -166,7 +166,7 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
         // A couple of helpers to cast lower/upper bounds from double to float. After
         // the cast, we will also move slightly the bounds to add a safety margin to account
         // for possible truncation in the conversion.
-        auto lb_make_float = [&](double lb) {
+        auto lb_make_float = [finf, obj_idx](double lb) {
             auto ret = std::nextafter(static_cast<float>(lb), -finf);
 
             if (!std::isfinite(ret)) [[unlikely]] {
@@ -179,7 +179,7 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
 
             return ret;
         };
-        auto ub_make_float = [&](double ub) {
+        auto ub_make_float = [finf, obj_idx](double ub) {
             auto ret = std::nextafter(static_cast<float>(ub), finf);
 
             if (!std::isfinite(ret)) [[unlikely]] {

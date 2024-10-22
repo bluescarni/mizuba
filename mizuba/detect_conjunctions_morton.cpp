@@ -127,7 +127,8 @@ void conjunctions::detect_conjunctions_morton(std::vector<std::uint64_t> &cd_mco
     const auto *gub = &cd_aabbs_span(nobjs, 1, 0);
 
     // Computation of the morton codes and initialisation of cd_vidx.
-    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, nobjs), [&](const auto &obj_range) {
+    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, nobjs), [cd_aabbs_span, glb, gub, &cd_mcodes,
+                                                                                  &cd_vidx](const auto &obj_range) {
         // Temporary array to store the coordinates of the centre of the AABB.
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         std::array<float, 4> xyzr_ctr;

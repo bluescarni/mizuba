@@ -354,7 +354,9 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                 = start_cd_step_idx + (n_rem_cd_steps < cd_chunk_size ? n_rem_cd_steps : cd_chunk_size);
 
             oneapi::tbb::parallel_for(
-                oneapi::tbb::blocked_range<std::size_t>(start_cd_step_idx, end_cd_step_idx), [&](const auto &cd_range) {
+                oneapi::tbb::blocked_range<std::size_t>(start_cd_step_idx, end_cd_step_idx),
+                [&ets, &pj, conj_thresh, conj_det_interval, n_cd_steps, &cd_end_times, &conj_active, &cjd,
+                 &promises](const auto &cd_range) {
                     // Fetch the thread-local data.
                     auto &[cd_aabbs, cd_mcodes, cd_vidx, cd_srt_aabbs, cd_srt_mcodes, cd_bvh_tree, cd_bvh_aux_data,
                            cd_bvh_l_buffer, cd_bp_collisions, cd_bp_stacks, cd_npd_vec]
@@ -362,7 +364,12 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
 
                     // NOTE: isolate to avoid issues with thread-local data. See:
                     // https://oneapi-src.github.io/oneTBB/main/tbb_userguide/work_isolation.html
-                    oneapi::tbb::this_task_arena::isolate([&]() {
+                    oneapi::tbb::this_task_arena::isolate([&cd_range, &cd_aabbs, &pj, conj_thresh, conj_det_interval,
+                                                           n_cd_steps, &cd_end_times, &cd_mcodes, &cd_vidx,
+                                                           &cd_srt_aabbs, &cd_srt_mcodes, &cd_bvh_tree,
+                                                           &cd_bvh_aux_data, &cd_bvh_l_buffer, &cd_bp_collisions,
+                                                           &cd_bp_stacks, &conj_active, &cd_npd_vec, &cjd,
+                                                           &promises]() {
                         for (auto cd_idx = cd_range.begin(); cd_idx != cd_range.end(); ++cd_idx) {
                             // Compute the aabbs for all objects and store them in cd_aabbs.
                             detect_conjunctions_aabbs(cd_idx, cd_aabbs, pj, conj_thresh, conj_det_interval, n_cd_steps,

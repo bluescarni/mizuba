@@ -350,7 +350,7 @@ PYBIND11_MODULE(core, m)
             using span_t = hy::mdspan<const double, hy::extents<std::size_t, 9, std::dynamic_extent>>;
             const span_t in(sat_data.data(), boost::numeric_cast<std::size_t>(sat_data.size()) / 9u);
 
-            auto poly_ret = [&]() {
+            auto poly_ret = [in, jd_begin, jd_end, exit_radius, reentry_radius]() {
                 // NOTE: release the GIL during propagation.
                 py::gil_scoped_release release;
 
