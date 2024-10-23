@@ -400,6 +400,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
 
             start_cd_step_idx = end_cd_step_idx;
         }
+        // LCOV_EXCL_START
     } catch (...) {
         // Request a stop on the writer thread.
         stop_writing.store(true);
@@ -415,6 +416,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
         // Re-throw.
         throw;
     }
+    // LCOV_EXCL_STOP
 
     // Wait for the writer thread to finish.
     // NOTE: get() will throw any exception that might have been
