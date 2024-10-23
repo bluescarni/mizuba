@@ -19,10 +19,25 @@
 
 #include <windows.h>
 
-#else
+#elif __has_include(<unistd.h>)
+
+#include <unistd.h>
+
+#if defined(_POSIX_VERSION) && _POSIX_VERSION >= 200809L
+
+#define MIZUBA_HAVE_FILE_POSIX_API
 
 #include <fcntl.h>
-#include <unistd.h>
+
+#else
+
+#error Invalid _POSIX_VERSION detected
+
+#endif
+
+#else
+
+#error Unsupported operating system
 
 #endif
 
@@ -74,6 +89,35 @@ void create_sized_file(const boost::filesystem::path &path, std::size_t size)
         throw std::runtime_error(fmt::format("Cannot create the sized file '{}', as it exists already", path.string()));
     }
     // LCOV_EXCL_STOP
+
+#if defined(MIZUBA_HAVE_FILE_POSIX_API)
+
+    // Create the file.
+    const auto fd = ::open(path.c_str(), O_RDWR | O_CREAT, S_IRWXU);
+    if (fd == -1) [[unlikely]] {
+        // LCOV_EXCL_START
+        throw std::runtime_error(fmt::format("Unable to create the sized file '{}'", path.string()));
+        // LCOV_EXCL_STOP
+    }
+
+    // RAII file closer.
+    const struct file_closer {
+        int fd;
+        ~file_closer()
+        {
+            ::close(fd);
+        }
+    } fc{.fd = fd};
+
+    // Reserve space.
+    if (posix_fallocate(fd, 0, boost::numeric_cast<::off_t>(size)) != 0) [[unlikely]] {
+        // LCOV_EXCL_START
+        throw std::runtime_error(fmt::format("Unable to reserve space for the file '{}'", path.string()));
+        // LCOV_EXCL_STOP
+    }
+
+#else
+
     {
         // NOTE: here we just create the file and close it immediately, so that it will
         // have a size of zero. Then, we will resize it to the necessary size.
@@ -84,6 +128,8 @@ void create_sized_file(const boost::filesystem::path &path, std::size_t size)
 
     // Resize it.
     boost::filesystem::resize_file(path, boost::numeric_cast<boost::uintmax_t>(size));
+
+#endif
 }
 
 // Mark the file at the input path as read-only.
