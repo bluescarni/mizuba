@@ -49,8 +49,25 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
 
-    // NOTE: we will be processing conjunction steps in chunks because... TODO
-    constexpr std::size_t cd_chunk_size = 128;
+    // NOTE: we will be processing conjunction steps in chunks because we want the writer thread to make steady
+    // progress.
+    //
+    // If we don't do the chunking, what happens is that TBB starts immediately processing conjunction steps throughout
+    // the *entire* range, whereas the writer thread must proceed strictly sequentially. We thus end up in a
+    // situation in which a lot of file writing happens at the very end while not overlapping with the
+    // computation, and memory usage is high because we have to keep around for long unwritten data.
+    //
+    // With chunking, the writer thread can fully process chunk N while chunk N+1 is computing.
+    //
+    // NOTE: there are tradeoffs in selecting the chunk size. If it is too large, we are negating the benefits
+    // of chunking wrt computation/transfer overlap and memory usage. If it is too small, we are limiting
+    // parallel speedup. The current value is based on preliminary performance evaluation with the full LEO
+    // catalog, but I am not sure if this can be made more robust/general. In general, the "optimal" chunking
+    // will depend on several factors.
+    //
+    // NOTE: I am also not sure whether or not it is possible to achieve the same result more elegantly
+    // with some TBB partitioner/range wizardry.
+    const std::size_t cd_chunk_size = 128;
 
     // NOTE: narrow-phase conjunction detection requires JIT compilation
     // of several functions.
@@ -254,7 +271,12 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     });
 
     try {
-        // TODO comment on this.
+        // NOTE: this is thread-local data specific to a conjunction step. We will use these buffers
+        // to temporarily store the results of the various stages of conjunction detection, before
+        // eventually sending the data to the writer thread for permanent storage on disk.
+        //
+        // The aabbs, mcodes and vidx buffers are all pre-created with the required size, which is known.
+        // The bvh buffers are created empty and reset and resized as needed at every conjunction step.
         struct ets_data {
             // aabbs.
             std::vector<float> aabbs;
