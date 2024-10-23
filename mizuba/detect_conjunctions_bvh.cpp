@@ -99,7 +99,7 @@ int first_diff_bit(T n1, T n2)
 
 // Helper to run several consistency check on a bvh tree.
 //
-// srt_mcodes is the list of sorted mcodes, bvh_treee the tree we are checking, aux_data the per-node
+// srt_mcodes is the list of sorted mcodes, bvh_tree the tree we are checking, aux_data the per-node
 // auxiliary data, cd_srt_aabbs_span the list of sorted aabbs for all collisional timesteps.
 void verify_bvh_tree(const auto &srt_mcodes, const auto &bvh_tree, const auto &aux_data, auto cd_srt_aabbs_span,
                      auto nobjs)

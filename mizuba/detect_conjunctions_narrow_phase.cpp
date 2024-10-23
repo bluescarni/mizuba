@@ -13,13 +13,18 @@
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <tuple>
 #include <vector>
 
 #include <boost/numeric/conversion/cast.hpp>
+#include <boost/safe_numerics/safe_integer.hpp>
 
 #include <fmt/core.h>
 
 #include <oneapi/tbb/blocked_range.h>
+#include <oneapi/tbb/cache_aligned_allocator.h>
+#include <oneapi/tbb/concurrent_vector.h>
+#include <oneapi/tbb/enumerable_thread_specific.h>
 #include <oneapi/tbb/parallel_for.h>
 #include <oneapi/tbb/parallel_sort.h>
 
@@ -33,14 +38,9 @@ namespace mizuba
 {
 
 std::vector<conjunctions::conj> conjunctions::detect_conjunctions_narrow_phase(
-    std::vector<np_data> &cd_npd_vec, std::size_t cd_idx, const polyjectory &pj,
-    const std::vector<small_vec<aabb_collision>> &cd_bp_collisions, const detail::conj_jit_data &cjd,
-    double conj_thresh, double conj_det_interval, std::size_t n_cd_steps)
+    std::size_t cd_idx, const polyjectory &pj, const std::vector<aabb_collision> &cd_bp_collisions,
+    const detail::conj_jit_data &cjd, double conj_thresh, double conj_det_interval, std::size_t n_cd_steps)
 {
-    // Fetch the number of objects.
-    const auto nobjs = static_cast<std::size_t>(cd_npd_vec.size());
-    assert(cd_bp_collisions.size() == nobjs);
-
     // Fetch the compiled functions.
     auto *pta_cfunc = cjd.pta_cfunc;
     auto *pssdiff3_cfunc = cjd.pssdiff3_cfunc;
@@ -59,16 +59,71 @@ std::vector<conjunctions::conj> conjunctions::detect_conjunctions_narrow_phase(
     // Fetch the begin/end times for the current conjunction step.
     const auto [cd_begin, cd_end] = get_cd_begin_end(pj.get_maxT(), cd_idx, conj_det_interval, n_cd_steps);
 
-    // Iterate over all objects, checking if the detected aabbs collisions for each object
-    // correspond to conjunctions.
-    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, nobjs), [cd_begin, cd_end, &cd_npd_vec,
-                                                                                  &cd_bp_collisions, &pj, pta_cfunc,
-                                                                                  pssdiff3_cfunc, fex_check, rtscc, pt1,
-                                                                                  order,
-                                                                                  conj_thresh2](const auto &obj_range) {
-        for (auto obj_idx = obj_range.begin(); obj_idx != obj_range.end(); ++obj_idx) {
-            // Fetch the narrow-phase data for the current object.
-            auto &[local_conj_vec, r_iso_cache, wlist, isol, pbuffers, diff_input, tmp_conj_vec] = cd_npd_vec[obj_idx];
+    // Initialise the concurrent vector to store the results of
+    // narrow-phase conjunction detection for this conjunction step.
+    oneapi::tbb::concurrent_vector<conj> c_conj_vector;
+
+    // We will be using thread-specific data to store temporary results during narrow-phase
+    // conjunction detection.
+    struct ets_data {
+        // Local vector of detected conjunctions.
+        std::vector<conj> conj_vec;
+        // Polynomial cache for use during real root isolation.
+        // NOTE: it is *really* important that this is declared
+        // *before* wlist, because wlist will contain references
+        // to and interact with r_iso_cache during destruction,
+        // and we must be sure that wlist is destroyed *before*
+        // r_iso_cache.
+        detail::poly_cache r_iso_cache;
+        // The working list.
+        detail::wlist_t wlist;
+        // The list of isolating intervals.
+        detail::isol_t isol;
+        // Buffers used as temporary storage for the results
+        // of operations on polynomials.
+        // NOTE: if we restructure the code to use JIT more,
+        // we should probably re-implement this as a flat
+        // 1D buffer rather than a collection of vectors.
+        std::array<std::vector<double>, 14> pbuffers;
+        // Vector to store the input for the cfunc used to compute
+        // the distance square polynomial.
+        std::vector<double> diff_input;
+        // The vector into which detected conjunctions are
+        // temporarily written during polynomial root finding.
+        // The tuple contains:
+        // - the indices of the 2 objects,
+        // - the time coordinate of the conjunction (relative
+        //   to the time interval in which root finding is performed,
+        //   i.e., **NOT** the absolute time in the polyjectory).
+        std::vector<std::tuple<std::uint32_t, std::uint32_t, double>> tmp_conj_vec;
+    };
+    using ets_t = oneapi::tbb::enumerable_thread_specific<ets_data, oneapi::tbb::cache_aligned_allocator<ets_data>,
+                                                          oneapi::tbb::ets_key_usage_type::ets_key_per_instance>;
+    ets_t ets([order]() {
+        ets_data retval;
+
+        // Prepare pbuffers.
+        for (auto &v : retval.pbuffers) {
+            v.resize(boost::numeric_cast<decltype(v.size())>(order + 1u));
+        }
+
+        // Prepare diff_input.
+        using safe_size_t = boost::safe_numerics::safe<decltype(retval.diff_input.size())>;
+        retval.diff_input.resize((order + 1u) * safe_size_t(6));
+
+        return retval;
+    });
+
+    // Iterate over the detected aabbs collisions for this conjunction step.
+    oneapi::tbb::parallel_for(
+        oneapi::tbb::blocked_range<decltype(cd_bp_collisions.size())>(0, cd_bp_collisions.size()),
+        [&ets, cd_begin, cd_end, &cd_bp_collisions, &pj, pta_cfunc, pssdiff3_cfunc, fex_check, rtscc, pt1, order,
+         conj_thresh2, &c_conj_vector](const auto &bp_range) {
+            // Fetch the thread-local data.
+            // NOTE: no need to isolate here, as we are not
+            // invoking any other TBB primitive from within this
+            // scope.
+            auto &[local_conj_vec, r_iso_cache, wlist, isol, pbuffers, diff_input, tmp_conj_vec] = ets.local();
             auto &[xi_temp, yi_temp, zi_temp, xj_temp, yj_temp, zj_temp, ts_diff, ts_diff_der, vxi_temp, vyi_temp,
                    vzi_temp, vxj_temp, vyj_temp, vzj_temp]
                 = pbuffers;
@@ -76,8 +131,8 @@ std::vector<conjunctions::conj> conjunctions::detect_conjunctions_narrow_phase(
             // Prepare the local conjunction vector.
             local_conj_vec.clear();
 
-            // Iterate over all the detected aabbs collisions for this object.
-            for (const auto [i, j] : cd_bp_collisions[obj_idx]) {
+            for (auto bp_idx = bp_range.begin(); bp_idx != bp_range.end(); ++bp_idx) {
+                const auto [i, j] = cd_bp_collisions[bp_idx];
                 assert(i < j);
 
                 // Fetch the trajectory data for i and j.
@@ -358,16 +413,15 @@ std::vector<conjunctions::conj> conjunctions::detect_conjunctions_narrow_phase(
 
                 assert(loop_entered);
             }
-        }
-    });
 
-    // Consolidate the detected aabbs collisions into the return value.
-    std::vector<conj> ret;
-    for (const auto &npd : cd_npd_vec) {
-        ret.insert(ret.end(), npd.conj_vec.begin(), npd.conj_vec.end());
-    }
+            // Merge local_conj_vec into c_conj_vector.
+            c_conj_vector.grow_by(local_conj_vec.begin(), local_conj_vec.end());
+        });
 
-    // Sort ret.
+    // Init the return value.
+    std::vector ret(c_conj_vector.begin(), c_conj_vector.end());
+
+    // Sort it according to tca.
     oneapi::tbb::parallel_sort(ret.begin(), ret.end(), [](const auto &c1, const auto &c2) { return c1.tca < c2.tca; });
 
     return ret;

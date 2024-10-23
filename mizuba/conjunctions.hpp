@@ -23,14 +23,12 @@
 #include <utility>
 #include <vector>
 
-#include <boost/container/small_vector.hpp>
 #include <boost/filesystem/path.hpp>
 #include <boost/numeric/conversion/cast.hpp>
 
 #include <heyoka/mdspan.hpp>
 
 #include "detail/conjunctions_jit.hpp"
-#include "detail/poly_utils.hpp"
 #include "polyjectory.hpp"
 
 namespace mizuba
@@ -141,44 +139,6 @@ private:
         std::uint32_t ps;
     };
 
-    // Handy alias for boost's small vector.
-    template <typename T>
-    using small_vec = boost::container::small_vector<T, 1>;
-
-    // Bag of per-object data used during narrow-phase conjunction detection.
-    struct np_data {
-        // Local vector of detected conjunctions.
-        small_vec<conj> conj_vec;
-        // Polynomial cache for use during real root isolation.
-        // NOTE: it is *really* important that this is declared
-        // *before* wlist, because wlist will contain references
-        // to and interact with r_iso_cache during destruction,
-        // and we must be sure that wlist is destroyed *before*
-        // r_iso_cache.
-        detail::poly_cache r_iso_cache;
-        // The working list.
-        detail::wlist_t wlist;
-        // The list of isolating intervals.
-        detail::isol_t isol;
-        // Buffers used as temporary storage for the results
-        // of operations on polynomials.
-        // NOTE: if we restructure the code to use JIT more,
-        // we should probably re-implement this as a flat
-        // 1D buffer rather than a collection of vectors.
-        std::array<std::vector<double>, 14> pbuffers;
-        // Vector to store the input for the cfunc used to compute
-        // the distance square polynomial.
-        std::vector<double> diff_input;
-        // The vector into which detected conjunctions are
-        // temporarily written during polynomial root finding.
-        // The tuple contains:
-        // - the indices of the 2 objects,
-        // - the time coordinate of the conjunction (relative
-        //   to the time interval in which root finding is performed,
-        //   i.e., **NOT** the absolute time in the polyjectory).
-        std::vector<std::tuple<std::uint32_t, std::uint32_t, double>> tmp_conj_vec;
-    };
-
     // Private ctor.
     struct ptag {
     };
@@ -224,11 +184,10 @@ private:
                                         std::vector<bvh_level_data> &, const std::vector<float> &,
                                         const std::vector<std::uint64_t> &);
     static std::vector<aabb_collision>
-    detect_conjunctions_broad_phase(std::vector<small_vec<aabb_collision>> &, std::vector<std::vector<std::int32_t>> &,
-                                    const std::vector<bvh_node> &, const std::vector<std::uint32_t> &,
+    detect_conjunctions_broad_phase(const std::vector<bvh_node> &, const std::vector<std::uint32_t> &,
                                     const std::vector<bool> &, const std::vector<float> &, const std::vector<float> &);
-    static std::vector<conj> detect_conjunctions_narrow_phase(std::vector<np_data> &, std::size_t, const polyjectory &,
-                                                              const std::vector<small_vec<aabb_collision>> &,
+    static std::vector<conj> detect_conjunctions_narrow_phase(std::size_t, const polyjectory &,
+                                                              const std::vector<aabb_collision> &,
                                                               const detail::conj_jit_data &, double, double,
                                                               std::size_t);
 

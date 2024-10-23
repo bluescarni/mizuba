@@ -15,6 +15,9 @@
 #include <vector>
 
 #include <oneapi/tbb/blocked_range.h>
+#include <oneapi/tbb/cache_aligned_allocator.h>
+#include <oneapi/tbb/concurrent_vector.h>
+#include <oneapi/tbb/enumerable_thread_specific.h>
 #include <oneapi/tbb/parallel_for.h>
 #include <oneapi/tbb/parallel_sort.h>
 
@@ -130,7 +133,6 @@ void verify_broad_phase(auto nobjs, const auto &bp_cv, auto aabbs, const auto &c
 
 // Detect aabbs collisions within a conjunction step.
 std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broad_phase(
-    std::vector<small_vec<aabb_collision>> &bp_collisions, std::vector<std::vector<std::int32_t>> &bp_stacks,
     const std::vector<bvh_node> &tree, const std::vector<std::uint32_t> &cd_vidx, const std::vector<bool> &conj_active,
     const std::vector<float> &cd_srt_aabbs,
     // NOTE: this is used only in debug mode.
@@ -138,8 +140,6 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
 {
     // Cache the total number of objects.
     const auto tot_nobjs = static_cast<std::size_t>(conj_active.size());
-    assert(bp_collisions.size() == tot_nobjs);
-    assert(bp_stacks.size() == tot_nobjs);
     assert(cd_vidx.size() == tot_nobjs);
 
     // Create a const span into cd_srt_aabbs.
@@ -153,29 +153,49 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
 
 #endif
 
-    // Fetch the number of objects with trajectory data for the current
-    // conjunction step. This can be determined from the number of objects
-    // in the root node of the tree.
+    // Initialise the concurrent vector to store the result of
+    // broad-phase conjunction detection for this conjunction step.
+    oneapi::tbb::concurrent_vector<aabb_collision> c_bp_coll_vector;
+
+    // We will be performing broad-phase conjunction detection only for objects
+    // with trajectory data for the current conjunction step. These objects
+    // are sorted first into the morton order, and their total number can be
+    // determined from the number of objects in the root node of the tree.
     assert(tree.size() > 0u);
     const auto nobjs = tree[0].end - tree[0].begin;
     assert(nobjs <= tot_nobjs);
+
+    // We will be using thread-specific data to store temporary results during broad-phase
+    // conjunction detection.
+    struct ets_data {
+        // Local list of detected AABBs collisions.
+        std::vector<aabb_collision> bp;
+        // Local stack for the BVH tree traversal.
+        std::vector<std::int32_t> stack;
+    };
+    using ets_t = oneapi::tbb::enumerable_thread_specific<ets_data, oneapi::tbb::cache_aligned_allocator<ets_data>,
+                                                          oneapi::tbb::ets_key_usage_type::ets_key_per_instance>;
+    ets_t ets([]() { return ets_data{}; });
 
     // For each object with trajectory data for this conjunction step,
     // identify collisions between its aabb and the aabbs of the other objects.
     oneapi::tbb::parallel_for(
         oneapi::tbb::blocked_range<std::uint32_t>(0, nobjs),
-        [&bp_collisions, &bp_stacks, &cd_vidx, &conj_active, cd_srt_aabbs_span, &tree](const auto &obj_range) {
+        [&cd_vidx, &conj_active, cd_srt_aabbs_span, &tree, &c_bp_coll_vector, &ets](const auto &obj_range) {
+            // Fetch the thread-local data.
+            // NOTE: no need to isolate here, as we are not
+            // invoking any other TBB primitive from within this
+            // scope.
+            auto &[rng_bp_coll_vec, stack] = ets.local();
+
+            // Clear the local list of aabbs collisions.
+            // NOTE: the stack will be cleared at the beginning
+            // of the traversal for each object.
+            rng_bp_coll_vec.clear();
+
             // NOTE: the object indices in this for loop refer
             // to the Morton-ordered data.
             for (auto obj_idx = obj_range.begin(); obj_idx != obj_range.end(); ++obj_idx) {
-                // Fetch and clear the list of aabbs collisions for this object.
-                auto &local_bp = bp_collisions[obj_idx];
-                local_bp.clear();
-
-                // Fetch and clear the tree traversal stack for this object.
-                auto &stack = bp_stacks[obj_idx];
-                stack.clear();
-
                 // Load the original object index.
                 const auto orig_obj_idx = cd_vidx[obj_idx];
 
@@ -183,7 +203,8 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
                 // detection.
                 const bool obj_is_active = conj_active[orig_obj_idx];
 
-                // Add the root node to the tree traversal stack.
+                // Reset the stack, and add the root node to it.
+                stack.clear();
                 stack.push_back(0);
 
                 // Cache the AABB of the current object.
@@ -247,7 +268,7 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
                                 const auto conj_active_i = conj_active[orig_i];
 
                                 if (obj_is_active || conj_active_i) {
-                                    local_bp.emplace_back(orig_obj_idx, orig_i);
+                                    rng_bp_coll_vec.emplace_back(orig_obj_idx, orig_i);
                                 }
                             }
                         } else {
@@ -259,15 +280,15 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
                     }
                 } while (!stack.empty());
             }
+
+            // Atomically merge rng_bp_coll_vec into c_bp_coll_vector.
+            c_bp_coll_vector.grow_by(rng_bp_coll_vec.begin(), rng_bp_coll_vec.end());
         });
 
-    // Consolidate the detected aabbs collisions into the return value.
-    std::vector<aabb_collision> ret;
-    for (const auto &obj_coll : bp_collisions) {
-        ret.insert(ret.end(), obj_coll.begin(), obj_coll.end());
-    }
+    // Build the return value from c_bp_coll_vector.
+    std::vector ret(c_bp_coll_vector.begin(), c_bp_coll_vector.end());
 
-    // Sort ret.
+    // Sort it.
     oneapi::tbb::parallel_sort(ret.begin(), ret.end());
 
 #if !defined(NDEBUG)

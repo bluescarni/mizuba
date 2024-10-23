@@ -52,13 +52,10 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     // NOTE: we will be processing conjunction steps in chunks because... TODO
     constexpr std::size_t cd_chunk_size = 128;
 
-    // Cache the polynomial order.
-    const auto order = pj.get_poly_order();
-
     // NOTE: narrow-phase conjunction detection requires JIT compilation
     // of several functions.
     stopwatch sw;
-    const auto &cjd = detail::get_conj_jit_data(order);
+    const auto &cjd = detail::get_conj_jit_data(pj.get_poly_order());
     log_trace("JIT compilation time: {}s", sw);
 
     // Cache the total number of objects.
@@ -275,20 +272,12 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
             // NOTE: the size of this vector will be kept
             // in sync with the size of tree.
             std::vector<bvh_aux_node_data> bvh_aux_data;
-            // Data used in the level-by-level construction of the treee.
+            // Data used in the level-by-level construction of the tree.
             std::vector<bvh_level_data> bvh_l_buffer;
-            // Local lists of detected broad-phase AABBs collisions,
-            // one for each object.
-            std::vector<small_vec<aabb_collision>> bp_collisions;
-            // Local stacks for the BVH tree traversal during broad-phase
-            // conjunction detection, one for each object.
-            std::vector<std::vector<std::int32_t>> bp_stacks;
-            // Narrow-phase per-object conjunction detection data.
-            std::vector<np_data> npd_vec;
         };
         using ets_t = oneapi::tbb::enumerable_thread_specific<ets_data, oneapi::tbb::cache_aligned_allocator<ets_data>,
                                                               oneapi::tbb::ets_key_usage_type::ets_key_per_instance>;
-        ets_t ets([nobjs, order]() {
+        ets_t ets([nobjs]() {
             // Setup aabbs.
             std::vector<float> aabbs;
             aabbs.resize(boost::numeric_cast<decltype(aabbs.size())>((nobjs + 1u) * 8u));
@@ -309,28 +298,6 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
             std::vector<std::uint64_t> srt_mcodes;
             srt_mcodes.resize(boost::numeric_cast<decltype(srt_mcodes.size())>(nobjs));
 
-            // Setup bp_collisions.
-            std::vector<small_vec<aabb_collision>> bp_collisions;
-            bp_collisions.resize(boost::numeric_cast<decltype(bp_collisions.size())>(nobjs));
-
-            // Setup bp_stacks.
-            std::vector<std::vector<std::int32_t>> bp_stacks;
-            bp_stacks.resize(boost::numeric_cast<decltype(bp_stacks.size())>(nobjs));
-
-            // Create npd_vec and set it up.
-            std::vector<np_data> npd_vec;
-            npd_vec.resize(boost::numeric_cast<decltype(npd_vec.size())>(nobjs));
-
-            for (auto &npd : npd_vec) {
-                // Prepare pbuffers.
-                for (auto &v : npd.pbuffers) {
-                    v.resize(boost::numeric_cast<decltype(v.size())>(order + 1u));
-                }
-
-                // Prepare diff_input.
-                npd.diff_input.resize((order + 1u) * safe_size_t(6));
-            }
-
             return ets_data{.aabbs = std::move(aabbs),
                             .mcodes = std::move(mcodes),
                             .vidx = std::move(vidx),
@@ -341,10 +308,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                             // resized approriately as needed.
                             .bvh_tree = {},
                             .bvh_aux_data = {},
-                            .bvh_l_buffer = {},
-                            .bp_collisions = std::move(bp_collisions),
-                            .bp_stacks = std::move(bp_stacks),
-                            .npd_vec = std::move(npd_vec)};
+                            .bvh_l_buffer = {}};
         });
 
         // Iterate in chunks over the conjunction steps.
@@ -359,7 +323,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                  &promises](const auto &cd_range) {
                     // Fetch the thread-local data.
                     auto &[cd_aabbs, cd_mcodes, cd_vidx, cd_srt_aabbs, cd_srt_mcodes, cd_bvh_tree, cd_bvh_aux_data,
-                           cd_bvh_l_buffer, cd_bp_collisions, cd_bp_stacks, cd_npd_vec]
+                           cd_bvh_l_buffer]
                         = ets.local();
 
                     // NOTE: isolate to avoid issues with thread-local data. See:
@@ -367,8 +331,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                     oneapi::tbb::this_task_arena::isolate([&cd_range, &cd_aabbs, &pj, conj_thresh, conj_det_interval,
                                                            n_cd_steps, &cd_end_times, &cd_mcodes, &cd_vidx,
                                                            &cd_srt_aabbs, &cd_srt_mcodes, &cd_bvh_tree,
-                                                           &cd_bvh_aux_data, &cd_bvh_l_buffer, &cd_bp_collisions,
-                                                           &cd_bp_stacks, &conj_active, &cd_npd_vec, &cjd,
+                                                           &cd_bvh_aux_data, &cd_bvh_l_buffer, &conj_active, &cjd,
                                                            &promises]() {
                         for (auto cd_idx = cd_range.begin(); cd_idx != cd_range.end(); ++cd_idx) {
                             // Compute the aabbs for all objects and store them in cd_aabbs.
@@ -386,13 +349,12 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                                                     cd_srt_mcodes);
 
                             // Detect aabbs collisions.
-                            auto bp_coll
-                                = detect_conjunctions_broad_phase(cd_bp_collisions, cd_bp_stacks, cd_bvh_tree, cd_vidx,
-                                                                  conj_active, cd_srt_aabbs, cd_aabbs);
+                            auto bp_coll = detect_conjunctions_broad_phase(cd_bvh_tree, cd_vidx, conj_active,
+                                                                           cd_srt_aabbs, cd_aabbs);
 
                             // Detect conjunctions.
-                            auto conjs = detect_conjunctions_narrow_phase(cd_npd_vec, cd_idx, pj, cd_bp_collisions, cjd,
-                                                                          conj_thresh, conj_det_interval, n_cd_steps);
+                            auto conjs = detect_conjunctions_narrow_phase(cd_idx, pj, bp_coll, cjd, conj_thresh,
+                                                                          conj_det_interval, n_cd_steps);
 
                             // Prepare the value for the future.
                             f_output fval{.aabbs = cd_aabbs,
