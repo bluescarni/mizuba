@@ -132,6 +132,13 @@ void verify_broad_phase(auto nobjs, const auto &bp_cv, auto aabbs, const auto &c
 } // namespace detail
 
 // Detect aabbs collisions within a conjunction step.
+//
+// tree is the bvh tree, cd_vidx is the sorted indexing over the objects
+// according to their morton codes, conj_active contains the active/inactive
+// flags for all objects (in the original order), cd_srt_aabbs contains the
+// morton-sorted aabbs, cd_aabbs contains the aabbs in the original order.
+//
+// The return value is the list of detect aabbs collisions.
 std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broad_phase(
     const std::vector<bvh_node> &tree, const std::vector<std::uint32_t> &cd_vidx, const std::vector<bool> &conj_active,
     const std::vector<float> &cd_srt_aabbs,

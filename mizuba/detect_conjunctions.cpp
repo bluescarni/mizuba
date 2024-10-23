@@ -336,9 +336,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                                                       cd_end_times);
 
                             // Compute the morton codes for all objects and sort the aabbs data according to
-                            // the morton codes. The morton codes will be written to cd_mcodes, the object
-                            // ordering will be written to cd_vidx, the sorted aabbs will be written to cd_srt_aabbs,
-                            // the sorted morton codes will be written to cd_srt_mcodes.
+                            // the morton codes.
                             detect_conjunctions_morton(cd_mcodes, cd_vidx, cd_srt_aabbs, cd_srt_mcodes, cd_aabbs, pj);
 
                             // Construct the bvh tree, which will be written to cd_bvh_tree.

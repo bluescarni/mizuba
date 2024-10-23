@@ -37,6 +37,14 @@
 namespace mizuba
 {
 
+// Narrow-phase conjunction detection.
+//
+// cd_idx is the index of the current conjunction step, pj the polyjectory, cd_bp_collisions
+// the list of aabbs collisions detected in the broad phase, cjd the JIT-compiled data,
+// conj_thresh the conjunction threshold, conj_det_interval the conjunction detection
+// interval, n_cd_steps the total number of conjunction steps.
+//
+// The return value is the list of detect conjunctions.
 std::vector<conjunctions::conj> conjunctions::detect_conjunctions_narrow_phase(
     std::size_t cd_idx, const polyjectory &pj, const std::vector<aabb_collision> &cd_bp_collisions,
     const detail::conj_jit_data &cjd, double conj_thresh, double conj_det_interval, std::size_t n_cd_steps)
