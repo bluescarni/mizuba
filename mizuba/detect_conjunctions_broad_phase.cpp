@@ -301,7 +301,7 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
 #if !defined(NDEBUG)
 
     // Verify the outcome of collision detection in debug mode.
-    detail::verify_broad_phase(nobjs, ret, cd_aabbs_span, conj_active);
+    detail::verify_broad_phase(nobjs, bp_coll_vector, cd_aabbs_span, conj_active);
 
 #endif
 
