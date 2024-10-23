@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <stdexcept>
 #include <tuple>
 #include <vector>
@@ -23,7 +24,6 @@
 
 #include <oneapi/tbb/blocked_range.h>
 #include <oneapi/tbb/cache_aligned_allocator.h>
-#include <oneapi/tbb/concurrent_vector.h>
 #include <oneapi/tbb/enumerable_thread_specific.h>
 #include <oneapi/tbb/parallel_for.h>
 #include <oneapi/tbb/parallel_sort.h>
@@ -59,9 +59,17 @@ std::vector<conjunctions::conj> conjunctions::detect_conjunctions_narrow_phase(
     // Fetch the begin/end times for the current conjunction step.
     const auto [cd_begin, cd_end] = get_cd_begin_end(pj.get_maxT(), cd_idx, conj_det_interval, n_cd_steps);
 
-    // Initialise the concurrent vector to store the results of
+    // Initialise the vector to store the results of
     // narrow-phase conjunction detection for this conjunction step.
-    oneapi::tbb::concurrent_vector<conj> c_conj_vector;
+    //
+    // NOTE: we used to use TBB's concurrent_vector here, however:
+    //
+    // https://github.com/oneapi-src/oneTBB/issues/1531
+    //
+    // Perhaps we can consider re-enabling it once fixed, but on the
+    // other hand the mutex approach seems to perform well enough.
+    std::vector<conj> conj_vector;
+    std::mutex conj_vector_mutex;
 
     // We will be using thread-specific data to store temporary results during narrow-phase
     // conjunction detection.
@@ -118,7 +126,7 @@ std::vector<conjunctions::conj> conjunctions::detect_conjunctions_narrow_phase(
     oneapi::tbb::parallel_for(
         oneapi::tbb::blocked_range<decltype(cd_bp_collisions.size())>(0, cd_bp_collisions.size()),
         [&ets, cd_begin, cd_end, &cd_bp_collisions, &pj, pta_cfunc, pssdiff3_cfunc, fex_check, rtscc, pt1, order,
-         conj_thresh2, &c_conj_vector](const auto &bp_range) {
+         conj_thresh2, &conj_vector, &conj_vector_mutex](const auto &bp_range) {
             // Fetch the thread-local data.
             // NOTE: no need to isolate here, as we are not
             // invoking any other TBB primitive from within this
@@ -414,17 +422,16 @@ std::vector<conjunctions::conj> conjunctions::detect_conjunctions_narrow_phase(
                 assert(loop_entered);
             }
 
-            // Merge local_conj_vec into c_conj_vector.
-            c_conj_vector.grow_by(local_conj_vec.begin(), local_conj_vec.end());
+            // Atomically merge local_conj_vec into conj_vector.
+            std::lock_guard lock(conj_vector_mutex);
+            conj_vector.insert(conj_vector.end(), local_conj_vec.begin(), local_conj_vec.end());
         });
 
-    // Init the return value.
-    std::vector ret(c_conj_vector.begin(), c_conj_vector.end());
+    // Sort conj_vector according to tca.
+    oneapi::tbb::parallel_sort(conj_vector.begin(), conj_vector.end(),
+                               [](const auto &c1, const auto &c2) { return c1.tca < c2.tca; });
 
-    // Sort it according to tca.
-    oneapi::tbb::parallel_sort(ret.begin(), ret.end(), [](const auto &c1, const auto &c2) { return c1.tca < c2.tca; });
-
-    return ret;
+    return conj_vector;
 }
 
 } // namespace mizuba

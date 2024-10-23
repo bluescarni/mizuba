@@ -10,13 +10,13 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <set>
 #include <span>
 #include <vector>
 
 #include <oneapi/tbb/blocked_range.h>
 #include <oneapi/tbb/cache_aligned_allocator.h>
-#include <oneapi/tbb/concurrent_vector.h>
 #include <oneapi/tbb/enumerable_thread_specific.h>
 #include <oneapi/tbb/parallel_for.h>
 #include <oneapi/tbb/parallel_sort.h>
@@ -153,9 +153,17 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
 
 #endif
 
-    // Initialise the concurrent vector to store the results of
+    // Initialise the vector to store the results of
     // broad-phase conjunction detection for this conjunction step.
-    oneapi::tbb::concurrent_vector<aabb_collision> c_bp_coll_vector;
+    //
+    // NOTE: we used to use TBB's concurrent_vector here, however:
+    //
+    // https://github.com/oneapi-src/oneTBB/issues/1531
+    //
+    // Perhaps we can consider re-enabling it once fixed, but on the
+    // other hand the mutex approach seems to perform well enough.
+    std::vector<aabb_collision> bp_coll_vector;
+    std::mutex bp_coll_vector_mutex;
 
     // We will be performing broad-phase conjunction detection only for objects
     // with trajectory data for the current conjunction step. These objects
@@ -181,7 +189,8 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
     // identify collisions between its aabb and the aabbs of the other objects.
     oneapi::tbb::parallel_for(
         oneapi::tbb::blocked_range<std::uint32_t>(0, nobjs),
-        [&cd_vidx, &conj_active, cd_srt_aabbs_span, &tree, &c_bp_coll_vector, &ets](const auto &obj_range) {
+        [&cd_vidx, &conj_active, cd_srt_aabbs_span, &tree, &bp_coll_vector, &bp_coll_vector_mutex,
+         &ets](const auto &obj_range) {
             // Fetch the thread-local data.
             // NOTE: no need to isolate here, as we are not
             // invoking any other TBB primitive from within this
@@ -281,15 +290,13 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
                 } while (!stack.empty());
             }
 
-            // Atomically merge rng_bp_coll_vec into c_bp_coll_vector.
-            c_bp_coll_vector.grow_by(rng_bp_coll_vec.begin(), rng_bp_coll_vec.end());
+            // Atomically merge rng_bp_coll_vec into bp_coll_vector.
+            std::lock_guard lock(bp_coll_vector_mutex);
+            bp_coll_vector.insert(bp_coll_vector.end(), rng_bp_coll_vec.begin(), rng_bp_coll_vec.end());
         });
 
-    // Build the return value from c_bp_coll_vector.
-    std::vector ret(c_bp_coll_vector.begin(), c_bp_coll_vector.end());
-
-    // Sort it.
-    oneapi::tbb::parallel_sort(ret.begin(), ret.end());
+    // Sort bp_coll_vector.
+    oneapi::tbb::parallel_sort(bp_coll_vector.begin(), bp_coll_vector.end());
 
 #if !defined(NDEBUG)
 
@@ -298,7 +305,7 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
 
 #endif
 
-    return ret;
+    return bp_coll_vector;
 }
 
 } // namespace mizuba
