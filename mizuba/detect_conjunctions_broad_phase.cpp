@@ -153,7 +153,7 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
 
 #endif
 
-    // Initialise the concurrent vector to store the result of
+    // Initialise the concurrent vector to store the results of
     // broad-phase conjunction detection for this conjunction step.
     oneapi::tbb::concurrent_vector<aabb_collision> c_bp_coll_vector;
 
