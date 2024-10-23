@@ -163,17 +163,9 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
 
     // Bag of results which will be outputted each time a conjunction step has finished
     // processing. This data is stored in futures and written sequentially to disk by the writer thread.
+    // NOTE: this data has to be written sequentially because we cannot compute the required
+    // size in advance.
     struct f_output {
-        // aabbs.
-        std::vector<float> aabbs;
-        // Morton codes.
-        std::vector<std::uint64_t> mcodes;
-        // Indices vector.
-        std::vector<std::uint32_t> vidx;
-        // Sorted aabbs.
-        std::vector<float> srt_aabbs;
-        // Sorted morton codes.
-        std::vector<std::uint64_t> srt_mcodes;
         // BVH tree.
         std::vector<bvh_node> bvh_tree;
         // aabbs collisions.
@@ -192,10 +184,8 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     std::atomic<bool> stop_writing = false;
 
     // Launch the writer thread.
-    auto writer_future = std::async(std::launch::async, [nobjs, n_cd_steps, &futures, &stop_writing, &aabbs_file,
-                                                         &mcodes_file, &vidx_file, &srt_aabbs_file, &srt_mcodes_file,
-                                                         &bvh_file, &tree_offsets, &bp_file, &bp_offsets, &conj_file,
-                                                         &tot_n_conj]() {
+    auto writer_future = std::async(std::launch::async, [n_cd_steps, &futures, &stop_writing, &bvh_file, &tree_offsets,
+                                                         &bp_file, &bp_offsets, &conj_file, &tot_n_conj]() {
         using namespace std::chrono_literals;
 
         // How long should we wait before checking if we should stop writing.
@@ -218,23 +208,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
             }
 
             // Fetch the data from the future.
-            auto [aabbs, mcodes, vidx, srt_aabbs, srt_mcodes, bvh_tree, bp, conjs] = fut.get();
-
-            // Write the aabbs.
-            aabbs_file.pwrite(aabbs.data(), (nobjs + 1u) * 8u * sizeof(float), i * (nobjs + 1u) * 8u * sizeof(float));
-
-            // Write the mcodes.
-            mcodes_file.pwrite(mcodes.data(), nobjs * sizeof(std::uint64_t), i * nobjs * sizeof(std::uint64_t));
-
-            // Write the indices.
-            vidx_file.pwrite(vidx.data(), nobjs * sizeof(std::uint32_t), i * nobjs * sizeof(std::uint32_t));
-
-            // Write the sorted aabbs.
-            srt_aabbs_file.pwrite(srt_aabbs.data(), (nobjs + 1u) * 8u * sizeof(float),
-                                  i * (nobjs + 1u) * 8u * sizeof(float));
-
-            // Write the sorted mcodes.
-            srt_mcodes_file.pwrite(srt_mcodes.data(), nobjs * sizeof(std::uint64_t), i * nobjs * sizeof(std::uint64_t));
+            auto [bvh_tree, bp, conjs] = fut.get();
 
             // Fetch the tree size.
             const auto tree_size = bvh_tree.size();
@@ -258,7 +232,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
             bp_offsets.emplace_back(cur_bp_offset, boost::numeric_cast<std::size_t>(bp_size));
             cur_bp_offset += bp_size;
 
-            // Fetch the detected conjunctions data  size.
+            // Fetch the detected conjunctions data size.
             const auto conjs_size = conjs.size();
 
             // Write the conjunctions data.
@@ -273,7 +247,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     try {
         // NOTE: this is thread-local data specific to a conjunction step. We will use these buffers
         // to temporarily store the results of the various stages of conjunction detection, before
-        // eventually sending the data to the writer thread for permanent storage on disk.
+        // eventually saving the data to disk.
         //
         // The aabbs, mcodes and vidx buffers are all pre-created with the required size, which is known.
         // The bvh buffers are created empty and reset and resized as needed at every conjunction step.
@@ -341,8 +315,9 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
 
             oneapi::tbb::parallel_for(
                 oneapi::tbb::blocked_range<std::size_t>(start_cd_step_idx, end_cd_step_idx),
-                [&ets, &pj, conj_thresh, conj_det_interval, n_cd_steps, &cd_end_times, &conj_active, &cjd,
-                 &promises](const auto &cd_range) {
+                [&ets, &pj, conj_thresh, conj_det_interval, n_cd_steps, &cd_end_times, &conj_active, &cjd, &promises,
+                 nobjs, &aabbs_file, &mcodes_file, &vidx_file, &srt_aabbs_file,
+                 &srt_mcodes_file](const auto &cd_range) {
                     // Fetch the thread-local data.
                     auto &[cd_aabbs, cd_mcodes, cd_vidx, cd_srt_aabbs, cd_srt_mcodes, cd_bvh_tree, cd_bvh_aux_data,
                            cd_bvh_l_buffer]
@@ -354,7 +329,8 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                                                            n_cd_steps, &cd_end_times, &cd_mcodes, &cd_vidx,
                                                            &cd_srt_aabbs, &cd_srt_mcodes, &cd_bvh_tree,
                                                            &cd_bvh_aux_data, &cd_bvh_l_buffer, &conj_active, &cjd,
-                                                           &promises]() {
+                                                           &promises, nobjs, &aabbs_file, &mcodes_file, &vidx_file,
+                                                           &srt_aabbs_file, &srt_mcodes_file]() {
                         for (auto cd_idx = cd_range.begin(); cd_idx != cd_range.end(); ++cd_idx) {
                             // Compute the aabbs for all objects and store them in cd_aabbs.
                             detect_conjunctions_aabbs(cd_idx, cd_aabbs, pj, conj_thresh, conj_det_interval, n_cd_steps,
@@ -379,21 +355,39 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                                                                           conj_det_interval, n_cd_steps);
 
                             // Prepare the value for the future.
-                            f_output fval{.aabbs = cd_aabbs,
-                                          .mcodes = cd_mcodes,
-                                          .vidx = cd_vidx,
-                                          .srt_aabbs = cd_srt_aabbs,
-                                          .srt_mcodes = cd_srt_mcodes,
-                                          .bvh_tree = cd_bvh_tree,
-                                          // NOTE: bp_coll and conjs are created ex-novo
-                                          // and destroyed at each conjunction step, thus we move them in.
-                                          // The other data persists and is re-used across several conjunction
-                                          // steps, thus it is merely copied.
-                                          .bp = std::move(bp_coll),
-                                          .conjunctions = std::move(conjs)};
+                            f_output fval{
+                                // NOTE: moving in the tree here seems to bring a small performance benefit.
+                                // The tree is in any case cleared at the beginning of detect_conjunctions_bvh().
+                                .bvh_tree = std::move(cd_bvh_tree),
+                                // NOTE: bp_coll and conjs are created ex-novo
+                                // and destroyed at each conjunction step, thus we move them in.
+                                // The other data persists and is re-used across several conjunction
+                                // steps, thus it is merely copied.
+                                .bp = std::move(bp_coll),
+                                .conjunctions = std::move(conjs)};
 
                             // Move the data into the future.
                             promises[cd_idx].set_value(std::move(fval));
+
+                            // Write the aabbs.
+                            aabbs_file.pwrite(cd_aabbs.data(), (nobjs + 1u) * 8u * sizeof(float),
+                                              cd_idx * (nobjs + 1u) * 8u * sizeof(float));
+
+                            // Write the mcodes.
+                            mcodes_file.pwrite(cd_mcodes.data(), nobjs * sizeof(std::uint64_t),
+                                               cd_idx * nobjs * sizeof(std::uint64_t));
+
+                            // Write the indices.
+                            vidx_file.pwrite(cd_vidx.data(), nobjs * sizeof(std::uint32_t),
+                                             cd_idx * nobjs * sizeof(std::uint32_t));
+
+                            // Write the sorted aabbs.
+                            srt_aabbs_file.pwrite(cd_srt_aabbs.data(), (nobjs + 1u) * 8u * sizeof(float),
+                                                  cd_idx * (nobjs + 1u) * 8u * sizeof(float));
+
+                            // Write the sorted mcodes.
+                            srt_mcodes_file.pwrite(cd_srt_mcodes.data(), nobjs * sizeof(std::uint64_t),
+                                                   cd_idx * nobjs * sizeof(std::uint64_t));
                         }
                     });
                 });
