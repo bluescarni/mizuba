@@ -306,8 +306,8 @@ void conjunctions::detect_conjunctions_aabbs(std::size_t cd_idx, std::vector<flo
 
     // Write out the global AABB for the current conjunction step to cd_aabbs_span.
     for (auto i = 0u; i < 4u; ++i) {
-        const auto cur_lb = cur_global_lb[i].load(std::memory_order_relaxed);
-        const auto cur_ub = cur_global_ub[i].load(std::memory_order_relaxed);
+        const auto cur_lb = cur_global_lb[i].load();
+        const auto cur_ub = cur_global_ub[i].load();
 
         // NOTE: this is ensured by the safety margins we added when converting
         // the double-precision AABB to single-precision. That is, even if the original

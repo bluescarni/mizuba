@@ -113,7 +113,7 @@ void verify_broad_phase(auto nobjs, const auto &bp_cv, auto aabbs, const auto &c
                     loc_ncoll += overlap;
                 }
 
-                coll_counter.fetch_add(loc_ncoll, std::memory_order::relaxed);
+                coll_counter.fetch_add(loc_ncoll);
             });
         }
     });

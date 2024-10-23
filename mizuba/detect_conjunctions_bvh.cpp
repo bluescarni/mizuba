@@ -472,7 +472,7 @@ void conjunctions::detect_conjunctions_bvh(std::vector<bvh_node> &tree, std::vec
             }
 
             // Update the counter for the total number of leaf nodes in the node range.
-            n_leaf_nodes_atm.fetch_add(loc_n_leaf_nodes, std::memory_order_relaxed);
+            n_leaf_nodes_atm.fetch_add(loc_n_leaf_nodes);
         });
 
         // Load the total number of leaf nodes at the current level
