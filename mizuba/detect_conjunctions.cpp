@@ -69,8 +69,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     // with some TBB partitioner/range wizardry.
     const std::size_t cd_chunk_size = 128;
 
-    // NOTE: narrow-phase conjunction detection requires JIT compilation
-    // of several functions.
+    // Fetch the JIT-compiled conjunction-detection code.
     stopwatch sw;
     const auto &cjd = detail::get_conj_jit_data(pj.get_poly_order());
     log_trace("JIT compilation time: {}s", sw);

@@ -45,8 +45,6 @@ struct conjunctions_impl;
 void close_cj(std::shared_ptr<conjunctions_impl> &) noexcept;
 [[nodiscard]] const std::shared_ptr<conjunctions_impl> &fetch_cj_impl(const conjunctions &) noexcept;
 
-struct conj_jit_data;
-
 } // namespace detail
 
 class conjunctions
