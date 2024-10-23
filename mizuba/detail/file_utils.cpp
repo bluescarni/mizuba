@@ -15,25 +15,29 @@
 #include <limits>
 #include <stdexcept>
 
-#if defined(_WIN32)
-
-#include <windows.h>
-
-#elif __has_include(<unistd.h>)
+// Detect POSIX 2008.
+#if __has_include(<unistd.h>)
 
 #include <unistd.h>
 
 #if defined(_POSIX_VERSION) && _POSIX_VERSION >= 200809L
 
-#define MIZUBA_HAVE_FILE_POSIX_API
-
-#include <fcntl.h>
-
-#else
-
-#error Invalid _POSIX_VERSION detected
+#define MIZUBA_HAVE_POSIX_2008
 
 #endif
+
+#endif
+
+// Detect the availability of Unix-style or Windows-style
+// low-level IO API.
+#if defined(_WIN32)
+
+#include <windows.h>
+
+#elif __has_include(<unistd.h>) && __has_include(<fcntl.h>)
+
+#include <fcntl.h>
+#include <unistd.h>
 
 #else
 
@@ -90,7 +94,7 @@ void create_sized_file(const boost::filesystem::path &path, std::size_t size)
     }
     // LCOV_EXCL_STOP
 
-#if defined(MIZUBA_HAVE_FILE_POSIX_API)
+#if defined(MIZUBA_HAVE_POSIX_2008)
 
     // Create the file.
     const auto fd = ::open(path.c_str(), O_RDWR | O_CREAT, S_IRWXU);
