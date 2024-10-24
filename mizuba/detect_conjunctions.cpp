@@ -399,8 +399,8 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
         // Wait for it to actually stop.
         // NOTE: we use wait() here, because, if the writer thread
         // also threw, get() would throw the exception here. We are
-        // not interested in reporting that, as the exception from the numerical
-        // integration is likely more interesting.
+        // not interested in reporting that, as the exception from the conjunction
+        // detection algorithm is likely more interesting.
         // NOTE: in principle wait() could also raise platform-specific exceptions.
         writer_future.wait();
 
