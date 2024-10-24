@@ -10,6 +10,7 @@
 #define MIZUBA_LOGGING_HPP
 
 #include <chrono>
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -36,7 +37,10 @@ class stopwatch
 public:
     stopwatch();
 
+    // Elapsed time in seconds, represented as double-precision values.
     std::chrono::duration<double> elapsed() const;
+    // Elapsed time in nanoseconds, represented as std::int64_t.
+    std::chrono::duration<std::int64_t, std::nano> elapsed_ns() const;
     void reset();
 };
 

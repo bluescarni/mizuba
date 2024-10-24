@@ -52,11 +52,6 @@ public:
 
     void close() noexcept;
 
-    template <typename T>
-    void pwrite(const T *ptr, std::size_t size, std::size_t offset)
-    {
-        pwrite(static_cast<const void *>(ptr), size, offset);
-    }
     void pwrite(const void *, std::size_t, std::size_t);
 };
 

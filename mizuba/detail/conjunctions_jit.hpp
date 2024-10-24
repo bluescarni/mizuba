@@ -16,6 +16,9 @@
 namespace mizuba::detail
 {
 
+// Struct holding several JIT-compiled functions used throughout
+// the conjunction-detection code. The functions are compiled
+// when an instance of this struct is constructed.
 struct conj_jit_data {
     using pta_cfunc_t = void (*)(double *, const double *, const double *, const double *) noexcept;
     using pssdiff3_cfunc_t = void (*)(double *, const double *, const double *, const double *) noexcept;
@@ -37,6 +40,9 @@ struct conj_jit_data {
     rtscc_t rtscc = nullptr;
     pt1_t pt1 = nullptr;
 };
+
+// Helper to access a cached instance of conj_jit_data.
+const conj_jit_data &get_conj_jit_data(std::uint32_t);
 
 } // namespace mizuba::detail
 

@@ -165,6 +165,8 @@ class conjunctions_test_case(_ut.TestCase):
         self.assertTrue(isinstance(c.bvh_node, np.dtype))
         self.assertTrue(isinstance(c.aabb_collision, np.dtype))
         self.assertTrue(isinstance(c.conj, np.dtype))
+        self.assertEqual(c.conj_thresh, 1.0)
+        self.assertEqual(c.conj_det_interval, 0.1)
 
         # aabbs.
         rc = sys.getrefcount(c)

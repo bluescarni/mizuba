@@ -232,7 +232,7 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
     // Create the sgp4 propagator that we will use to update the sate vector of the ODE
     // integration step by step.
     using prop_t = heyoka::model::sgp4_propagator<double>;
-    const auto tmpl_prop = [&]() {
+    const auto tmpl_prop = [batch_size, sat_data]() {
         // NOTE: in order for the construction to be successful, we need to fetch
         // some sensible TLE data. We choose the TLE data from the first satellite
         // in sat_data, and we splat it out in the batch layout.

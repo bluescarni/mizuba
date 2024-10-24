@@ -8,6 +8,8 @@
 
 #include <cassert>
 #include <cstdint>
+#include <mutex>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -225,5 +227,25 @@ conj_jit_data::conj_jit_data(std::uint32_t order)
 }
 
 conj_jit_data::~conj_jit_data() = default;
+
+namespace
+{
+
+// Mutex for safe access to the global JIT data
+// for conjunction detection.
+constinit std::mutex conj_jit_data_map_mutex;
+
+} // namespace
+
+const conj_jit_data &get_conj_jit_data(std::uint32_t order)
+{
+    static std::unordered_map<std::uint32_t, conj_jit_data> conj_jit_data_map;
+
+    std::lock_guard lock{conj_jit_data_map_mutex};
+
+    const auto [it, new_insertion] = conj_jit_data_map.try_emplace(order, order);
+
+    return it->second;
+}
 
 } // namespace mizuba::detail

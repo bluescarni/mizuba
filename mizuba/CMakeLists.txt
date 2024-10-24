@@ -21,11 +21,12 @@ set(_MIZUBA_CORE_SOURCES
     polyjectory.cpp
     sgp4_polyjectory.cpp
     conjunctions.cpp
-    conjunctions_compute_aabbs.cpp
-    conjunctions_morton.cpp
-    conjunctions_bvh.cpp
-    conjunctions_broad_phase.cpp
-    conjunctions_narrow_phase.cpp
+    detect_conjunctions.cpp
+    detect_conjunctions_aabbs.cpp
+    detect_conjunctions_morton.cpp
+    detect_conjunctions_bvh.cpp
+    detect_conjunctions_broad_phase.cpp
+    detect_conjunctions_narrow_phase.cpp
     logging.cpp
     detail/conjunctions_jit.cpp
     detail/file_utils.cpp

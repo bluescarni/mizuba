@@ -618,9 +618,9 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         detail::mark_file_read_only(time_path);
 
         // Construct the implementation.
-        m_impl = std::make_shared<detail::polyjectory_impl>(std::move(tmp_dir_path), std::move(traj_offsets),
-                                                            std::move(time_offsets), op1,
-                                                            maxT.load(std::memory_order_relaxed), std::move(status));
+        m_impl
+            = std::make_shared<detail::polyjectory_impl>(std::move(tmp_dir_path), std::move(traj_offsets),
+                                                         std::move(time_offsets), op1, maxT.load(), std::move(status));
 
         // LCOV_EXCL_START
     } catch (...) {

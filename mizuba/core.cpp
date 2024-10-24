@@ -50,8 +50,8 @@ namespace
 //
 // Python does not guarantee that all objects are garbage-collected at
 // shutdown. This means that we may find ourselves in a situation where
-// the temporary memory-mapped files used internally by a polyjectory
-// are not deleted when the program terminates.
+// the temporary memory-mapped files used internally by the polyjectory
+// and conjunction classes are not deleted when the program terminates.
 //
 // In order to avoid this, we adopt the following approach:
 //
@@ -350,7 +350,7 @@ PYBIND11_MODULE(core, m)
             using span_t = hy::mdspan<const double, hy::extents<std::size_t, 9, std::dynamic_extent>>;
             const span_t in(sat_data.data(), boost::numeric_cast<std::size_t>(sat_data.size()) / 9u);
 
-            auto poly_ret = [&]() {
+            auto poly_ret = [in, jd_begin, jd_end, exit_radius, reentry_radius]() {
                 // NOTE: release the GIL during propagation.
                 py::gil_scoped_release release;
 
@@ -560,6 +560,8 @@ PYBIND11_MODULE(core, m)
 
         return ret;
     }); // LCOV_EXCL_LINE
+    conj_cl.def_property_readonly("conj_thresh", &mz::conjunctions::get_conj_thresh);
+    conj_cl.def_property_readonly("conj_det_interval", &mz::conjunctions::get_conj_det_interval);
 
     // Expose static getters for the structured types.
     conj_cl.def_property_readonly_static("bvh_node", [](const py::object &) { return py::dtype::of<bvh_node>(); });
