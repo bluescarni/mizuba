@@ -243,6 +243,11 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
         }
     });
 
+    // Reset sw and init the conjunction-detection cumulative times.
+    sw.reset();
+    std::atomic<double> aabbs_time = 0, morton_time = 0, bvh_time = 0, broad_time = 0, narrow_time = 0, io_time = 0,
+                        total_time = 0;
+
     try {
         // NOTE: this is thread-local data specific to a conjunction step. We will use these buffers
         // to temporarily store the results of the various stages of conjunction detection, before
@@ -315,8 +320,8 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
             oneapi::tbb::parallel_for(
                 oneapi::tbb::blocked_range<std::size_t>(start_cd_step_idx, end_cd_step_idx),
                 [&ets, &pj, conj_thresh, conj_det_interval, n_cd_steps, &cd_end_times, &conj_active, &cjd, &promises,
-                 nobjs, &aabbs_file, &mcodes_file, &vidx_file, &srt_aabbs_file,
-                 &srt_mcodes_file](const auto &cd_range) {
+                 nobjs, &aabbs_file, &mcodes_file, &vidx_file, &srt_aabbs_file, &srt_mcodes_file, &aabbs_time,
+                 &morton_time, &bvh_time, &broad_time, &narrow_time, &io_time, &total_time](const auto &cd_range) {
                     // Fetch the thread-local data.
                     auto &[cd_aabbs, cd_mcodes, cd_vidx, cd_srt_aabbs, cd_srt_mcodes, cd_bvh_tree, cd_bvh_aux_data,
                            cd_bvh_l_buffer]
@@ -324,69 +329,86 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
 
                     // NOTE: isolate to avoid issues with thread-local data. See:
                     // https://oneapi-src.github.io/oneTBB/main/tbb_userguide/work_isolation.html
-                    oneapi::tbb::this_task_arena::isolate([&cd_range, &cd_aabbs, &pj, conj_thresh, conj_det_interval,
-                                                           n_cd_steps, &cd_end_times, &cd_mcodes, &cd_vidx,
-                                                           &cd_srt_aabbs, &cd_srt_mcodes, &cd_bvh_tree,
-                                                           &cd_bvh_aux_data, &cd_bvh_l_buffer, &conj_active, &cjd,
-                                                           &promises, nobjs, &aabbs_file, &mcodes_file, &vidx_file,
-                                                           &srt_aabbs_file, &srt_mcodes_file]() {
-                        for (auto cd_idx = cd_range.begin(); cd_idx != cd_range.end(); ++cd_idx) {
-                            // Compute the aabbs for all objects and store them in cd_aabbs.
-                            detect_conjunctions_aabbs(cd_idx, cd_aabbs, pj, conj_thresh, conj_det_interval, n_cd_steps,
-                                                      cd_end_times);
+                    oneapi::tbb::this_task_arena::isolate(
+                        [&cd_range, &cd_aabbs, &pj, conj_thresh, conj_det_interval, n_cd_steps, &cd_end_times,
+                         &cd_mcodes, &cd_vidx, &cd_srt_aabbs, &cd_srt_mcodes, &cd_bvh_tree, &cd_bvh_aux_data,
+                         &cd_bvh_l_buffer, &conj_active, &cjd, &promises, nobjs, &aabbs_file, &mcodes_file, &vidx_file,
+                         &srt_aabbs_file, &srt_mcodes_file, &aabbs_time, &morton_time, &bvh_time, &broad_time,
+                         &narrow_time, &io_time, &total_time]() {
+                            stopwatch local_sw, total_sw;
 
-                            // Compute the morton codes for all objects and sort the aabbs data according to
-                            // the morton codes.
-                            detect_conjunctions_morton(cd_mcodes, cd_vidx, cd_srt_aabbs, cd_srt_mcodes, cd_aabbs, pj);
+                            for (auto cd_idx = cd_range.begin(); cd_idx != cd_range.end(); ++cd_idx) {
+                                // Compute the aabbs for all objects and store them in cd_aabbs.
+                                local_sw.reset();
+                                detect_conjunctions_aabbs(cd_idx, cd_aabbs, pj, conj_thresh, conj_det_interval,
+                                                          n_cd_steps, cd_end_times);
+                                aabbs_time += local_sw.elapsed().count();
 
-                            // Construct the bvh tree, which will be written to cd_bvh_tree.
-                            detect_conjunctions_bvh(cd_bvh_tree, cd_bvh_aux_data, cd_bvh_l_buffer, cd_srt_aabbs,
-                                                    cd_srt_mcodes);
+                                // Compute the morton codes for all objects and sort the aabbs data according to
+                                // the morton codes.
+                                local_sw.reset();
+                                detect_conjunctions_morton(cd_mcodes, cd_vidx, cd_srt_aabbs, cd_srt_mcodes, cd_aabbs,
+                                                           pj);
+                                morton_time += local_sw.elapsed().count();
 
-                            // Detect aabbs collisions.
-                            auto bp_coll = detect_conjunctions_broad_phase(cd_bvh_tree, cd_vidx, conj_active,
-                                                                           cd_srt_aabbs, cd_aabbs);
+                                // Construct the bvh tree, which will be written to cd_bvh_tree.
+                                local_sw.reset();
+                                detect_conjunctions_bvh(cd_bvh_tree, cd_bvh_aux_data, cd_bvh_l_buffer, cd_srt_aabbs,
+                                                        cd_srt_mcodes);
+                                bvh_time += local_sw.elapsed().count();
 
-                            // Detect conjunctions.
-                            auto conjs = detect_conjunctions_narrow_phase(cd_idx, pj, bp_coll, cjd, conj_thresh,
-                                                                          conj_det_interval, n_cd_steps);
+                                // Detect aabbs collisions.
+                                local_sw.reset();
+                                auto bp_coll = detect_conjunctions_broad_phase(cd_bvh_tree, cd_vidx, conj_active,
+                                                                               cd_srt_aabbs, cd_aabbs);
+                                broad_time += local_sw.elapsed().count();
 
-                            // Prepare the value for the future.
-                            f_output fval{
-                                // NOTE: moving in the tree here seems to bring a small performance benefit.
-                                // The tree is in any case cleared at the beginning of detect_conjunctions_bvh().
-                                .bvh_tree = std::move(cd_bvh_tree),
-                                // NOTE: bp_coll and conjs are created ex-novo
-                                // and destroyed at each conjunction step, thus we move them in.
-                                // The other data persists and is re-used across several conjunction
-                                // steps, thus it is merely copied.
-                                .bp = std::move(bp_coll),
-                                .conjunctions = std::move(conjs)};
+                                // Detect conjunctions.
+                                local_sw.reset();
+                                auto conjs = detect_conjunctions_narrow_phase(cd_idx, pj, bp_coll, cjd, conj_thresh,
+                                                                              conj_det_interval, n_cd_steps);
+                                narrow_time += local_sw.elapsed().count();
 
-                            // Move the data into the future.
-                            promises[cd_idx].set_value(std::move(fval));
+                                // Prepare the value for the future.
+                                local_sw.reset();
+                                f_output fval{
+                                    // NOTE: moving in the tree here seems to bring a small performance benefit.
+                                    // The tree is in any case cleared at the beginning of detect_conjunctions_bvh().
+                                    .bvh_tree = std::move(cd_bvh_tree),
+                                    // NOTE: bp_coll and conjs are created ex-novo
+                                    // and destroyed at each conjunction step, thus we move them in.
+                                    // The other data persists and is re-used across several conjunction
+                                    // steps, thus it is merely copied.
+                                    .bp = std::move(bp_coll),
+                                    .conjunctions = std::move(conjs)};
 
-                            // Write the aabbs.
-                            aabbs_file.pwrite(cd_aabbs.data(), (nobjs + 1u) * 8u * sizeof(float),
-                                              cd_idx * (nobjs + 1u) * 8u * sizeof(float));
+                                // Move the data into the future.
+                                promises[cd_idx].set_value(std::move(fval));
 
-                            // Write the mcodes.
-                            mcodes_file.pwrite(cd_mcodes.data(), nobjs * sizeof(std::uint64_t),
-                                               cd_idx * nobjs * sizeof(std::uint64_t));
-
-                            // Write the indices.
-                            vidx_file.pwrite(cd_vidx.data(), nobjs * sizeof(std::uint32_t),
-                                             cd_idx * nobjs * sizeof(std::uint32_t));
-
-                            // Write the sorted aabbs.
-                            srt_aabbs_file.pwrite(cd_srt_aabbs.data(), (nobjs + 1u) * 8u * sizeof(float),
+                                // Write the aabbs.
+                                aabbs_file.pwrite(cd_aabbs.data(), (nobjs + 1u) * 8u * sizeof(float),
                                                   cd_idx * (nobjs + 1u) * 8u * sizeof(float));
 
-                            // Write the sorted mcodes.
-                            srt_mcodes_file.pwrite(cd_srt_mcodes.data(), nobjs * sizeof(std::uint64_t),
+                                // Write the mcodes.
+                                mcodes_file.pwrite(cd_mcodes.data(), nobjs * sizeof(std::uint64_t),
                                                    cd_idx * nobjs * sizeof(std::uint64_t));
-                        }
-                    });
+
+                                // Write the indices.
+                                vidx_file.pwrite(cd_vidx.data(), nobjs * sizeof(std::uint32_t),
+                                                 cd_idx * nobjs * sizeof(std::uint32_t));
+
+                                // Write the sorted aabbs.
+                                srt_aabbs_file.pwrite(cd_srt_aabbs.data(), (nobjs + 1u) * 8u * sizeof(float),
+                                                      cd_idx * (nobjs + 1u) * 8u * sizeof(float));
+
+                                // Write the sorted mcodes.
+                                srt_mcodes_file.pwrite(cd_srt_mcodes.data(), nobjs * sizeof(std::uint64_t),
+                                                       cd_idx * nobjs * sizeof(std::uint64_t));
+                                io_time += local_sw.elapsed().count();
+                            }
+
+                            total_time += total_sw.elapsed().count();
+                        });
                 });
 
             start_cd_step_idx = end_cd_step_idx;
@@ -409,10 +431,25 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     }
     // LCOV_EXCL_STOP
 
+    // Log timings.
+    log_trace("Total conjunction detection time: {}", sw);
+    const auto ttime = total_time.load();
+    const auto aabbs_pctg = aabbs_time.load() / ttime * 100;
+    const auto morton_pctg = morton_time.load() / ttime * 100;
+    const auto bvh_pctg = bvh_time.load() / ttime * 100;
+    const auto broad_pctg = broad_time.load() / ttime * 100;
+    const auto narrow_pctg = narrow_time.load() / ttime * 100;
+    const auto io_pctg = io_time.load() / ttime * 100;
+    log_trace(
+        R"(Conjunction detection phases timing breakdown: {:.2f}% aabbs - {:.2f}% morton - {:.2f}% bvh - {:.2f}% broad - {:.2f}% narrow - {:.2f}% io)",
+        aabbs_pctg, morton_pctg, bvh_pctg, broad_pctg, narrow_pctg, io_pctg);
+
     // Wait for the writer thread to finish.
     // NOTE: get() will throw any exception that might have been
     // raised in the writer thread.
+    sw.reset();
     writer_future.get();
+    log_trace("Writer thread further waiting time: {}", sw);
 
     // If we did not detect any aabb collision, we need to write
     // something into bp_file, otherwise we cannot memory-map it.
