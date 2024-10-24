@@ -342,32 +342,32 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                                 local_sw.reset();
                                 detect_conjunctions_aabbs(cd_idx, cd_aabbs, pj, conj_thresh, conj_det_interval,
                                                           n_cd_steps, cd_end_times);
-                                aabbs_time += local_sw.elapsed().count();
+                                aabbs_time.fetch_add(local_sw.elapsed().count());
 
                                 // Compute the morton codes for all objects and sort the aabbs data according to
                                 // the morton codes.
                                 local_sw.reset();
                                 detect_conjunctions_morton(cd_mcodes, cd_vidx, cd_srt_aabbs, cd_srt_mcodes, cd_aabbs,
                                                            pj);
-                                morton_time += local_sw.elapsed().count();
+                                morton_time.fetch_add(local_sw.elapsed().count());
 
                                 // Construct the bvh tree, which will be written to cd_bvh_tree.
                                 local_sw.reset();
                                 detect_conjunctions_bvh(cd_bvh_tree, cd_bvh_aux_data, cd_bvh_l_buffer, cd_srt_aabbs,
                                                         cd_srt_mcodes);
-                                bvh_time += local_sw.elapsed().count();
+                                bvh_time.fetch_add(local_sw.elapsed().count());
 
                                 // Detect aabbs collisions.
                                 local_sw.reset();
                                 auto bp_coll = detect_conjunctions_broad_phase(cd_bvh_tree, cd_vidx, conj_active,
                                                                                cd_srt_aabbs, cd_aabbs);
-                                broad_time += local_sw.elapsed().count();
+                                broad_time.fetch_add(local_sw.elapsed().count());
 
                                 // Detect conjunctions.
                                 local_sw.reset();
                                 auto conjs = detect_conjunctions_narrow_phase(cd_idx, pj, bp_coll, cjd, conj_thresh,
                                                                               conj_det_interval, n_cd_steps);
-                                narrow_time += local_sw.elapsed().count();
+                                narrow_time.fetch_add(local_sw.elapsed().count());
 
                                 // Prepare the value for the future.
                                 local_sw.reset();
@@ -404,10 +404,10 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                                 // Write the sorted mcodes.
                                 srt_mcodes_file.pwrite(cd_srt_mcodes.data(), nobjs * sizeof(std::uint64_t),
                                                        cd_idx * nobjs * sizeof(std::uint64_t));
-                                io_time += local_sw.elapsed().count();
+                                io_time.fetch_add(local_sw.elapsed().count());
                             }
 
-                            total_time += total_sw.elapsed().count();
+                            total_time.fetch_add(total_sw.elapsed().count());
                         });
                 });
 
