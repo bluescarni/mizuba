@@ -245,8 +245,8 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
 
     // Reset sw and init the conjunction-detection cumulative times.
     sw.reset();
-    std::atomic<double> aabbs_time = 0, morton_time = 0, bvh_time = 0, broad_time = 0, narrow_time = 0, io_time = 0,
-                        total_time = 0;
+    std::atomic<std::int64_t> aabbs_time = 0, morton_time = 0, bvh_time = 0, broad_time = 0, narrow_time = 0,
+                              io_time = 0, total_time = 0;
 
     try {
         // NOTE: this is thread-local data specific to a conjunction step. We will use these buffers
@@ -342,32 +342,32 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                                 local_sw.reset();
                                 detect_conjunctions_aabbs(cd_idx, cd_aabbs, pj, conj_thresh, conj_det_interval,
                                                           n_cd_steps, cd_end_times);
-                                aabbs_time += local_sw.elapsed().count();
+                                aabbs_time += local_sw.elapsed_ns().count();
 
                                 // Compute the morton codes for all objects and sort the aabbs data according to
                                 // the morton codes.
                                 local_sw.reset();
                                 detect_conjunctions_morton(cd_mcodes, cd_vidx, cd_srt_aabbs, cd_srt_mcodes, cd_aabbs,
                                                            pj);
-                                morton_time += local_sw.elapsed().count();
+                                morton_time += local_sw.elapsed_ns().count();
 
                                 // Construct the bvh tree, which will be written to cd_bvh_tree.
                                 local_sw.reset();
                                 detect_conjunctions_bvh(cd_bvh_tree, cd_bvh_aux_data, cd_bvh_l_buffer, cd_srt_aabbs,
                                                         cd_srt_mcodes);
-                                bvh_time += local_sw.elapsed().count();
+                                bvh_time += local_sw.elapsed_ns().count();
 
                                 // Detect aabbs collisions.
                                 local_sw.reset();
                                 auto bp_coll = detect_conjunctions_broad_phase(cd_bvh_tree, cd_vidx, conj_active,
                                                                                cd_srt_aabbs, cd_aabbs);
-                                broad_time += local_sw.elapsed().count();
+                                broad_time += local_sw.elapsed_ns().count();
 
                                 // Detect conjunctions.
                                 local_sw.reset();
                                 auto conjs = detect_conjunctions_narrow_phase(cd_idx, pj, bp_coll, cjd, conj_thresh,
                                                                               conj_det_interval, n_cd_steps);
-                                narrow_time += local_sw.elapsed().count();
+                                narrow_time += local_sw.elapsed_ns().count();
 
                                 // Prepare the value for the future.
                                 local_sw.reset();
@@ -404,10 +404,10 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                                 // Write the sorted mcodes.
                                 srt_mcodes_file.pwrite(cd_srt_mcodes.data(), nobjs * sizeof(std::uint64_t),
                                                        cd_idx * nobjs * sizeof(std::uint64_t));
-                                io_time += local_sw.elapsed().count();
+                                io_time += local_sw.elapsed_ns().count();
                             }
 
-                            total_time += total_sw.elapsed().count();
+                            total_time += total_sw.elapsed_ns().count();
                         });
                 });
 
@@ -432,8 +432,8 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     // LCOV_EXCL_STOP
 
     // Log timings.
-    log_trace("Total conjunction detection time: {}", sw);
-    const auto ttime = total_time.load();
+    log_trace("Total conjunction detection time: {}s", sw);
+    const auto ttime = static_cast<double>(total_time.load());
     const auto aabbs_pctg = aabbs_time.load() / ttime * 100;
     const auto morton_pctg = morton_time.load() / ttime * 100;
     const auto bvh_pctg = bvh_time.load() / ttime * 100;
@@ -449,7 +449,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     // raised in the writer thread.
     sw.reset();
     writer_future.get();
-    log_trace("Writer thread further waiting time: {}", sw);
+    log_trace("Writer thread further waiting time: {}s", sw);
 
     // If we did not detect any aabb collision, we need to write
     // something into bp_file, otherwise we cannot memory-map it.

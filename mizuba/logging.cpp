@@ -7,6 +7,7 @@
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 #include <chrono>
+#include <cstdint>
 #include <string>
 
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -60,6 +61,11 @@ stopwatch::stopwatch() : m_start_tp{clock::now()} {}
 std::chrono::duration<double> stopwatch::elapsed() const
 {
     return std::chrono::duration<double>(clock::now() - m_start_tp);
+}
+
+std::chrono::duration<std::int64_t, std::nano> stopwatch::elapsed_ns() const
+{
+    return std::chrono::duration_cast<std::chrono::duration<std::int64_t, std::nano>>(clock::now() - m_start_tp);
 }
 
 void stopwatch::reset()
