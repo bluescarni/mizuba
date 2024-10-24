@@ -434,12 +434,12 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     // Log timings.
     log_trace("Total conjunction detection time: {}s", sw);
     const auto ttime = static_cast<double>(total_time.load());
-    const auto aabbs_pctg = aabbs_time.load() / ttime * 100;
-    const auto morton_pctg = morton_time.load() / ttime * 100;
-    const auto bvh_pctg = bvh_time.load() / ttime * 100;
-    const auto broad_pctg = broad_time.load() / ttime * 100;
-    const auto narrow_pctg = narrow_time.load() / ttime * 100;
-    const auto io_pctg = io_time.load() / ttime * 100;
+    const auto aabbs_pctg = static_cast<double>(aabbs_time.load()) / ttime * 100;
+    const auto morton_pctg = static_cast<double>(morton_time.load()) / ttime * 100;
+    const auto bvh_pctg = static_cast<double>(bvh_time.load()) / ttime * 100;
+    const auto broad_pctg = static_cast<double>(broad_time.load()) / ttime * 100;
+    const auto narrow_pctg = static_cast<double>(narrow_time.load()) / ttime * 100;
+    const auto io_pctg = static_cast<double>(io_time.load()) / ttime * 100;
     log_trace(
         R"(Conjunction detection phases timing breakdown: {:.2f}% aabbs - {:.2f}% morton - {:.2f}% bvh - {:.2f}% broad - {:.2f}% narrow - {:.2f}% io)",
         aabbs_pctg, morton_pctg, bvh_pctg, broad_pctg, narrow_pctg, io_pctg);
