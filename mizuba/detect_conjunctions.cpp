@@ -7,6 +7,7 @@
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 #include <atomic>
+#include <cassert>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -14,6 +15,7 @@
 #include <future>
 #include <ios>
 #include <ranges>
+#include <set>
 #include <stdexcept>
 #include <tuple>
 #include <utility>
@@ -21,6 +23,7 @@
 
 #include <boost/filesystem/operations.hpp>
 #include <boost/filesystem/path.hpp>
+#include <boost/iostreams/device/mapped_file.hpp>
 #include <boost/numeric/conversion/cast.hpp>
 #include <boost/safe_numerics/safe_integer.hpp>
 
@@ -38,8 +41,50 @@
 #include "logging.hpp"
 #include "polyjectory.hpp"
 
+#if defined(__GNUC__)
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-align"
+
+#endif
+
 namespace mizuba
 {
+
+namespace detail
+{
+
+namespace
+{
+
+#if !defined(NDEBUG)
+
+// Helper to run sanity checks on the final global results of narrow-phase conjunction detection.
+void verify_global_narrow(const auto &tmp_dir_path)
+{
+    boost::iostreams::mapped_file_source conj_file((tmp_dir_path / "conjunctions").string());
+    if (conj_file.size() == 1u) {
+        // No conjunctions detected.
+        return;
+    }
+
+    // Fetch the total number of conjunctions.
+    assert(conj_file.size() % sizeof(conjunctions::conj) == 0u);
+    const auto tot_n_conj = conj_file.size() / sizeof(conjunctions::conj);
+
+    // Fetch a pointer to the data.
+    const auto *conj_ptr = reinterpret_cast<const conjunctions::conj *>(conj_file.data());
+
+    // Check that there are no duplicate conjunctions.
+    std::set<conjunctions::conj> conj_set(conj_ptr, conj_ptr + tot_n_conj);
+    assert(conj_set.size() == tot_n_conj);
+}
+
+#endif
+
+} // namespace
+
+} // namespace detail
 
 std::tuple<std::vector<double>, std::vector<std::tuple<std::size_t, std::size_t>>,
            std::vector<std::tuple<std::size_t, std::size_t>>>
@@ -528,7 +573,20 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     detail::mark_file_read_only(tmp_dir_path / "bp");
     detail::mark_file_read_only(tmp_dir_path / "conjunctions");
 
+#if !defined(NDEBUG)
+
+    // Run debug checks on the detected conjunctions.
+    detail::verify_global_narrow(tmp_dir_path);
+
+#endif
+
     return std::make_tuple(std::move(cd_end_times), std::move(tree_offsets), std::move(bp_offsets));
 }
 
 } // namespace mizuba
+
+#if defined(__GNUC__)
+
+#pragma GCC diagnostic pop
+
+#endif

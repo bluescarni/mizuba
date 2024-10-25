@@ -84,6 +84,7 @@ public:
         // at TCA.
         std::array<double, 3> ri, vi;
         std::array<double, 3> rj, vj;
+        auto operator<=>(const conj &) const = default;
     };
 
 private:
