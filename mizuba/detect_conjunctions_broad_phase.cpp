@@ -298,6 +298,8 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
             }
 
             // Atomically merge rng_bp_coll_vec into bp_coll_vector.
+            // NOTE: ensure we do this at the end of the scope in order to minimise
+            // the locking time.
             std::lock_guard lock(bp_coll_vector_mutex);
             bp_coll_vector.insert(bp_coll_vector.end(), rng_bp_coll_vec.begin(), rng_bp_coll_vec.end());
         });
