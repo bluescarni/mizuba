@@ -78,6 +78,10 @@ void verify_global_narrow(const auto &tmp_dir_path)
     // Check that there are no duplicate conjunctions.
     std::set<conjunctions::conj> conj_set(conj_ptr, conj_ptr + tot_n_conj);
     assert(conj_set.size() == tot_n_conj);
+
+    // Check the conjunctions are sorted according to tca.
+    assert(std::ranges::is_sorted(conj_ptr, conj_ptr + tot_n_conj,
+                                  [](const auto &c1, const auto &c2) { return c1.tca < c2.tca; }));
 }
 
 #endif
