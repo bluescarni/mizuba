@@ -455,10 +455,6 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                 assert(loop_entered);
             }
 
-            // Atomically merge local_conj_vec into conj_vector.
-            std::lock_guard lock(conj_vector_mutex);
-            conj_vector.insert(conj_vector.end(), local_conj_vec.begin(), local_conj_vec.end());
-
             // Atomically update cd_np_rep.
             cd_np_rep.n_tot_conj_candidates += n_tot_conj_candidates;
             cd_np_rep.n_dist2_check += n_dist2_check;
@@ -467,6 +463,12 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
             cd_np_rep.n_poly_no_roots += n_poly_no_roots;
             cd_np_rep.n_tot_dist_minima += n_tot_dist_minima;
             cd_np_rep.n_tot_discarded_dist_minima += n_tot_discarded_dist_minima;
+
+            // Atomically merge local_conj_vec into conj_vector.
+            // NOTE: ensure we do this at the end of the scope in order to minimise
+            // the locking time.
+            std::lock_guard lock(conj_vector_mutex);
+            conj_vector.insert(conj_vector.end(), local_conj_vec.begin(), local_conj_vec.end());
         });
 
     // Sort conj_vector according to tca.
