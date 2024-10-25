@@ -375,6 +375,40 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                         n_poly_no_roots += tmp_conj_vec.empty();
                         n_tot_dist_minima += static_cast<unsigned long long>(tmp_conj_vec.size());
 
+                        // Helper to add to local_conj_vec a detected conjunction occurring at time conj_tm with
+                        // conjunction distance square of conj_dist2.
+                        const auto add_conjunction = [order, &local_conj_vec, lb_rf, poly_xi, poly_yi, poly_zi,
+                                                      poly_vxi, poly_vyi, poly_vzi, poly_xj, poly_yj, poly_zj, poly_vxj,
+                                                      poly_vyj, poly_vzj, i, j](double conj_tm, double conj_dist2) {
+                            // Compute the state vector for the two objects.
+                            const std::array<double, 3> ri = {detail::horner_eval(poly_xi, order, conj_tm),
+                                                              detail::horner_eval(poly_yi, order, conj_tm),
+                                                              detail::horner_eval(poly_zi, order, conj_tm)},
+                                                        vi = {detail::horner_eval(poly_vxi, order, conj_tm),
+                                                              detail::horner_eval(poly_vyi, order, conj_tm),
+                                                              detail::horner_eval(poly_vzi, order, conj_tm)};
+
+                            const std::array<double, 3> rj = {detail::horner_eval(poly_xj, order, conj_tm),
+                                                              detail::horner_eval(poly_yj, order, conj_tm),
+                                                              detail::horner_eval(poly_zj, order, conj_tm)},
+                                                        vj = {detail::horner_eval(poly_vxj, order, conj_tm),
+                                                              detail::horner_eval(poly_vyj, order, conj_tm),
+                                                              detail::horner_eval(poly_vzj, order, conj_tm)};
+
+                            local_conj_vec.emplace_back(
+                                // NOTE: we want to store here the absolute
+                                // time coordinate of the conjunction. conj_tm
+                                // is a time coordinate relative to the root
+                                // finding interval, so we need to transform it
+                                // into an absolute time within the polyjectory.
+                                lb_rf + conj_tm,
+                                // NOTE: conj_dist2 is finite but it could still
+                                // be negative due to floating-point rounding
+                                // (e.g., zero-distance conjunctions). Ensure
+                                // we do not produce NaN here.
+                                std::sqrt(std::max(conj_dist2, 0.)), i, j, ri, vi, rj, vj);
+                        };
+
                         // For each detected conjunction, we need to:
                         // - verify that indeed the conjunction happens below
                         //   the threshold,
@@ -397,33 +431,8 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                             }
 
                             if (conj_dist2 < conj_thresh2) {
-                                // Compute the state vector for the two objects.
-                                const std::array<double, 3> ri = {detail::horner_eval(poly_xi, order, conj_tm),
-                                                                  detail::horner_eval(poly_yi, order, conj_tm),
-                                                                  detail::horner_eval(poly_zi, order, conj_tm)},
-                                                            vi = {detail::horner_eval(poly_vxi, order, conj_tm),
-                                                                  detail::horner_eval(poly_vyi, order, conj_tm),
-                                                                  detail::horner_eval(poly_vzi, order, conj_tm)};
-
-                                const std::array<double, 3> rj = {detail::horner_eval(poly_xj, order, conj_tm),
-                                                                  detail::horner_eval(poly_yj, order, conj_tm),
-                                                                  detail::horner_eval(poly_zj, order, conj_tm)},
-                                                            vj = {detail::horner_eval(poly_vxj, order, conj_tm),
-                                                                  detail::horner_eval(poly_vyj, order, conj_tm),
-                                                                  detail::horner_eval(poly_vzj, order, conj_tm)};
-
-                                local_conj_vec.emplace_back(
-                                    // NOTE: we want to store here the absolute
-                                    // time coordinate of the conjunction. conj_tm
-                                    // is a time coordinate relative to the root
-                                    // finding interval, so we need to transform it
-                                    // into an absolute time within the polyjectory.
-                                    lb_rf + conj_tm,
-                                    // NOTE: conj_dist2 is finite but it could still
-                                    // be negative due to floating-point rounding
-                                    // (e.g., zero-distance conjunctions). Ensure
-                                    // we do not produce NaN here.
-                                    std::sqrt(std::max(conj_dist2, 0.)), i, j, ri, vi, rj, vj);
+                                // We detected an actual conjunction, add it.
+                                add_conjunction(conj_tm, conj_dist2);
                             } else {
                                 // Update n_tot_discarded_dist_minima.
                                 ++n_tot_discarded_dist_minima;
