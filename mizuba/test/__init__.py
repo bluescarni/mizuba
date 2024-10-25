@@ -13,6 +13,7 @@ def run_test_suite():
     from . import (
         test_sgp4_polyjectory,
         test_conjunctions,
+        test_boundary_conjunctions,
         test_polyjectory,
         test_heyoka_conjunctions,
     )
@@ -22,6 +23,11 @@ def run_test_suite():
     tl = _ut.TestLoader()
 
     suite = tl.loadTestsFromTestCase(test_conjunctions.conjunctions_test_case)
+    suite.addTest(
+        tl.loadTestsFromTestCase(
+            test_boundary_conjunctions.boundary_conjunctions_test_case
+        )
+    )
     suite.addTest(
         tl.loadTestsFromTestCase(test_heyoka_conjunctions.heyoka_conjunctions_test_case)
     )

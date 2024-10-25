@@ -438,6 +438,114 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                                 ++n_tot_discarded_dist_minima;
                             }
                         }
+
+                        // NOTE: we now have to handle the special case in which we are at either
+                        // the beginning or at the end of the trajectory time range for at least
+                        // one of the objects. In this case, we may end up in a situation in which
+                        // a conjunction is not detected because there is no minimum in the mutual
+                        // distance between the objects - the minimum would occur outside the bounds
+                        // of the time range, but we never get to detect it because we have no
+                        // trajectory data outside the time bounds.
+                        //
+                        // An equivalent (and more mathy) way of seeing this is the following. The
+                        // minima of the distance square function are given by the zeroes of the derivative
+                        // **if** the domain is the entire real line (i.e., infinite time). But if the
+                        // domain is restricted to a finite subrange of the real line, then we may
+                        // have additional minima in correspondence of the subrange boundaries.
+
+                        // We first handle the case in which we are at the end of trajectory data
+                        // for at least one object.
+                        //
+                        // The it_i + 1 == t_end_i checks that we are at the last trajectory step,
+                        // while *it_i == ub_rf checks that the root finding interval ends when the
+                        // last trajectory step ends. The second check is needed because being in the
+                        // last trajectory step does not necessarily mean that we are considering the
+                        // entire trajectory step in the root finding.
+                        if ((it_i + 1 == t_end_i && *it_i == ub_rf) || (it_j + 1 == t_end_j && *it_j == ub_rf)) {
+                            // We need to evaluate the derivative of the distance function at the
+                            // end of the time range. If it is negative, it is a minimum and
+                            // we may have another conjunction.
+
+                            // NOTE: the trajectory time ranges are created as half-open intervals,
+                            // thus we need to consider for a candidate minimum the time immediately
+                            // preceding the end of the time range.
+                            const auto min_cand_time = std::nextafter(rf_int, -1.);
+
+                            // Evaluate the derivative of the distance square at min_cand_time.
+                            // NOTE: ts_diff_der_ptr was set up previously.
+                            const auto min_cand_dval = detail::horner_eval(ts_diff_der_ptr, order, min_cand_time);
+                            if (!std::isfinite(min_cand_dval)) [[unlikely]] {
+                                // LCOV_EXCL_START
+                                throw std::invalid_argument(fmt::format(
+                                    "An invalid value of {} was computed for the "
+                                    "derivative of the distance square function at the upper boundary of a trajectory",
+                                    min_cand_dval));
+                                // LCOV_EXCL_STOP
+                            }
+
+                            // NOTE: check for strictly negative derivative. If the derivative had a zero here,
+                            // we should have located it during polynomial root finding.
+                            if (min_cand_dval < 0) {
+                                // The distance square function has negative derivative at the end of the
+                                // time range. Evaluate the distance square.
+                                const auto min_cand_dist2 = detail::horner_eval(ts_diff_ptr, order, min_cand_time);
+                                if (!std::isfinite(min_cand_dist2)) [[unlikely]] {
+                                    // LCOV_EXCL_START
+                                    throw std::invalid_argument(fmt::format(
+                                        "An invalid value of {} was computed for a "
+                                        "candidate minimum of the distance square function at the upper boundary "
+                                        "of a trajectory",
+                                        min_cand_dist2));
+                                    // LCOV_EXCL_STOP
+                                }
+
+                                // Check if the distance square is less than the threshold.
+                                // If it is, add the conjunction.
+                                if (min_cand_dist2 < conj_thresh2) {
+                                    add_conjunction(min_cand_time, min_cand_dist2);
+                                }
+                            }
+                        }
+
+                        // We now handle the case in which we are at the beginning of trajectory data
+                        // for at least one object. The logic is similar to the previous case.
+                        //
+                        // The it_i + 1 == t_begin_i checks that we are at the first trajectory step,
+                        // while lb_rf == 0 checks that the root finding interval begins when the
+                        // first trajectory step begins. The second check is needed because being in the
+                        // first trajectory step does not necessarily mean that we are considering the
+                        // entire trajectory step in the root finding.
+                        if ((it_i == t_begin_i && lb_rf == 0) || (it_j == t_begin_j && lb_rf == 0)) {
+                            // Calculate the value of the derivative of the distance square at the beginning
+                            // of the first trajectory step.
+                            const auto min_cand_dval = detail::horner_eval(ts_diff_der_ptr, order, 0.);
+                            if (!std::isfinite(min_cand_dval)) [[unlikely]] {
+                                // LCOV_EXCL_START
+                                throw std::invalid_argument(fmt::format(
+                                    "An invalid value of {} was computed for the "
+                                    "derivative of the distance square function at the lower boundary of a trajectory",
+                                    min_cand_dval));
+                                // LCOV_EXCL_STOP
+                            }
+
+                            // The check is now for strictly *positive* derivative.
+                            if (min_cand_dval > 0) {
+                                const auto min_cand_dist2 = detail::horner_eval(ts_diff_ptr, order, 0.);
+                                if (!std::isfinite(min_cand_dist2)) [[unlikely]] {
+                                    // LCOV_EXCL_START
+                                    throw std::invalid_argument(fmt::format(
+                                        "An invalid value of {} was computed for a "
+                                        "candidate minimum of the distance square function at the lower boundary "
+                                        "of a trajectory",
+                                        min_cand_dist2));
+                                    // LCOV_EXCL_STOP
+                                }
+
+                                if (min_cand_dist2 < conj_thresh2) {
+                                    add_conjunction(0., min_cand_dist2);
+                                }
+                            }
+                        }
                     } else {
                         // Update n_dist2_check.
                         ++n_dist2_check;
