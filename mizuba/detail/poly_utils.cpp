@@ -257,7 +257,7 @@ std::tuple<T, int> bracketed_root_find(const T *poly, std::uint32_t order, T lb,
 
 } // namespace
 
-void run_poly_root_finding(const double *poly, std::uint32_t order, double rf_int, isol_t &isol, wlist_t &wlist,
+bool run_poly_root_finding(const double *poly, std::uint32_t order, double rf_int, isol_t &isol, wlist_t &wlist,
                            conj_jit_data::fex_check_t fex_check, conj_jit_data::rtscc_t rtscc, conj_jit_data::pt1_t pt1,
                            std::uint32_t i, std::uint32_t j, int direction,
                            std::vector<std::tuple<std::uint32_t, std::uint32_t, double>> &detected_roots,
@@ -271,7 +271,7 @@ void run_poly_root_finding(const double *poly, std::uint32_t order, double rf_in
     fex_check(poly, &rf_int, &back_flag, &fex_check_res);
 
     if (fex_check_res != 0u) {
-        return;
+        return true;
     }
 
     // Fast exclusion check failed, we need to run the real root isolation algorithm.
@@ -442,6 +442,8 @@ void run_poly_root_finding(const double *poly, std::uint32_t order, double rf_in
             }
         }
     }
+
+    return false;
 }
 
 } // namespace mizuba::detail

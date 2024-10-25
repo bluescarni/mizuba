@@ -72,7 +72,7 @@ using isol_t = std::vector<std::tuple<double, double>>;
 // The working list type used during real root isolation.
 using wlist_t = std::vector<std::tuple<double, double, pwrap>>;
 
-void run_poly_root_finding(const double *, std::uint32_t, double, isol_t &, wlist_t &, conj_jit_data::fex_check_t,
+bool run_poly_root_finding(const double *, std::uint32_t, double, isol_t &, wlist_t &, conj_jit_data::fex_check_t,
                            conj_jit_data::rtscc_t, conj_jit_data::pt1_t, std::uint32_t, std::uint32_t, int,
                            std::vector<std::tuple<std::uint32_t, std::uint32_t, double>> &, poly_cache &);
 

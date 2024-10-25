@@ -21,13 +21,13 @@ template <typename T>
 void atomic_min(std::atomic<T> &out, T val)
 {
     // Load the current value from the atomic.
-    auto orig_val = out.load(std::memory_order_relaxed);
+    auto orig_val = out.load();
     T new_val;
 
     do {
         // Compute the new value.
         new_val = std::min(val, orig_val);
-    } while (!out.compare_exchange_weak(orig_val, new_val, std::memory_order_relaxed, std::memory_order_relaxed));
+    } while (!out.compare_exchange_weak(orig_val, new_val));
 }
 
 // Helper to atomically set out to std::max(out, val).
@@ -36,13 +36,13 @@ template <typename T>
 void atomic_max(std::atomic<T> &out, T val)
 {
     // Load the current value from the atomic.
-    auto orig_val = out.load(std::memory_order_relaxed);
+    auto orig_val = out.load();
     T new_val;
 
     do {
         // Compute the new value.
         new_val = std::max(val, orig_val);
-    } while (!out.compare_exchange_weak(orig_val, new_val, std::memory_order_relaxed, std::memory_order_relaxed));
+    } while (!out.compare_exchange_weak(orig_val, new_val));
 }
 
 } // namespace mizuba::detail
