@@ -10,6 +10,7 @@
 #define MIZUBA_CONJUNCTIONS_HPP
 
 #include <array>
+#include <atomic>
 #include <compare>
 #include <concepts>
 #include <cstddef>
@@ -137,6 +138,35 @@ private:
         std::uint32_t ps;
     };
 
+    // Struct to collect stats about the narrow-phase conjunction
+    // detection step, for logging purposes.
+    struct np_report {
+        // The total number of conjunction candidates.
+        // NOTE: this will in general be larger than the number of
+        // aabbs collisions, because for each aabbs collision we typically
+        // need to run conjunction detection multiple times due to the trajectory
+        // steps not beginning/ending at the same time for different objects.
+        std::atomic<unsigned long long> n_tot_conj_candidates = 0;
+        // How many conjunction candidates were discarded
+        // via the evaluation of the polynomial enclosure of
+        // the distance square.
+        std::atomic<unsigned long long> n_dist2_check = 0;
+        // The total number of polynomial root findings.
+        std::atomic<unsigned long long> n_poly_roots = 0;
+        // How many polynomial root findings exited early via the
+        // fast exclusion check.
+        std::atomic<unsigned long long> n_fex_check = 0;
+        // How many polynomial root findings resulted in no
+        // roots being found.
+        std::atomic<unsigned long long> n_poly_no_roots = 0;
+        // Total number of distance minima determined via polynomial
+        // root finding.
+        std::atomic<unsigned long long> n_tot_dist_minima = 0;
+        // Number of distance minima that were discarded as conjunctions
+        // because the dca is above the threshold.
+        std::atomic<unsigned long long> n_tot_discarded_dist_minima = 0;
+    };
+
     // Private ctor.
     struct ptag {
     };
@@ -187,7 +217,7 @@ private:
     static std::vector<conj> detect_conjunctions_narrow_phase(std::size_t, const polyjectory &,
                                                               const std::vector<aabb_collision> &,
                                                               const detail::conj_jit_data &, double, double,
-                                                              std::size_t);
+                                                              std::size_t, np_report &);
 
 public:
     template <typename WRange = std::vector<std::uint32_t>>

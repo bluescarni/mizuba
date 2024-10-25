@@ -160,6 +160,10 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     // Counter for the total number of detected conjunctions.
     safe_size_t tot_n_conj = 0;
 
+    // Initialise the global structure to gather stats about the narrow-phase
+    // step of conjunction detection.
+    np_report np_rep;
+
     // Bag of results which will be outputted each time a conjunction step has finished
     // processing. This data is stored in futures and written sequentially to disk by the writer thread.
     // NOTE: this data has to be written sequentially because we cannot compute the required
@@ -321,7 +325,8 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                 oneapi::tbb::blocked_range<std::size_t>(start_cd_step_idx, end_cd_step_idx),
                 [&ets, &pj, conj_thresh, conj_det_interval, n_cd_steps, &cd_end_times, &conj_active, &cjd, &promises,
                  nobjs, &aabbs_file, &mcodes_file, &vidx_file, &srt_aabbs_file, &srt_mcodes_file, &aabbs_time,
-                 &morton_time, &bvh_time, &broad_time, &narrow_time, &io_time, &total_time](const auto &cd_range) {
+                 &morton_time, &bvh_time, &broad_time, &narrow_time, &io_time, &total_time,
+                 &np_rep](const auto &cd_range) {
                     // Fetch the thread-local data.
                     auto &[cd_aabbs, cd_mcodes, cd_vidx, cd_srt_aabbs, cd_srt_mcodes, cd_bvh_tree, cd_bvh_aux_data,
                            cd_bvh_l_buffer]
@@ -334,7 +339,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                          &cd_mcodes, &cd_vidx, &cd_srt_aabbs, &cd_srt_mcodes, &cd_bvh_tree, &cd_bvh_aux_data,
                          &cd_bvh_l_buffer, &conj_active, &cjd, &promises, nobjs, &aabbs_file, &mcodes_file, &vidx_file,
                          &srt_aabbs_file, &srt_mcodes_file, &aabbs_time, &morton_time, &bvh_time, &broad_time,
-                         &narrow_time, &io_time, &total_time]() {
+                         &narrow_time, &io_time, &total_time, &np_rep]() {
                             stopwatch local_sw, total_sw;
 
                             for (auto cd_idx = cd_range.begin(); cd_idx != cd_range.end(); ++cd_idx) {
@@ -366,7 +371,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                                 // Detect conjunctions.
                                 local_sw.reset();
                                 auto conjs = detect_conjunctions_narrow_phase(cd_idx, pj, bp_coll, cjd, conj_thresh,
-                                                                              conj_det_interval, n_cd_steps);
+                                                                              conj_det_interval, n_cd_steps, np_rep);
                                 narrow_time += local_sw.elapsed_ns().count();
 
                                 // Prepare the value for the future.
@@ -440,9 +445,9 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     const auto broad_pctg = static_cast<double>(broad_time.load()) / ttime * 100;
     const auto narrow_pctg = static_cast<double>(narrow_time.load()) / ttime * 100;
     const auto io_pctg = static_cast<double>(io_time.load()) / ttime * 100;
-    log_trace(
-        R"(Conjunction detection phases timing breakdown: {:.2f}% aabbs - {:.2f}% morton - {:.2f}% bvh - {:.2f}% broad - {:.2f}% narrow - {:.2f}% io)",
-        aabbs_pctg, morton_pctg, bvh_pctg, broad_pctg, narrow_pctg, io_pctg);
+    log_trace("Conjunction detection phases timing breakdown: {:.2f}\% aabbs - {:.2f}\% morton - {:.2f}\% bvh - "
+              "{:.2f}\% broad - {:.2f}\% narrow - {:.2f}\% io",
+              aabbs_pctg, morton_pctg, bvh_pctg, broad_pctg, narrow_pctg, io_pctg);
 
     // Wait for the writer thread to finish.
     // NOTE: get() will throw any exception that might have been
@@ -451,9 +456,14 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     writer_future.get();
     log_trace("Writer thread further waiting time: {}s", sw);
 
+    // Compute the total number of aabbs collisions.
+    // NOTE: addition is safe here as we computed cur_bp_offset safely
+    // in the writer thread.
+    const auto tot_n_aabbs_coll = std::get<0>(bp_offsets.back()) + std::get<1>(bp_offsets.back());
+
     // If we did not detect any aabb collision, we need to write
     // something into bp_file, otherwise we cannot memory-map it.
-    if (bp_offsets.back() == std::make_tuple(0u, 0u)) {
+    if (tot_n_aabbs_coll == 0u) {
         // Insert a value-inited aabb_collision.
         const aabb_collision empty{};
         bp_file.write(reinterpret_cast<const char *>(&empty), sizeof(aabb_collision));
@@ -471,6 +481,32 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
         const char empty{};
         conj_file.write(&empty, 1);
     }
+
+    // Log tot_n_aabbs_coll.
+    log_info("Total number of detected aabbs collisions: {}", tot_n_aabbs_coll);
+
+    // Fetch the narrow-phase stats.
+    const auto n_tot_conj_candidates = np_rep.n_tot_conj_candidates.load();
+    const auto n_dist2_check = np_rep.n_dist2_check.load();
+    const auto n_poly_roots = np_rep.n_poly_roots.load();
+    const auto n_fex_check = np_rep.n_fex_check.load();
+    const auto n_poly_no_roots = np_rep.n_poly_no_roots.load();
+    const auto n_tot_dist_minima = np_rep.n_tot_dist_minima.load();
+    const auto n_tot_discarded_dist_minima = np_rep.n_tot_discarded_dist_minima.load();
+
+    log_info("Out of {} conjunction candidates, {} ({:.2f}\%) were discarded via the computation of the polynomial "
+             "enclosure for the distance square",
+             n_tot_conj_candidates, n_dist2_check,
+             static_cast<double>(n_dist2_check) / static_cast<double>(n_tot_conj_candidates) * 100., n_fex_check);
+    log_info("A total of {} polynomial root findings were performed, {} ({:.2f}\%) were skipped due to fast exclusion "
+             "checking and {} ({:.2f}\%) found no roots",
+             n_poly_roots, n_fex_check, static_cast<double>(n_fex_check) / static_cast<double>(n_poly_roots) * 100.,
+             n_poly_no_roots, static_cast<double>(n_poly_no_roots) / static_cast<double>(n_poly_roots) * 100.);
+    log_info("A total of {} distance minima were computed via polynomial root finding, {} ({:.2f}\%) were discarded "
+             "because the conjunction distance is too large",
+             n_tot_dist_minima, n_tot_discarded_dist_minima,
+             static_cast<double>(n_tot_discarded_dist_minima) / static_cast<double>(n_tot_dist_minima) * 100.);
+    log_info("Total number of detected conjunctions: {}", static_cast<std::size_t>(tot_n_conj));
 
     // Close all files.
     aabbs_file.close();

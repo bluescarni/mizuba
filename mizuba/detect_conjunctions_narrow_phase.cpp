@@ -42,12 +42,15 @@ namespace mizuba
 // cd_idx is the index of the current conjunction step, pj the polyjectory, cd_bp_collisions
 // the list of aabbs collisions detected in the broad phase, cjd the JIT-compiled data,
 // conj_thresh the conjunction threshold, conj_det_interval the conjunction detection
-// interval, n_cd_steps the total number of conjunction steps.
+// interval, n_cd_steps the total number of conjunction steps, np_rep the structure for
+// logging statistics.
 //
 // The return value is the list of detect conjunctions.
-std::vector<conjunctions::conj> conjunctions::detect_conjunctions_narrow_phase(
-    std::size_t cd_idx, const polyjectory &pj, const std::vector<aabb_collision> &cd_bp_collisions,
-    const detail::conj_jit_data &cjd, double conj_thresh, double conj_det_interval, std::size_t n_cd_steps)
+std::vector<conjunctions::conj>
+conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjectory &pj,
+                                               const std::vector<aabb_collision> &cd_bp_collisions,
+                                               const detail::conj_jit_data &cjd, double conj_thresh,
+                                               double conj_det_interval, std::size_t n_cd_steps, np_report &np_rep)
 {
     // Fetch the compiled functions.
     auto *pta_cfunc = cjd.pta_cfunc;
@@ -58,6 +61,9 @@ std::vector<conjunctions::conj> conjunctions::detect_conjunctions_narrow_phase(
 
     // Cache the polynomial order.
     const auto order = pj.get_poly_order();
+
+    // Local np_report for this conjunction step.
+    np_report cd_np_rep;
 
     // Cache the square of conj_thresh.
     // NOTE: we checked in the conjunctions constructor that
@@ -134,7 +140,7 @@ std::vector<conjunctions::conj> conjunctions::detect_conjunctions_narrow_phase(
     oneapi::tbb::parallel_for(
         oneapi::tbb::blocked_range<decltype(cd_bp_collisions.size())>(0, cd_bp_collisions.size()),
         [&ets, cd_begin, cd_end, &cd_bp_collisions, &pj, pta_cfunc, pssdiff3_cfunc, fex_check, rtscc, pt1, order,
-         conj_thresh2, &conj_vector, &conj_vector_mutex](const auto &bp_range) {
+         conj_thresh2, &conj_vector, &conj_vector_mutex, &cd_np_rep](const auto &bp_range) {
             // Fetch the thread-local data.
             // NOTE: no need to isolate here, as we are not
             // invoking any other TBB primitive from within this
@@ -146,6 +152,10 @@ std::vector<conjunctions::conj> conjunctions::detect_conjunctions_narrow_phase(
 
             // Prepare the local conjunction vector.
             local_conj_vec.clear();
+
+            // Local logging stats.
+            unsigned long long n_tot_conj_candidates = 0, n_dist2_check = 0, n_poly_roots = 0, n_fex_check = 0,
+                               n_poly_no_roots = 0, n_tot_dist_minima = 0, n_tot_discarded_dist_minima = 0;
 
             for (auto bp_idx = bp_range.begin(); bp_idx != bp_range.end(); ++bp_idx) {
                 const auto [i, j] = cd_bp_collisions[bp_idx];
@@ -200,6 +210,9 @@ std::vector<conjunctions::conj> conjunctions::detect_conjunctions_narrow_phase(
 #if !defined(NDEBUG)
                     loop_entered = true;
 #endif
+
+                    // Update n_tot_conj_candidates.
+                    ++n_tot_conj_candidates;
 
                     // Initial time coordinates of the trajectory steps of i and j.
                     const auto ts_start_i = (it_i == t_begin_i) ? 0. : *(it_i - 1);
@@ -351,10 +364,16 @@ std::vector<conjunctions::conj> conjunctions::detect_conjunctions_narrow_phase(
                         tmp_conj_vec.clear();
 
                         // Run polynomial root finding to detect conjunctions.
-                        detail::run_poly_root_finding(ts_diff_der_ptr, order, rf_int, isol, wlist, fex_check, rtscc,
-                                                      pt1, i, j,
-                                                      // NOTE: positive direction to detect only distance minima.
-                                                      1, tmp_conj_vec, r_iso_cache);
+                        const auto fex_check_res = detail::run_poly_root_finding(
+                            ts_diff_der_ptr, order, rf_int, isol, wlist, fex_check, rtscc, pt1, i, j,
+                            // NOTE: positive direction to detect only distance minima.
+                            1, tmp_conj_vec, r_iso_cache);
+
+                        // Update n_poly_roots, n_fex_check, n_poly_no_roots and n_tot_dist_minima.
+                        ++n_poly_roots;
+                        n_fex_check += fex_check_res;
+                        n_poly_no_roots += tmp_conj_vec.empty();
+                        n_tot_dist_minima += static_cast<unsigned long long>(tmp_conj_vec.size());
 
                         // For each detected conjunction, we need to:
                         // - verify that indeed the conjunction happens below
@@ -405,8 +424,14 @@ std::vector<conjunctions::conj> conjunctions::detect_conjunctions_narrow_phase(
                                     // (e.g., zero-distance conjunctions). Ensure
                                     // we do not produce NaN here.
                                     std::sqrt(std::max(conj_dist2, 0.)), i, j, ri, vi, rj, vj);
+                            } else {
+                                // Update n_tot_discarded_dist_minima.
+                                ++n_tot_discarded_dist_minima;
                             }
                         }
+                    } else {
+                        // Update n_dist2_check.
+                        ++n_dist2_check;
                     }
 
                     // Update it_i and it_j.
@@ -433,11 +458,29 @@ std::vector<conjunctions::conj> conjunctions::detect_conjunctions_narrow_phase(
             // Atomically merge local_conj_vec into conj_vector.
             std::lock_guard lock(conj_vector_mutex);
             conj_vector.insert(conj_vector.end(), local_conj_vec.begin(), local_conj_vec.end());
+
+            // Atomically update cd_np_rep.
+            cd_np_rep.n_tot_conj_candidates += n_tot_conj_candidates;
+            cd_np_rep.n_dist2_check += n_dist2_check;
+            cd_np_rep.n_poly_roots += n_poly_roots;
+            cd_np_rep.n_fex_check += n_fex_check;
+            cd_np_rep.n_poly_no_roots += n_poly_no_roots;
+            cd_np_rep.n_tot_dist_minima += n_tot_dist_minima;
+            cd_np_rep.n_tot_discarded_dist_minima += n_tot_discarded_dist_minima;
         });
 
     // Sort conj_vector according to tca.
     oneapi::tbb::parallel_sort(conj_vector.begin(), conj_vector.end(),
                                [](const auto &c1, const auto &c2) { return c1.tca < c2.tca; });
+
+    // Atomically update np_rep with the data in cd_np_rep.
+    np_rep.n_tot_conj_candidates += cd_np_rep.n_tot_conj_candidates.load();
+    np_rep.n_dist2_check += cd_np_rep.n_dist2_check.load();
+    np_rep.n_poly_roots += cd_np_rep.n_poly_roots.load();
+    np_rep.n_fex_check += cd_np_rep.n_fex_check.load();
+    np_rep.n_poly_no_roots += cd_np_rep.n_poly_no_roots.load();
+    np_rep.n_tot_dist_minima += cd_np_rep.n_tot_dist_minima.load();
+    np_rep.n_tot_discarded_dist_minima += cd_np_rep.n_tot_discarded_dist_minima.load();
 
     return conj_vector;
 }
