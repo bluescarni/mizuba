@@ -483,7 +483,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     }
 
     // Log tot_n_aabbs_coll.
-    log_info("Total number of detected aabbs collisions: {}", tot_n_aabbs_coll);
+    log_trace("Total number of detected aabbs collisions: {}", tot_n_aabbs_coll);
 
     // Fetch the narrow-phase stats.
     const auto n_tot_conj_candidates = np_rep.n_tot_conj_candidates.load();
@@ -494,19 +494,19 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     const auto n_tot_dist_minima = np_rep.n_tot_dist_minima.load();
     const auto n_tot_discarded_dist_minima = np_rep.n_tot_discarded_dist_minima.load();
 
-    log_info("Out of {} conjunction candidates, {} ({:.2f}\%) were discarded via the computation of the polynomial "
-             "enclosure for the distance square",
-             n_tot_conj_candidates, n_dist2_check,
-             static_cast<double>(n_dist2_check) / static_cast<double>(n_tot_conj_candidates) * 100., n_fex_check);
-    log_info("A total of {} polynomial root findings were performed, {} ({:.2f}\%) were skipped due to fast exclusion "
-             "checking and {} ({:.2f}\%) found no roots",
-             n_poly_roots, n_fex_check, static_cast<double>(n_fex_check) / static_cast<double>(n_poly_roots) * 100.,
-             n_poly_no_roots, static_cast<double>(n_poly_no_roots) / static_cast<double>(n_poly_roots) * 100.);
-    log_info("A total of {} distance minima were computed via polynomial root finding, {} ({:.2f}\%) were discarded "
-             "because the conjunction distance is too large",
-             n_tot_dist_minima, n_tot_discarded_dist_minima,
-             static_cast<double>(n_tot_discarded_dist_minima) / static_cast<double>(n_tot_dist_minima) * 100.);
-    log_info("Total number of detected conjunctions: {}", static_cast<std::size_t>(tot_n_conj));
+    log_trace("Out of {} conjunction candidates, {} ({:.2f}\%) were discarded via the computation of the polynomial "
+              "enclosure for the distance square",
+              n_tot_conj_candidates, n_dist2_check,
+              static_cast<double>(n_dist2_check) / static_cast<double>(n_tot_conj_candidates) * 100., n_fex_check);
+    log_trace("A total of {} polynomial root findings were performed, {} ({:.2f}\%) were skipped due to fast exclusion "
+              "checking and {} ({:.2f}\%) found no roots",
+              n_poly_roots, n_fex_check, static_cast<double>(n_fex_check) / static_cast<double>(n_poly_roots) * 100.,
+              n_poly_no_roots, static_cast<double>(n_poly_no_roots) / static_cast<double>(n_poly_roots) * 100.);
+    log_trace("A total of {} distance minima were computed via polynomial root finding, {} ({:.2f}\%) were discarded "
+              "because the conjunction distance is too large",
+              n_tot_dist_minima, n_tot_discarded_dist_minima,
+              static_cast<double>(n_tot_discarded_dist_minima) / static_cast<double>(n_tot_dist_minima) * 100.);
+    log_trace("Total number of detected conjunctions: {}", static_cast<std::size_t>(tot_n_conj));
 
     // Close all files.
     aabbs_file.close();
