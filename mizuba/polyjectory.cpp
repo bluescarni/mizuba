@@ -281,6 +281,8 @@ polyjectory::polyjectory(ptag,
         detail::create_sized_file(time_path, cur_time_offset * sizeof(double));
 
         // Memory-map them.
+        // NOTE: we should consider the pros and cons of memory-mapping here.
+        // Perhaps pwrite() would be better?
         boost::iostreams::mapped_file_sink traj_file(traj_path.string());
         boost::iostreams::mapped_file_sink time_file(time_path.string());
 
