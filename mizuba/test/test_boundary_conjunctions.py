@@ -17,10 +17,10 @@ class boundary_conjunctions_test_case(_ut.TestCase):
         # placed on the x axis at +-1. The two objects
         # move with uniform unitary speed towards the origin.
         # The conjunction threshold is set to 0.25,
-        # but the simulation is stopped before the distance
+        # but data for the first object stops before the distance
         # minimum (which would be zero) is reached. The code
-        # must report the conjunction even if a distance
-        # minimum was not reached.
+        # must report the conjunction even if a zero of the
+        # derivative of the distance function was not reached.
         from .. import polyjectory, conjunctions
         import numpy as np
         from copy import copy
@@ -28,12 +28,14 @@ class boundary_conjunctions_test_case(_ut.TestCase):
         # The conjunction threshold.
         cthresh = 0.25
 
-        # Time data for both trajectories.
-        tm_data = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+        # Time data for the first trajectory.
+        tm_data_0 = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+        # Time data for the second trajectory.
+        tm_data_1 = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3]
 
         # Construct the trajectory data for both objects.
         traj_data = [[], []]
-        for tm in tm_data:
+        for tm in tm_data_1:
             tdata_0 = np.zeros((7, 4))
             tdata_0[0, 0] = 1.0 - (tm - 0.1)
             tdata_0[0, 1] = -1.0
@@ -41,11 +43,12 @@ class boundary_conjunctions_test_case(_ut.TestCase):
 
             tdata_1 = -copy(tdata_0)
 
-            traj_data[0].append(tdata_0)
+            if tm <= 0.9:
+                traj_data[0].append(tdata_0)
             traj_data[1].append(tdata_1)
 
         # Construct the polyjectory.
-        pj = polyjectory(traj_data, [tm_data, tm_data], [0, 0])
+        pj = polyjectory(traj_data, [tm_data_0, tm_data_1], [0, 0])
 
         # Run conjunction detection.
         cj = conjunctions(pj=pj, conj_thresh=cthresh, conj_det_interval=0.03)
