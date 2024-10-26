@@ -66,10 +66,10 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
                 # - the state vectors.
                 hy_conj_list.append(
                     (
-                        time,
-                        np.linalg.norm(ri - rj),
                         self.i,
                         self.j,
+                        time,
+                        np.linalg.norm(ri - rj),
                         copy(ri),
                         copy(vi),
                         copy(rj),
@@ -170,28 +170,27 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         # so that we detect all conjunctions.
         cj = conj(pj, 1e6, 60.0)
 
+        # Filter out from the conjunctions list the conjunctions which happen
+        # at the time boundaries of the polyjectory, since heyoka cannot detect these.
+        cjc = cj.conjunctions[
+            np.logical_and.reduce(
+                (
+                    np.abs(cj.conjunctions["tca"] - 86400.0) > 86400.0 * 1e-14,
+                    cj.conjunctions["tca"] > 0,
+                )
+            )
+        ]
+
         # Compare the results.
-        self.assertEqual(len(cj.conjunctions), len(hy_conj_list))
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["tca"], hy_conj_list["tca"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["dca"], hy_conj_list["dca"], rtol=1e-12))
-        )
-        self.assertTrue(np.all(cj.conjunctions["i"] == hy_conj_list["i"]))
-        self.assertTrue(np.all(cj.conjunctions["j"] == hy_conj_list["j"]))
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["ri"], hy_conj_list["ri"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["rj"], hy_conj_list["rj"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["vi"], hy_conj_list["vi"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["vj"], hy_conj_list["vj"], rtol=1e-12))
-        )
+        self.assertEqual(len(cjc), len(hy_conj_list))
+        self.assertTrue(np.all(np.isclose(cjc["tca"], hy_conj_list["tca"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["dca"], hy_conj_list["dca"], rtol=1e-12)))
+        self.assertTrue(np.all(cjc["i"] == hy_conj_list["i"]))
+        self.assertTrue(np.all(cjc["j"] == hy_conj_list["j"]))
+        self.assertTrue(np.all(np.isclose(cjc["ri"], hy_conj_list["ri"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["rj"], hy_conj_list["rj"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["vi"], hy_conj_list["vi"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["vj"], hy_conj_list["vj"], rtol=1e-12)))
 
         # Re-run the same conjunction but with a whitelist.
         cj = conj(pj, 1e6, 60.0, whitelist=[1, 0])
@@ -206,27 +205,24 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
             )
         ]
 
-        self.assertEqual(len(cj.conjunctions), len(flist))
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["tca"], flist["tca"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["dca"], flist["dca"], rtol=1e-12))
-        )
-        self.assertTrue(np.all(cj.conjunctions["i"] == flist["i"]))
-        self.assertTrue(np.all(cj.conjunctions["j"] == flist["j"]))
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["ri"], flist["ri"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["rj"], flist["rj"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["vi"], flist["vi"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["vj"], flist["vj"], rtol=1e-12))
-        )
+        cjc = cj.conjunctions[
+            np.logical_and.reduce(
+                (
+                    np.abs(cj.conjunctions["tca"] - 86400.0) > 86400.0 * 1e-14,
+                    cj.conjunctions["tca"] > 0,
+                )
+            )
+        ]
+
+        self.assertEqual(len(cjc), len(flist))
+        self.assertTrue(np.all(np.isclose(cjc["tca"], flist["tca"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["dca"], flist["dca"], rtol=1e-12)))
+        self.assertTrue(np.all(cjc["i"] == flist["i"]))
+        self.assertTrue(np.all(cjc["j"] == flist["j"]))
+        self.assertTrue(np.all(np.isclose(cjc["ri"], flist["ri"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["rj"], flist["rj"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["vi"], flist["vi"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["vj"], flist["vj"], rtol=1e-12)))
 
         # Run another conjunction detection, this time conjunction
         # thresh 500km.
@@ -234,27 +230,24 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
 
         hy_conj_list = hy_conj_list[hy_conj_list["dca"] < 500.0]
 
-        self.assertEqual(len(cj.conjunctions), len(hy_conj_list))
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["tca"], hy_conj_list["tca"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["dca"], hy_conj_list["dca"], rtol=1e-12))
-        )
-        self.assertTrue(np.all(cj.conjunctions["i"] == hy_conj_list["i"]))
-        self.assertTrue(np.all(cj.conjunctions["j"] == hy_conj_list["j"]))
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["ri"], hy_conj_list["ri"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["rj"], hy_conj_list["rj"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["vi"], hy_conj_list["vi"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["vj"], hy_conj_list["vj"], rtol=1e-12))
-        )
+        cjc = cj.conjunctions[
+            np.logical_and.reduce(
+                (
+                    np.abs(cj.conjunctions["tca"] - 86400.0) > 86400.0 * 1e-14,
+                    cj.conjunctions["tca"] > 0,
+                )
+            )
+        ]
+
+        self.assertEqual(len(cjc), len(hy_conj_list))
+        self.assertTrue(np.all(np.isclose(cjc["tca"], hy_conj_list["tca"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["dca"], hy_conj_list["dca"], rtol=1e-12)))
+        self.assertTrue(np.all(cjc["i"] == hy_conj_list["i"]))
+        self.assertTrue(np.all(cjc["j"] == hy_conj_list["j"]))
+        self.assertTrue(np.all(np.isclose(cjc["ri"], hy_conj_list["ri"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["rj"], hy_conj_list["rj"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["vi"], hy_conj_list["vi"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["vj"], hy_conj_list["vj"], rtol=1e-12)))
 
         # Re-run the same conjunction but with a whitelist.
         cj = conj(pj, 500.0, 60.0, whitelist=[3, 8])
@@ -269,54 +262,48 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
             )
         ]
 
-        self.assertEqual(len(cj.conjunctions), len(flist))
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["tca"], flist["tca"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["dca"], flist["dca"], rtol=1e-12))
-        )
-        self.assertTrue(np.all(cj.conjunctions["i"] == flist["i"]))
-        self.assertTrue(np.all(cj.conjunctions["j"] == flist["j"]))
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["ri"], flist["ri"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["rj"], flist["rj"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["vi"], flist["vi"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["vj"], flist["vj"], rtol=1e-12))
-        )
+        cjc = cj.conjunctions[
+            np.logical_and.reduce(
+                (
+                    np.abs(cj.conjunctions["tca"] - 86400.0) > 86400.0 * 1e-14,
+                    cj.conjunctions["tca"] > 0,
+                )
+            )
+        ]
+
+        self.assertEqual(len(cjc), len(flist))
+        self.assertTrue(np.all(np.isclose(cjc["tca"], flist["tca"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["dca"], flist["dca"], rtol=1e-12)))
+        self.assertTrue(np.all(cjc["i"] == flist["i"]))
+        self.assertTrue(np.all(cjc["j"] == flist["j"]))
+        self.assertTrue(np.all(np.isclose(cjc["ri"], flist["ri"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["rj"], flist["rj"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["vi"], flist["vi"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["vj"], flist["vj"], rtol=1e-12)))
 
         # Same with 200km.
         cj = conj(pj, 200.0, 60.0)
 
         hy_conj_list = hy_conj_list[hy_conj_list["dca"] < 200.0]
 
-        self.assertEqual(len(cj.conjunctions), len(hy_conj_list))
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["tca"], hy_conj_list["tca"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["dca"], hy_conj_list["dca"], rtol=1e-12))
-        )
-        self.assertTrue(np.all(cj.conjunctions["i"] == hy_conj_list["i"]))
-        self.assertTrue(np.all(cj.conjunctions["j"] == hy_conj_list["j"]))
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["ri"], hy_conj_list["ri"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["rj"], hy_conj_list["rj"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["vi"], hy_conj_list["vi"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["vj"], hy_conj_list["vj"], rtol=1e-12))
-        )
+        cjc = cj.conjunctions[
+            np.logical_and.reduce(
+                (
+                    np.abs(cj.conjunctions["tca"] - 86400.0) > 86400.0 * 1e-14,
+                    cj.conjunctions["tca"] > 0,
+                )
+            )
+        ]
+
+        self.assertEqual(len(cjc), len(hy_conj_list))
+        self.assertTrue(np.all(np.isclose(cjc["tca"], hy_conj_list["tca"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["dca"], hy_conj_list["dca"], rtol=1e-12)))
+        self.assertTrue(np.all(cjc["i"] == hy_conj_list["i"]))
+        self.assertTrue(np.all(cjc["j"] == hy_conj_list["j"]))
+        self.assertTrue(np.all(np.isclose(cjc["ri"], hy_conj_list["ri"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["rj"], hy_conj_list["rj"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["vi"], hy_conj_list["vi"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["vj"], hy_conj_list["vj"], rtol=1e-12)))
 
         # Re-run the same conjunction but with a whitelist.
         cj = conj(pj, 200.0, 60.0, whitelist=[9, 2])
@@ -331,27 +318,24 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
             )
         ]
 
-        self.assertEqual(len(cj.conjunctions), len(flist))
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["tca"], flist["tca"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["dca"], flist["dca"], rtol=1e-12))
-        )
-        self.assertTrue(np.all(cj.conjunctions["i"] == flist["i"]))
-        self.assertTrue(np.all(cj.conjunctions["j"] == flist["j"]))
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["ri"], flist["ri"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["rj"], flist["rj"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["vi"], flist["vi"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["vj"], flist["vj"], rtol=1e-12))
-        )
+        cjc = cj.conjunctions[
+            np.logical_and.reduce(
+                (
+                    np.abs(cj.conjunctions["tca"] - 86400.0) > 86400.0 * 1e-14,
+                    cj.conjunctions["tca"] > 0,
+                )
+            )
+        ]
+
+        self.assertEqual(len(cjc), len(flist))
+        self.assertTrue(np.all(np.isclose(cjc["tca"], flist["tca"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["dca"], flist["dca"], rtol=1e-12)))
+        self.assertTrue(np.all(cjc["i"] == flist["i"]))
+        self.assertTrue(np.all(cjc["j"] == flist["j"]))
+        self.assertTrue(np.all(np.isclose(cjc["ri"], flist["ri"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["rj"], flist["rj"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["vi"], flist["vi"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["vj"], flist["vj"], rtol=1e-12)))
 
     def test_close_conjunction(self):
         # Test keplerian orbits leading to collisions.
@@ -493,3 +477,60 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
 
         self.assertEqual(len(cj.conjunctions), 0)
         self.assertEqual(len(hy_conj_list), 0)
+
+    def test_boundary(self):
+        # A test similar to the first test in test_boundary_conjunctions, but using Keplerian
+        # orbits integrated with heyoka.
+        try:
+            import heyoka as hy
+        except ImportError:
+            return
+
+        from math import sqrt, pi
+        import numpy as np
+        from .. import polyjectory, conjunctions as conj
+
+        # Setup a fixed-centre problem with two non-interacting
+        # objects following Keplerian orbits. The first orbit
+        # is circular, the second elliptic. The two objects will collide
+        # at the pericentre of the elliptic orbit.
+        N = 2
+        ta, hy_conj_list = self._make_kep_ta(1.0, 1.0, N)
+
+        # Setup the initial conditions.
+        ic_rs = ta.state.reshape((-1, 7))
+
+        # Eccentricity of the second orbit.
+        ecc = 0.3
+
+        ic_rs[0, 0] = 1.0
+        ic_rs[0, 5] = 1.0
+        ic_rs[0, 6] = 1.0
+
+        ic_rs[1, 0] = 1.0 + ecc
+        ic_rs[1, 5] = -1.0 * sqrt((1 - ecc) / (1 + ecc))
+        ic_rs[1, 6] = 1.0 + ecc
+
+        # Propagate until a short time before the collision.
+        c_out = ta.propagate_for(pi - 1e-6, c_output=True)[4]
+
+        # NOTE: heyoka must detect only the initial conjunction
+        # at t == 0.
+        self.assertEqual(len(hy_conj_list), 1)
+
+        # Build the polyjectory.
+        trajs = []
+        for i in range(N):
+            trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
+        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+
+        # Run conjunction detection with a very large threshold.
+        cj = conj(pj, 10000.0, 0.1)
+
+        # NOTE: we must detect 2 conjunctions: the initial one at t=0
+        # and the second one which does not correspond to a minimum
+        # of the mutual distance.
+        self.assertEqual(len(cj.conjunctions), 2)
+        self.assertEqual(cj.conjunctions["tca"][0], 0.0)
+        self.assertAlmostEqual(cj.conjunctions["tca"][1], pi - 1e-6, places=15)
+        self.assertAlmostEqual(cj.conjunctions["dca"][0], ecc, places=15)

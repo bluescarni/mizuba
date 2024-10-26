@@ -375,6 +375,40 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                         n_poly_no_roots += tmp_conj_vec.empty();
                         n_tot_dist_minima += static_cast<unsigned long long>(tmp_conj_vec.size());
 
+                        // Helper to add to local_conj_vec a detected conjunction occurring at time conj_tm with
+                        // conjunction distance square of conj_dist2.
+                        const auto add_conjunction = [order, &local_conj_vec, lb_rf, poly_xi, poly_yi, poly_zi,
+                                                      poly_vxi, poly_vyi, poly_vzi, poly_xj, poly_yj, poly_zj, poly_vxj,
+                                                      poly_vyj, poly_vzj, i, j](double conj_tm, double conj_dist2) {
+                            // Compute the state vector for the two objects.
+                            const std::array<double, 3> ri = {detail::horner_eval(poly_xi, order, conj_tm),
+                                                              detail::horner_eval(poly_yi, order, conj_tm),
+                                                              detail::horner_eval(poly_zi, order, conj_tm)},
+                                                        vi = {detail::horner_eval(poly_vxi, order, conj_tm),
+                                                              detail::horner_eval(poly_vyi, order, conj_tm),
+                                                              detail::horner_eval(poly_vzi, order, conj_tm)};
+
+                            const std::array<double, 3> rj = {detail::horner_eval(poly_xj, order, conj_tm),
+                                                              detail::horner_eval(poly_yj, order, conj_tm),
+                                                              detail::horner_eval(poly_zj, order, conj_tm)},
+                                                        vj = {detail::horner_eval(poly_vxj, order, conj_tm),
+                                                              detail::horner_eval(poly_vyj, order, conj_tm),
+                                                              detail::horner_eval(poly_vzj, order, conj_tm)};
+
+                            local_conj_vec.emplace_back(i, j,
+                                                        // NOTE: we want to store here the absolute
+                                                        // time coordinate of the conjunction. conj_tm
+                                                        // is a time coordinate relative to the root
+                                                        // finding interval, so we need to transform it
+                                                        // into an absolute time within the polyjectory.
+                                                        lb_rf + conj_tm,
+                                                        // NOTE: conj_dist2 is finite but it could still
+                                                        // be negative due to floating-point rounding
+                                                        // (e.g., zero-distance conjunctions). Ensure
+                                                        // we do not produce NaN here.
+                                                        std::sqrt(std::max(conj_dist2, 0.)), ri, vi, rj, vj);
+                        };
+
                         // For each detected conjunction, we need to:
                         // - verify that indeed the conjunction happens below
                         //   the threshold,
@@ -397,36 +431,119 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                             }
 
                             if (conj_dist2 < conj_thresh2) {
-                                // Compute the state vector for the two objects.
-                                const std::array<double, 3> ri = {detail::horner_eval(poly_xi, order, conj_tm),
-                                                                  detail::horner_eval(poly_yi, order, conj_tm),
-                                                                  detail::horner_eval(poly_zi, order, conj_tm)},
-                                                            vi = {detail::horner_eval(poly_vxi, order, conj_tm),
-                                                                  detail::horner_eval(poly_vyi, order, conj_tm),
-                                                                  detail::horner_eval(poly_vzi, order, conj_tm)};
-
-                                const std::array<double, 3> rj = {detail::horner_eval(poly_xj, order, conj_tm),
-                                                                  detail::horner_eval(poly_yj, order, conj_tm),
-                                                                  detail::horner_eval(poly_zj, order, conj_tm)},
-                                                            vj = {detail::horner_eval(poly_vxj, order, conj_tm),
-                                                                  detail::horner_eval(poly_vyj, order, conj_tm),
-                                                                  detail::horner_eval(poly_vzj, order, conj_tm)};
-
-                                local_conj_vec.emplace_back(
-                                    // NOTE: we want to store here the absolute
-                                    // time coordinate of the conjunction. conj_tm
-                                    // is a time coordinate relative to the root
-                                    // finding interval, so we need to transform it
-                                    // into an absolute time within the polyjectory.
-                                    lb_rf + conj_tm,
-                                    // NOTE: conj_dist2 is finite but it could still
-                                    // be negative due to floating-point rounding
-                                    // (e.g., zero-distance conjunctions). Ensure
-                                    // we do not produce NaN here.
-                                    std::sqrt(std::max(conj_dist2, 0.)), i, j, ri, vi, rj, vj);
+                                // We detected an actual conjunction, add it.
+                                add_conjunction(conj_tm, conj_dist2);
                             } else {
                                 // Update n_tot_discarded_dist_minima.
                                 ++n_tot_discarded_dist_minima;
+                            }
+                        }
+
+                        // NOTE: we now have to handle the special case in which we are at either
+                        // the beginning or at the end of the trajectory time range for at least
+                        // one of the objects. In this case, we may end up in a situation in which
+                        // a conjunction is not detected because there is no minimum in the mutual
+                        // distance between the objects - the minimum would occur outside the bounds
+                        // of the time range, but we never get to detect it because we have no
+                        // trajectory data outside the time bounds.
+                        //
+                        // An equivalent (and more mathy) way of seeing this is the following. The
+                        // minima of the distance square function are given by the zeroes of the derivative
+                        // **if** the domain is the entire real line (i.e., infinite time). But if the
+                        // domain is restricted to a finite subrange of the real line, then we may
+                        // have additional minima in correspondence of the subrange boundaries.
+
+                        // We first handle the case in which we are at the end of trajectory data
+                        // for at least one object.
+                        //
+                        // The it_i + 1 == t_end_i checks that we are at the last trajectory step,
+                        // while *it_i == ub_rf checks that the root finding interval ends when the
+                        // last trajectory step ends. The second check is needed because being in the
+                        // last trajectory step does not necessarily mean that we are considering the
+                        // entire trajectory step in the root finding.
+                        if ((it_i + 1 == t_end_i && *it_i == ub_rf) || (it_j + 1 == t_end_j && *it_j == ub_rf)) {
+                            // We need to evaluate the derivative of the distance function at the
+                            // end of the time range. If it is negative, it is a minimum and
+                            // we may have another conjunction.
+
+                            // NOTE: the trajectory time ranges are created as half-open intervals,
+                            // thus we need to consider for a candidate minimum the time immediately
+                            // preceding the end of the time range.
+                            const auto min_cand_time = std::nextafter(rf_int, -1.);
+
+                            // Evaluate the derivative of the distance square at min_cand_time.
+                            // NOTE: ts_diff_der_ptr was set up previously.
+                            const auto min_cand_dval = detail::horner_eval(ts_diff_der_ptr, order, min_cand_time);
+                            if (!std::isfinite(min_cand_dval)) [[unlikely]] {
+                                // LCOV_EXCL_START
+                                throw std::invalid_argument(fmt::format(
+                                    "An invalid value of {} was computed for the "
+                                    "derivative of the distance square function at the upper boundary of a trajectory",
+                                    min_cand_dval));
+                                // LCOV_EXCL_STOP
+                            }
+
+                            // NOTE: check for strictly negative derivative. If the derivative had a zero here,
+                            // we should have located it during polynomial root finding.
+                            if (min_cand_dval < 0) {
+                                // The distance square function has negative derivative at the end of the
+                                // time range. Evaluate the distance square.
+                                const auto min_cand_dist2 = detail::horner_eval(ts_diff_ptr, order, min_cand_time);
+                                if (!std::isfinite(min_cand_dist2)) [[unlikely]] {
+                                    // LCOV_EXCL_START
+                                    throw std::invalid_argument(fmt::format(
+                                        "An invalid value of {} was computed for a "
+                                        "candidate minimum of the distance square function at the upper boundary "
+                                        "of a trajectory",
+                                        min_cand_dist2));
+                                    // LCOV_EXCL_STOP
+                                }
+
+                                // Check if the distance square is less than the threshold.
+                                // If it is, add the conjunction.
+                                if (min_cand_dist2 < conj_thresh2) {
+                                    add_conjunction(min_cand_time, min_cand_dist2);
+                                }
+                            }
+                        }
+
+                        // We now handle the case in which we are at the beginning of trajectory data
+                        // for at least one object. The logic is similar to the previous case.
+                        //
+                        // The it_i == t_begin_i checks that we are at the first trajectory step,
+                        // while lb_rf == 0 checks that the root finding interval begins when the
+                        // first trajectory step begins. The second check is needed because being in the
+                        // first trajectory step does not necessarily mean that we are considering the
+                        // entire trajectory step in the root finding.
+                        if ((it_i == t_begin_i && lb_rf == 0) || (it_j == t_begin_j && lb_rf == 0)) {
+                            // Calculate the value of the derivative of the distance square at the beginning
+                            // of the first trajectory step.
+                            const auto min_cand_dval = detail::horner_eval(ts_diff_der_ptr, order, 0.);
+                            if (!std::isfinite(min_cand_dval)) [[unlikely]] {
+                                // LCOV_EXCL_START
+                                throw std::invalid_argument(fmt::format(
+                                    "An invalid value of {} was computed for the "
+                                    "derivative of the distance square function at the lower boundary of a trajectory",
+                                    min_cand_dval));
+                                // LCOV_EXCL_STOP
+                            }
+
+                            // The check is now for strictly *positive* derivative.
+                            if (min_cand_dval > 0) {
+                                const auto min_cand_dist2 = detail::horner_eval(ts_diff_ptr, order, 0.);
+                                if (!std::isfinite(min_cand_dist2)) [[unlikely]] {
+                                    // LCOV_EXCL_START
+                                    throw std::invalid_argument(fmt::format(
+                                        "An invalid value of {} was computed for a "
+                                        "candidate minimum of the distance square function at the lower boundary "
+                                        "of a trajectory",
+                                        min_cand_dist2));
+                                    // LCOV_EXCL_STOP
+                                }
+
+                                if (min_cand_dist2 < conj_thresh2) {
+                                    add_conjunction(0., min_cand_dist2);
+                                }
                             }
                         }
                     } else {
@@ -455,10 +572,6 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                 assert(loop_entered);
             }
 
-            // Atomically merge local_conj_vec into conj_vector.
-            std::lock_guard lock(conj_vector_mutex);
-            conj_vector.insert(conj_vector.end(), local_conj_vec.begin(), local_conj_vec.end());
-
             // Atomically update cd_np_rep.
             cd_np_rep.n_tot_conj_candidates += n_tot_conj_candidates;
             cd_np_rep.n_dist2_check += n_dist2_check;
@@ -467,6 +580,12 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
             cd_np_rep.n_poly_no_roots += n_poly_no_roots;
             cd_np_rep.n_tot_dist_minima += n_tot_dist_minima;
             cd_np_rep.n_tot_discarded_dist_minima += n_tot_discarded_dist_minima;
+
+            // Atomically merge local_conj_vec into conj_vector.
+            // NOTE: ensure we do this at the end of the scope in order to minimise
+            // the locking time.
+            std::lock_guard lock(conj_vector_mutex);
+            conj_vector.insert(conj_vector.end(), local_conj_vec.begin(), local_conj_vec.end());
         });
 
     // Sort conj_vector according to tca.

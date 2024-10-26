@@ -17,9 +17,28 @@ namespace mizuba::detail
 
 // Minimal interval class supporting a couple
 // of elementary operations.
+//
 // NOTE: like in heyoka, the implementation of interval arithmetic
 // could be improved by accounting for floating-point truncation to yield results
 // which are truly mathematically exact.
+//
+// NOTE: instead of using interval arithmetics in the computation of the AABBs
+// and during poly root finding, fast exclustion checking, etc., we should consider
+// using the Cargo-Shisha algorithm, which provides tighter bounds for polynomial
+// enclosures:
+//
+// https://nvlpubs.nist.gov/nistpubs/jres/70B/jresv70Bn1p79_A1b.pdf
+//
+// The "triangle differences" algorithm at the end of section 3 seems fairly
+// easy to implement, even in heyoka's expression system, and performance-wise,
+// at least up to order 20 or so, it should be competitive with the interval
+// arithmetics approach. The thing to watch out for seems to be the numerical
+// stability - when we implemented this in heyoka, it looked like there were
+// numerical stability issues whose specifics unfortunately I cannot recall.
+// To be evaluated when we have confidence in the reliability of the unit tests.
+// Having tighter bounds on the aabbs could also help us moving to float16 for
+// the representation of the aabbs, which would help with both memory usage
+// and disk utilisation/bandwidth.
 struct ival {
     double lower;
     double upper;
