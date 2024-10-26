@@ -74,12 +74,12 @@ public:
 
     // Struct to represent a conjunction between two objects.
     struct conj {
+        std::uint32_t i, j;
         // Time of closest approach.
         double tca;
         // Distance of closest approach.
         double dca;
         // The objects involved in the conjunction.
-        std::uint32_t i, j;
         // The state vectors of i and j
         // at TCA.
         std::array<double, 3> ri, vi;

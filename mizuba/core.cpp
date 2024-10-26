@@ -373,7 +373,7 @@ PYBIND11_MODULE(core, m)
     PYBIND11_NUMPY_DTYPE(aabb_collision, i, j);
     // Same for conjunctions::conj.
     using conj = mz::conjunctions::conj;
-    PYBIND11_NUMPY_DTYPE(conj, tca, dca, i, j, ri, vi, rj, vj);
+    PYBIND11_NUMPY_DTYPE(conj, i, j, tca, dca, ri, vi, rj, vj);
 
     // Conjunctions.
     py::class_<mz::conjunctions> conj_cl(m, "conjunctions", py::dynamic_attr{});

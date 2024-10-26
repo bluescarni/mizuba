@@ -395,18 +395,18 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                                                               detail::horner_eval(poly_vyj, order, conj_tm),
                                                               detail::horner_eval(poly_vzj, order, conj_tm)};
 
-                            local_conj_vec.emplace_back(
-                                // NOTE: we want to store here the absolute
-                                // time coordinate of the conjunction. conj_tm
-                                // is a time coordinate relative to the root
-                                // finding interval, so we need to transform it
-                                // into an absolute time within the polyjectory.
-                                lb_rf + conj_tm,
-                                // NOTE: conj_dist2 is finite but it could still
-                                // be negative due to floating-point rounding
-                                // (e.g., zero-distance conjunctions). Ensure
-                                // we do not produce NaN here.
-                                std::sqrt(std::max(conj_dist2, 0.)), i, j, ri, vi, rj, vj);
+                            local_conj_vec.emplace_back(i, j,
+                                                        // NOTE: we want to store here the absolute
+                                                        // time coordinate of the conjunction. conj_tm
+                                                        // is a time coordinate relative to the root
+                                                        // finding interval, so we need to transform it
+                                                        // into an absolute time within the polyjectory.
+                                                        lb_rf + conj_tm,
+                                                        // NOTE: conj_dist2 is finite but it could still
+                                                        // be negative due to floating-point rounding
+                                                        // (e.g., zero-distance conjunctions). Ensure
+                                                        // we do not produce NaN here.
+                                                        std::sqrt(std::max(conj_dist2, 0.)), ri, vi, rj, vj);
                         };
 
                         // For each detected conjunction, we need to:

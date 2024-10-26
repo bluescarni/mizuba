@@ -66,10 +66,10 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
                 # - the state vectors.
                 hy_conj_list.append(
                     (
-                        time,
-                        np.linalg.norm(ri - rj),
                         self.i,
                         self.j,
+                        time,
+                        np.linalg.norm(ri - rj),
                         copy(ri),
                         copy(vi),
                         copy(rj),
