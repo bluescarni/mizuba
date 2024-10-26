@@ -510,7 +510,7 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                         // We now handle the case in which we are at the beginning of trajectory data
                         // for at least one object. The logic is similar to the previous case.
                         //
-                        // The it_i + 1 == t_begin_i checks that we are at the first trajectory step,
+                        // The it_i == t_begin_i checks that we are at the first trajectory step,
                         // while lb_rf == 0 checks that the root finding interval begins when the
                         // first trajectory step begins. The second check is needed because being in the
                         // first trajectory step does not necessarily mean that we are considering the
