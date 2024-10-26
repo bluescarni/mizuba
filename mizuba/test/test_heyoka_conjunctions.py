@@ -477,3 +477,60 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
 
         self.assertEqual(len(cj.conjunctions), 0)
         self.assertEqual(len(hy_conj_list), 0)
+
+    def test_boundary(self):
+        # A test similar to the first test in test_boundary_conjunctions, but using Keplerian
+        # orbits integrated with heyoka.
+        try:
+            import heyoka as hy
+        except ImportError:
+            return
+
+        from math import sqrt, pi
+        import numpy as np
+        from .. import polyjectory, conjunctions as conj
+
+        # Setup a fixed-centre problem with two non-interacting
+        # objects following Keplerian orbits. The first orbit
+        # is circular, the second elliptic. The two objects will collide
+        # at the pericentre of the elliptic orbit.
+        N = 2
+        ta, hy_conj_list = self._make_kep_ta(1.0, 1.0, N)
+
+        # Setup the initial conditions.
+        ic_rs = ta.state.reshape((-1, 7))
+
+        # Eccentricity of the second orbit.
+        ecc = 0.3
+
+        ic_rs[0, 0] = 1.0
+        ic_rs[0, 5] = 1.0
+        ic_rs[0, 6] = 1.0
+
+        ic_rs[1, 0] = 1.0 + ecc
+        ic_rs[1, 5] = -1.0 * sqrt((1 - ecc) / (1 + ecc))
+        ic_rs[1, 6] = 1.0 + ecc
+
+        # Propagate until a short time before the collision.
+        c_out = ta.propagate_for(pi - 1e-6, c_output=True)[4]
+
+        # NOTE: heyoka must detect only the initial conjunction
+        # at t == 0.
+        self.assertEqual(len(hy_conj_list), 1)
+
+        # Build the polyjectory.
+        trajs = []
+        for i in range(N):
+            trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
+        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+
+        # Run conjunction detection with a very large threshold.
+        cj = conj(pj, 10000.0, 0.1)
+
+        # NOTE: we must detect 2 conjunctions: the initial one at t=0
+        # and the second one which does not correspond to a minimum
+        # of the mutual distance.
+        self.assertEqual(len(cj.conjunctions), 2)
+        self.assertEqual(cj.conjunctions["tca"][0], 0.0)
+        self.assertAlmostEqual(cj.conjunctions["tca"][1], pi - 1e-6, places=15)
+        self.assertAlmostEqual(cj.conjunctions["dca"][0], ecc, places=15)
