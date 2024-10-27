@@ -17,6 +17,56 @@ del core
 from . import test
 
 
+def _sgp4_detect_duplicates(sat_list):
+    # A function to detect duplicates that are sometimes
+    # present in the satellite catalogues downloaded from
+    # space-track.org. We identify duplicates based on exact
+    # matching of the TLE data. A boolean flag vector flagging
+    # the unique satellites in sat_list is returned.
+    #
+    # In order to detect duplicates, we put the TLE elements,
+    # the epoch and the bstar in a structured numpy array and then
+    # use the unique() function.
+    import numpy as np
+
+    # Prepare the dtype.
+    dtype_fields = [
+        "epochyr",
+        "epochdays",
+        "ndot",
+        "nddot",
+        "bstar",
+        "inclo",
+        "nodeo",
+        "ecco",
+        "argpo",
+        "mo",
+        "no_kozai",
+    ]
+    dtype = np.dtype([(f, float) for f in dtype_fields])
+
+    # Create the structured array.
+    sat_arr = np.array(
+        [tuple(getattr(sat, f) for f in dtype_fields) for sat in sat_list], dtype=dtype
+    )
+
+    # Run unique().
+    unique_idx = np.unique(sat_arr, return_index=True)[1]
+
+    # Turn unique_idx into a mask array.
+    unique_mask = np.zeros(
+        (
+            len(
+                sat_list,
+            )
+        ),
+        dtype=bool,
+    )
+    unique_mask[unique_idx] = True
+
+    return unique_mask
+
+
 def _sgp4_pre_filter_sat_list(sat_list, jd_begin, exit_radius, reentry_radius):
     try:
         from sgp4.api import Satrec, SatrecArray
@@ -92,10 +142,14 @@ def _sgp4_pre_filter_sat_list(sat_list, jd_begin, exit_radius, reentry_radius):
     # Propagate the state of all satellites at jd_begin.
     e, r, v = sat_arr.sgp4(np.array([jd_begin]), np.array([0.0]))
 
+    # Detect duplicate satellites.
+    unique_mask = _sgp4_detect_duplicates(sat_list)
+
     # Mask out the satellites that:
     # - generated an error code, or
     # - ended up at an invalid distance, or
-    # - contain non-finite data.
+    # - contain non-finite data, or
+    # - are duplicates of another satellite.
     dist = np.linalg.norm(r[:, 0], axis=1)
     mask = np.logical_and.reduce(
         (
@@ -105,6 +159,7 @@ def _sgp4_pre_filter_sat_list(sat_list, jd_begin, exit_radius, reentry_radius):
             dist > reentry_radius,
             np.all(np.isfinite(r[:, 0]), axis=1),
             np.all(np.isfinite(v[:, 0]), axis=1),
+            unique_mask,
         )
     )
 
