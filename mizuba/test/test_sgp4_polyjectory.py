@@ -26,6 +26,7 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
     def test_basics(self):
         try:
             from sgp4.api import Satrec
+            import pandas as pd
         except ImportError:
             return
 
@@ -122,6 +123,7 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
     def test_invalid_initial_states(self):
         try:
             from sgp4.api import Satrec
+            import pandas as pd
         except ImportError:
             return
 
@@ -130,7 +132,7 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
 
         sat = Satrec.twoline2rv(_s_8000, _t_8000)
         sat_dec = Satrec.twoline2rv(_s_dec, _t_dec)
-        pt, mask = sgp4_polyjectory(
+        pt, mask, _ = sgp4_polyjectory(
             [sat, sat_dec], 2460496.5 + 1.0 / 32, 2460496.5 + 7, exit_radius=8000.0
         )
         self.assertTrue(np.all(mask == [False, True]))
@@ -155,6 +157,7 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
         try:
             from skyfield.api import load
             from skyfield.iokit import parse_tle_file
+            import pandas as pd
         except ImportError:
             return
 
@@ -176,7 +179,7 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
             sat_list = sat_list[::20]
 
             # Build the polyjectory.
-            pt, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 1)
+            pt, mask, _ = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 1)
 
             # Filter out the masked satellites from sat_list.
             sat_list = list(np.array(sat_list)[mask])

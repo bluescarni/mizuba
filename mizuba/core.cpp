@@ -357,6 +357,7 @@ PYBIND11_MODULE(core, m)
                 sat_list, jd_begin, exit_radius, reentry_radius);
             sat_list = filter_res[0];
             py::object mask = filter_res[1];
+            py::object pd = filter_res[2];
 
             // Turn sat_list into a data vector.
             const auto sat_data = mzpy::sat_list_to_vector(sat_list);
@@ -376,7 +377,13 @@ PYBIND11_MODULE(core, m)
             // Register the polyjectory implementation in the cleanup machinery.
             mzpy::detail::add_pj_weak_ptr(mz::detail::fetch_pj_impl(poly_ret));
 
-            return py::make_tuple(std::move(poly_ret), std::move(mask));
+            // Convert the polyjectory into a Python object.
+            py::object poly_obj = py::cast(std::move(poly_ret));
+
+            // Amend the dataframe with the final statuses from the polyjectory.
+            pd = py::module_::import("mizuba").attr("_sgp4_set_final_status")(poly_obj, pd, mask);
+
+            return py::make_tuple(std::move(poly_obj), std::move(mask), std::move(pd));
         },
         "sat_list"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert(),
         "exit_radius"_a.noconvert() = mz::sgp4_exit_radius, "reentry_radius"_a.noconvert() = mz::sgp4_reentry_radius);

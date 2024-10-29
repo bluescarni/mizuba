@@ -328,7 +328,7 @@ class conjunctions_test_case(_ut.TestCase):
         begin_jd = 2460496.5
 
         # Build the polyjectory.
-        pt, mask = sgp4_polyjectory(
+        pt, mask, _ = sgp4_polyjectory(
             sat_list, begin_jd, begin_jd + 0.25, exit_radius=12000.0
         )
         tot_nobjs = pt.nobjs
@@ -616,7 +616,7 @@ class conjunctions_test_case(_ut.TestCase):
         begin_jd = 2460496.5
 
         # Build the polyjectory. Run it for only 15 minutes.
-        pt, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 15.0 / 1440.0)
+        pt, mask, _ = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 15.0 / 1440.0)
 
         # Build a whitelist that excludes two satellites
         # that we know undergo a conjunction.

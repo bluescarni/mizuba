@@ -32,7 +32,7 @@ Documentation = "https://github.com/bluescarni/mizuba"
 Repository = "https://github.com/bluescarni/mizuba"
 
 [project.optional-dependencies]
-sgp4 = ["skyfield"]
+sgp4 = ["skyfield", "pandas"]
 heyoka = ["heyoka >= 6.1.0, < 7"]
 
 [tool.scikit-build]
