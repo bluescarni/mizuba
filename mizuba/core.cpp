@@ -383,7 +383,7 @@ PYBIND11_MODULE(core, m)
             // Amend the dataframe with the final statuses from the polyjectory.
             pd = py::module_::import("mizuba").attr("_sgp4_set_final_status")(poly_obj, pd, mask);
 
-            return py::make_tuple(std::move(poly_obj), std::move(mask), std::move(pd));
+            return py::make_tuple(std::move(poly_obj), std::move(pd), std::move(mask));
         },
         "sat_list"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert(),
         "exit_radius"_a.noconvert() = mz::sgp4_exit_radius, "reentry_radius"_a.noconvert() = mz::sgp4_reentry_radius);
