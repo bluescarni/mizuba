@@ -299,6 +299,22 @@ PYBIND11_MODULE(core, m)
     pt_cl.def_property_readonly("nobjs", &mz::polyjectory::get_nobjs);
     pt_cl.def_property_readonly("maxT", &mz::polyjectory::get_maxT);
     pt_cl.def_property_readonly("poly_order", &mz::polyjectory::get_poly_order);
+    pt_cl.def_property_readonly("status", [](const py::object &self) {
+        const auto *p = py::cast<const mz::polyjectory *>(self);
+
+        // Fetch the status span.
+        const auto status_span = p->get_status();
+
+        // Turn into an array.
+        auto ret = py::array_t<std::int32_t>(
+            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(status_span.extent(0))},
+            status_span.data_handle(), self);
+
+        // Ensure the returned array is read-only.
+        ret.attr("flags").attr("writeable") = false;
+
+        return ret;
+    });
     pt_cl.def(
         "__getitem__",
         [](const py::object &self, std::size_t i) {

@@ -114,6 +114,8 @@ public:
     [[nodiscard]] std::uint32_t get_poly_order() const noexcept;
 
     [[nodiscard]] std::tuple<traj_span_t, time_span_t, std::int32_t> operator[](std::size_t) const;
+    using status_span_t = heyoka::mdspan<const std::int32_t, heyoka::extents<std::size_t, std::dynamic_extent>>;
+    [[nodiscard]] status_span_t get_status() const noexcept;
 };
 
 } // namespace mizuba
