@@ -93,12 +93,12 @@ def _sgp4_detect_duplicates(sat_list):
 def _sgp4_pre_filter_sat_list(orig_sat_list, jd_begin, exit_radius, reentry_radius):
     try:
         from sgp4.api import Satrec, SatrecArray
-        import pandas as pd
     except ImportError:
         raise ImportError(
-            "The 'sgp4' and 'pandas' modules are required in order to use the sgp4_polyjectory() function"
+            "The 'sgp4' module is required in order to use the sgp4_polyjectory() function"
         )
     import numpy as np
+    import pandas as pd
 
     if len(orig_sat_list) == 0:
         raise ValueError(

@@ -26,7 +26,6 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
     def test_basics(self):
         try:
             from sgp4.api import Satrec
-            import pandas as pd
         except ImportError:
             return
 
@@ -123,7 +122,6 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
     def test_invalid_initial_states(self):
         try:
             from sgp4.api import Satrec
-            import pandas as pd
         except ImportError:
             return
 
@@ -157,7 +155,6 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
         try:
             from skyfield.api import load
             from skyfield.iokit import parse_tle_file
-            import pandas as pd
         except ImportError:
             return
 
