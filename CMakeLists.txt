@@ -126,7 +126,7 @@ find_package(spdlog REQUIRED CONFIG)
 
 # Boost.
 # NOTE: need 1.69 for safe numerics.
-find_package(Boost 1.69 COMPONENTS serialization iostreams filesystem REQUIRED CONFIG)
+find_package(Boost 1.69 COMPONENTS iostreams filesystem REQUIRED CONFIG)
 
 # Python.
 # Setup the list of Python components we need to locate.

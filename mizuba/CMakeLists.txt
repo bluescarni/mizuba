@@ -44,7 +44,6 @@ target_link_libraries(core PRIVATE
     TBB::tbb
     spdlog::spdlog
     Boost::boost
-    Boost::serialization
     Boost::iostreams
     Boost::filesystem
     Boost::disable_autolinking
