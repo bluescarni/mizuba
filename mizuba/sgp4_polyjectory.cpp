@@ -602,6 +602,19 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
                                     continue;
                                 }
 
+                                // NOTE: when analysing the results of the integration step, as a general
+                                // rule we want to check the following (in order):
+                                //
+                                // - did SGP4 propagation result in an error code? If it did,
+                                //   we discard any other analysis based on ODE integration - that is, SGP4
+                                //   error reporting has priority over ODE integration status;
+                                // - did we generate a non-finite state? We want to check this early
+                                //   because, if we did, there is no point in recording the Taylor coefficients;
+                                // - did SGP4 propagation result in a decay? We want to give precedence
+                                //   to decays detected by SGP4 over reentries detected by ODE integration;
+                                // - finally, as the last steps, we check for ODE integration success,
+                                //   time limit reached, and reentry/exit events.
+
                                 // Fetch the SGP4 error code.
                                 // NOTE: this is the error code coming out of the propagator,
                                 // not the ODE integrator, as we just replaced by hand the
@@ -621,7 +634,22 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
                                 // Fetch the ODE integration outcome.
                                 const auto oc = std::get<0>(ta.get_step_res()[i]);
 
-                                if (oc == heyoka::taylor_outcome::success) {
+                                if (oc == heyoka::taylor_outcome::err_nf_state) {
+                                    // If we generated a non-finite state during the integration,
+                                    // we cannot trust the output. Set the inactive flag, zero out
+                                    // max_h, set the status, and continue.
+                                    active_flags[i] = 0;
+                                    max_h[i] = 0;
+                                    global_status[b_idx + i] = 3;
+
+                                    continue;
+                                } else if (ecode == 6.) {
+                                    // SGP4 detected a decay. Deactivate the object and
+                                    // set the status flag.
+                                    active_flags[i] = 0;
+                                    max_h[i] = 0;
+                                    global_status[b_idx + i] = 16;
+                                } else if (oc == heyoka::taylor_outcome::success) {
                                     // If the outcome is success, then we are not done
                                     // with the current object and we still need to integrate more.
                                     ++n_active;
@@ -635,37 +663,12 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
                                     // set status as it is by default zero already.
                                     active_flags[i] = 0;
                                     max_h[i] = 0;
-                                } else if (oc < heyoka::taylor_outcome{0}) {
+                                } else {
                                     // Stopping terminal event. Deactivate and set status.
                                     assert(oc == heyoka::taylor_outcome{-1} || oc == heyoka::taylor_outcome{-2});
                                     active_flags[i] = 0;
                                     max_h[i] = 0;
                                     global_status[b_idx + i] = (oc == heyoka::taylor_outcome{-1}) ? 1 : 2;
-                                } else {
-                                    // If we generated a non-finite state during the integration,
-                                    // we cannot trust the output. Set the inactive flag, zero out
-                                    // max_h, set the status, and continue.
-                                    assert(oc == heyoka::taylor_outcome::err_nf_state);
-                                    active_flags[i] = 0;
-                                    max_h[i] = 0;
-                                    global_status[b_idx + i] = 3;
-
-                                    continue;
-                                }
-
-                                if (ecode == 6.) {
-                                    // NOTE: if we get here, we are in the following situation:
-                                    //
-                                    // - neither SGP4 nor our ODE integration errored out,
-                                    // - the ODE integration might or might not have reached the time limit or
-                                    //   a stopping terminal event,
-                                    // - the SGP4 algorithm detected a decay.
-                                    //
-                                    // We treat this equivalently to a decay detected by the ODE
-                                    // integration.
-                                    active_flags[i] = 0;
-                                    max_h[i] = 0;
-                                    global_status[b_idx + i] = 1;
                                 }
 
                                 // NOTE: if we are here, it means that we need to record the Taylor

@@ -693,6 +693,13 @@ std::uint32_t polyjectory::get_poly_order() const noexcept
     return m_impl->m_poly_op1 - 1u;
 }
 
+polyjectory::status_span_t polyjectory::get_status() const noexcept
+{
+    // NOTE: static_cast is ok, we know that we can represent the total number of objects
+    // in the polyjectory as a std::size_t.
+    return status_span_t{m_impl->m_status.data(), static_cast<std::size_t>(m_impl->m_status.size())};
+}
+
 } // namespace mizuba
 
 #if defined(__GNUC__)

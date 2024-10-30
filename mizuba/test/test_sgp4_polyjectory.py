@@ -22,13 +22,41 @@ _s_dec = "1 04206U 69082BV  24187.08533867  .00584698  00000-0  52886-2 0  9990"
 _t_dec = "2 04206  69.8949  69.3024 0029370 203.3165 156.6698 15.65658911882875"
 
 
+def _check_sgp4_pj_ret_consistency(self, pj, df, mask):
+    # Helper to verify the consistency between the return values
+    # of sgp4_polyjectory().
+    import numpy as np
+    from .. import sgp4_pj_status
+
+    # The number of True elements in the mask must be
+    # equal to the length of the polyjectory status.
+    pj_status = pj.status
+    self.assertEqual(np.sum(mask), len(pj_status))
+
+    # mask must be consisted with the data in df.
+    df_mask = df["init_code"] == sgp4_pj_status.OK
+    self.assertTrue(np.all(df_mask == mask))
+
+    # The final codes must be consistent with the
+    # polyjectory status.
+    self.assertTrue(np.all(df.loc[df_mask, "final_code"] == pj_status))
+
+    # All objects which have a non-OK initial code, must have
+    # the same final code.
+    nonok_mask = df["init_code"] != sgp4_pj_status.OK
+    self.assertTrue(
+        np.all(df.loc[nonok_mask, "final_code"] == df.loc[nonok_mask, "init_code"])
+    )
+
+
 class sgp4_polyjectory_test_case(_ut.TestCase):
     def test_basics(self):
-        try:
-            from sgp4.api import Satrec
-        except ImportError:
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
             return
 
+        from sgp4.api import Satrec
         from .. import sgp4_polyjectory
 
         sat = Satrec.twoline2rv(_s_dec, _t_dec)
@@ -120,20 +148,22 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
         )
 
     def test_invalid_initial_states(self):
-        try:
-            from sgp4.api import Satrec
-        except ImportError:
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
             return
 
+        from sgp4.api import Satrec
         from .. import sgp4_polyjectory
         import numpy as np
 
         sat = Satrec.twoline2rv(_s_8000, _t_8000)
         sat_dec = Satrec.twoline2rv(_s_dec, _t_dec)
-        pt, mask = sgp4_polyjectory(
+        pt, df, mask = sgp4_polyjectory(
             [sat, sat_dec], 2460496.5 + 1.0 / 32, 2460496.5 + 7, exit_radius=8000.0
         )
         self.assertTrue(np.all(mask == [False, True]))
+        _check_sgp4_pj_ret_consistency(self, pt, df, mask)
 
         sat = Satrec.twoline2rv(_s_dec, _t_dec)
         with self.assertRaises(ValueError) as cm:
@@ -152,16 +182,17 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
         )
 
     def test_taylor_cfs(self):
-        try:
-            from skyfield.api import load
-            from skyfield.iokit import parse_tle_file
-        except ImportError:
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
             return
 
+        from skyfield.api import load
+        from skyfield.iokit import parse_tle_file
         from .. import sgp4_polyjectory
         import numpy as np
-        from ._sgp4_test_data_202407 import sgp4_test_tle as sgp4_test_tle_202407
-        from ._sgp4_test_data_202409 import sgp4_test_tle as sgp4_test_tle_202409
+        from ._sgp4_test_data_20240705 import sgp4_test_tle as sgp4_test_tle_202407
+        from ._sgp4_test_data_20240917 import sgp4_test_tle as sgp4_test_tle_202409
 
         def run_test(sgp4_test_tle, begin_jd):
             # Load the test TLEs.
@@ -176,7 +207,8 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
             sat_list = sat_list[::20]
 
             # Build the polyjectory.
-            pt, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 1)
+            pt, df, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 1)
+            _check_sgp4_pj_ret_consistency(self, pt, df, mask)
 
             # Filter out the masked satellites from sat_list.
             sat_list = list(np.array(sat_list)[mask])
@@ -235,3 +267,28 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
             [sgp4_test_tle_202407, sgp4_test_tle_202409], [2460496.5, 2460569.5]
         ):
             run_test(sgp4_test_tle, begin_jd)
+
+    def test_duplicates(self):
+        # Test case to check for duplicate satellites in the space-track catalogue.
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
+            return
+
+        from skyfield.api import load
+        from skyfield.iokit import parse_tle_file
+        from .. import sgp4_polyjectory, sgp4_pj_status
+        from ._sgp4_test_data_20241026 import sgp4_test_tle
+
+        # Load the test TLEs.
+        ts = load.timescale()
+        sat_list = list(
+            parse_tle_file((bytes(_, "ascii") for _ in sgp4_test_tle.split("\n")), ts)
+        )
+
+        # Build a very short polyjectory.
+        begin_jd = 2460609.833333
+        pt, df, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 1 / 1440.0)
+
+        # Check the number of duplicates.
+        self.assertEqual(len(df[df["init_code"] == sgp4_pj_status.DUPLICATE]), 9)

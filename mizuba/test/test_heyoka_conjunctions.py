@@ -110,16 +110,18 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
     # detection with a heyoka simulation in which we keep
     # track of the minimum distances between the objects.
     def test_tle(self):
-        try:
-            import heyoka as hy
-            from skyfield.api import load
-            from skyfield.iokit import parse_tle_file
-            from sgp4.api import SatrecArray
-        except ImportError:
+        from .. import _have_sgp4_deps, _have_heyoka_deps
+
+        if not _have_sgp4_deps() or not _have_heyoka_deps():
             return
 
+        import heyoka as hy
+        from skyfield.api import load
+        from skyfield.iokit import parse_tle_file
+        from sgp4.api import SatrecArray
+
         # NOTE: we will be using TLE data to run the test.
-        from ._sgp4_test_data_202407 import sgp4_test_tle
+        from ._sgp4_test_data_20240705 import sgp4_test_tle
         from .. import conjunctions as conj, polyjectory
         import numpy as np
 
@@ -339,11 +341,12 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
 
     def test_close_conjunction(self):
         # Test keplerian orbits leading to collisions.
-        try:
-            import heyoka as hy
-        except ImportError:
+        from .. import _have_heyoka_deps
+
+        if not _have_heyoka_deps():
             return
 
+        import heyoka as hy
         from .. import conjunctions as conj, polyjectory
         import numpy as np
 
@@ -481,11 +484,12 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
     def test_boundary(self):
         # A test similar to the first test in test_boundary_conjunctions, but using Keplerian
         # orbits integrated with heyoka.
-        try:
-            import heyoka as hy
-        except ImportError:
+        from .. import _have_heyoka_deps
+
+        if not _have_heyoka_deps():
             return
 
+        import heyoka as hy
         from math import sqrt, pi
         import numpy as np
         from .. import polyjectory, conjunctions as conj
