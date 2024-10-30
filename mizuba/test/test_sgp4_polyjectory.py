@@ -51,11 +51,12 @@ def _check_sgp4_pj_ret_consistency(self, pj, df, mask):
 
 class sgp4_polyjectory_test_case(_ut.TestCase):
     def test_basics(self):
-        try:
-            from sgp4.api import Satrec
-        except ImportError:
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
             return
 
+        from sgp4.api import Satrec
         from .. import sgp4_polyjectory
 
         sat = Satrec.twoline2rv(_s_dec, _t_dec)
@@ -147,11 +148,12 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
         )
 
     def test_invalid_initial_states(self):
-        try:
-            from sgp4.api import Satrec
-        except ImportError:
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
             return
 
+        from sgp4.api import Satrec
         from .. import sgp4_polyjectory
         import numpy as np
 
@@ -180,12 +182,13 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
         )
 
     def test_taylor_cfs(self):
-        try:
-            from skyfield.api import load
-            from skyfield.iokit import parse_tle_file
-        except ImportError:
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
             return
 
+        from skyfield.api import load
+        from skyfield.iokit import parse_tle_file
         from .. import sgp4_polyjectory
         import numpy as np
         from ._sgp4_test_data_20240705 import sgp4_test_tle as sgp4_test_tle_202407
@@ -267,12 +270,13 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
 
     def test_duplicates(self):
         # Test case to check for duplicate satellites in the space-track catalogue.
-        try:
-            from skyfield.api import load
-            from skyfield.iokit import parse_tle_file
-        except ImportError:
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
             return
 
+        from skyfield.api import load
+        from skyfield.iokit import parse_tle_file
         from .. import sgp4_polyjectory, sgp4_pj_status
         from ._sgp4_test_data_20241026 import sgp4_test_tle
 

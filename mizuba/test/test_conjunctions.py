@@ -12,12 +12,13 @@ import unittest as _ut
 class conjunctions_test_case(_ut.TestCase):
     @classmethod
     def setUpClass(cls):
-        try:
-            from skyfield.api import load
-            from skyfield.iokit import parse_tle_file
-        except ImportError:
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
             return
 
+        from skyfield.api import load
+        from skyfield.iokit import parse_tle_file
         from ._sgp4_test_data_20240705 import sgp4_test_tle
 
         # Load the test TLEs.
@@ -385,7 +386,7 @@ class conjunctions_test_case(_ut.TestCase):
         c = conj(pt, conj_thresh=1e-8, conj_det_interval=1.0)
 
         # Build the conjunctions dataframe and verify it.
-        cdf = make_sgp4_conjunctions_df(c, df)
+        cdf = make_sgp4_conjunctions_df(c, df, begin_jd)
         self._verify_sgp4_cj_df(c, df, cdf)
 
         # Verify the aabbs.
@@ -693,7 +694,7 @@ class conjunctions_test_case(_ut.TestCase):
         )
 
         # Build the conjunctions dataframe and verify it.
-        cdf = make_sgp4_conjunctions_df(c, df)
+        cdf = make_sgp4_conjunctions_df(c, df, begin_jd)
         self._verify_sgp4_cj_df(c, df, cdf)
 
         # The conjunctions must be sorted according

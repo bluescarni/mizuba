@@ -40,6 +40,39 @@ class sgp4_pj_status(IntEnum):
 del IntEnum
 
 
+def _have_sgp4_deps():
+    # Helper to check if we have all the dependencies
+    # necessary for support of TLE propagation via sgp4.
+    try:
+        import skyfield
+        import sgp4
+        import pandas
+        import astropy
+
+        return True
+    except ImportError:
+        return False
+
+
+def _check_sgp4_deps():
+    # Throwing variant of the previous function.
+    if not _have_sgp4_deps():
+        raise ImportError(
+            "Support for TLE propagation via SGP4 requires the following Python modules: sgp4, skyfield, pandas and astropy"
+        )
+
+
+def _have_heyoka_deps():
+    # Helper to check if we have all the dependencies
+    # necessary for support for propagation via heyoka.
+    try:
+        import heyoka
+
+        return True
+    except ImportError:
+        return False
+
+
 def _sgp4_detect_duplicates(sat_list):
     # A function to detect duplicates that are sometimes
     # present in the satellite catalogues downloaded from
@@ -111,14 +144,12 @@ def _sgp4_pre_filter_sat_list(orig_sat_list, jd_begin, exit_radius, reentry_radi
     #   in orig_sat_list, including their IDs, names, TLEs and status at
     #   jd_begin.
 
-    try:
-        from sgp4.api import Satrec, SatrecArray
-    except ImportError:
-        raise ImportError(
-            "The 'sgp4' module is required in order to use the sgp4_polyjectory() function"
-        )
-    import numpy as np
+    _check_sgp4_deps()
+
+    from sgp4.api import Satrec, SatrecArray
     import pandas as pd
+    from skyfield.sgp4lib import EarthSatellite
+    import numpy as np
 
     if len(orig_sat_list) == 0:
         raise ValueError(
@@ -126,14 +157,7 @@ def _sgp4_pre_filter_sat_list(orig_sat_list, jd_begin, exit_radius, reentry_radi
         )
 
     # Supported types for the objects in orig_sat_list.
-    supported_types = [Satrec]
-    try:
-        from skyfield.sgp4lib import EarthSatellite
-
-        supported_types.append(EarthSatellite)
-    except ImportError:
-        pass
-    supported_types = tuple(supported_types)
+    supported_types = (Satrec, EarthSatellite)
 
     if not all(isinstance(sat, supported_types) for sat in orig_sat_list):
         raise TypeError(
@@ -371,8 +395,11 @@ def _sgp4_set_final_status(pj, df):
     return df
 
 
-def make_sgp4_conjunctions_df(cj, df):
+def make_sgp4_conjunctions_df(cj, df, jd_begin):
+    _check_sgp4_deps()
+
     import pandas as pd
+    from astropy import time
 
     # Fetch the conjunctions.
     conjs = cj.conjunctions
@@ -400,8 +427,34 @@ def make_sgp4_conjunctions_df(cj, df):
     retval["i_satnum"] = i_names.index
     retval["j_satnum"] = j_names.index
 
-    # Add tca and dca.
+    # Convert the tcas to julian dates.
+    tca_jd = time.Time(
+        val=jd_begin, val2=conjs["tca"] / 1440.0, format="jd", scale="utc", precision=9
+    )
+
+    # Compute, and add to the dataframe, the days since epoch
+    # for all the objects involved in conjunctions.
+
+    # First we fetch the epochs of all objects in the polyjectory
+    # as julian dates.
+    jd_epochs = time.Time(
+        val=df["jdsatepoch"],
+        val2=df["jdsatepochF"],
+        format="jd",
+        scale="utc",
+        precision=9,
+    )
+
+    # Then, for each conjunction, we compute the days since epoch
+    # for the objects involved in the conjunction.
+    retval["i_epoch_days"] = (tca_jd - jd_epochs[conjs["i"]]).jd
+    retval["j_epoch_days"] = (tca_jd - jd_epochs[conjs["j"]]).jd
+
+    # Add the tcas.
     retval["tca"] = conjs["tca"]
+    retval["tca (UTC)"] = tca_jd.datetime
+
+    # Add the dca.
     retval["dca"] = conjs["dca"]
 
     # Add ri/rj/vi/vj.
