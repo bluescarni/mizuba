@@ -115,6 +115,51 @@ class conjunctions_test_case(_ut.TestCase):
                         self.assertGreater(pval, aabb[0][aabb_idx])
                         self.assertLess(pval, aabb[1][aabb_idx])
 
+    def _verify_sgp4_cj_df(self, cj, df, cdf):
+        # Helper to verify the conjunctions dataframe generated
+        # by make_sgp4_conjunctions_df().
+        from .. import sgp4_pj_status
+        import numpy as np
+
+        # Fetch the conjunctions.
+        conjs = cj.conjunctions
+
+        if len(conjs) > 0:
+            # Mask out df, we will be operating on the list
+            # of objects which appear in the polyjectory.
+            df = df[df["init_code"] == sgp4_pj_status.OK]
+
+            # Fetch the name column from df.
+            name_col = df["name"]
+
+            # Check the names columns.
+            self.assertTrue(
+                np.all(
+                    name_col.iloc[conjs["i"]].reset_index(drop=True) == cdf["i_name"]
+                )
+            )
+            self.assertTrue(
+                np.all(
+                    name_col.iloc[conjs["j"]].reset_index(drop=True) == cdf["j_name"]
+                )
+            )
+
+            # Check the satnums.
+            self.assertTrue(np.all(df.index[conjs["i"]] == cdf["i_satnum"]))
+            self.assertTrue(np.all(df.index[conjs["j"]] == cdf["j_satnum"]))
+
+            # Check tca and dca.
+            self.assertTrue(np.all(conjs["tca"] == cdf["tca"]))
+            self.assertTrue(np.all(conjs["dca"] == cdf["dca"]))
+
+            # Check ri/rj/vi/vj.
+            self.assertTrue(np.all(conjs["ri"] == np.array(list(cdf["ri"]))))
+            self.assertTrue(np.all(conjs["rj"] == np.array(list(cdf["rj"]))))
+            self.assertTrue(np.all(conjs["vi"] == np.array(list(cdf["vi"]))))
+            self.assertTrue(np.all(conjs["vj"] == np.array(list(cdf["vj"]))))
+        else:
+            self.assertEqual(len(cdf), 0)
+
     def test_basics(self):
         import sys
         from .. import conjunctions as conj, polyjectory
@@ -232,7 +277,7 @@ class conjunctions_test_case(_ut.TestCase):
     def test_main(self):
         import numpy as np
         import sys
-        from .. import conjunctions as conj, polyjectory
+        from .. import conjunctions as conj, polyjectory, make_sgp4_conjunctions_df
         from ._planar_circ import _planar_circ_tcs, _planar_circ_times
 
         # Deterministic seeding.
@@ -321,6 +366,7 @@ class conjunctions_test_case(_ut.TestCase):
             return
 
         from .. import sgp4_polyjectory
+        from .test_sgp4_polyjectory import _check_sgp4_pj_ret_consistency
 
         # Use the sparse satellite list.
         sat_list = self.sparse_sat_list
@@ -328,14 +374,19 @@ class conjunctions_test_case(_ut.TestCase):
         begin_jd = 2460496.5
 
         # Build the polyjectory.
-        pt, _, mask = sgp4_polyjectory(
+        pt, df, mask = sgp4_polyjectory(
             sat_list, begin_jd, begin_jd + 0.25, exit_radius=12000.0
         )
+        _check_sgp4_pj_ret_consistency(self, pt, df, mask)
         tot_nobjs = pt.nobjs
 
         # Build the conjunctions object. Keep a small threshold not to interfere
         # with aabb checking.
         c = conj(pt, conj_thresh=1e-8, conj_det_interval=1.0)
+
+        # Build the conjunctions dataframe and verify it.
+        cdf = make_sgp4_conjunctions_df(c, df)
+        self._verify_sgp4_cj_df(c, df, cdf)
 
         # Verify the aabbs.
         self._verify_conj_aabbs(c, rng)
@@ -608,7 +659,8 @@ class conjunctions_test_case(_ut.TestCase):
         if not hasattr(type(self), "sparse_sat_list"):
             return
 
-        from .. import sgp4_polyjectory, conjunctions as conj
+        from .. import sgp4_polyjectory, conjunctions as conj, make_sgp4_conjunctions_df
+        from .test_sgp4_polyjectory import _check_sgp4_pj_ret_consistency
         import numpy as np
 
         sat_list = self.half_sat_list
@@ -616,7 +668,8 @@ class conjunctions_test_case(_ut.TestCase):
         begin_jd = 2460496.5
 
         # Build the polyjectory. Run it for only 15 minutes.
-        pt, _, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 15.0 / 1440.0)
+        pt, df, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 15.0 / 1440.0)
+        _check_sgp4_pj_ret_consistency(self, pt, df, mask)
 
         # Build a whitelist that excludes two satellites
         # that we know undergo a conjunction.
@@ -638,6 +691,10 @@ class conjunctions_test_case(_ut.TestCase):
             f"Cannot fetch the list of AABB collisions for the conjunction timestep at index {c.n_cd_steps}: the total number of conjunction steps is only {c.n_cd_steps}"
             in str(cm.exception)
         )
+
+        # Build the conjunctions dataframe and verify it.
+        cdf = make_sgp4_conjunctions_df(c, df)
+        self._verify_sgp4_cj_df(c, df, cdf)
 
         # The conjunctions must be sorted according
         # to the TCA.

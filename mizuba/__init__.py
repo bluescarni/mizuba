@@ -91,6 +91,26 @@ def _sgp4_detect_duplicates(sat_list):
 
 
 def _sgp4_pre_filter_sat_list(orig_sat_list, jd_begin, exit_radius, reentry_radius):
+    # This helper is invoked during the creation of an sgp4 polyjectory.
+    # It will pre-filter the lists of satellites orig_sat_list, removing:
+    #
+    # - duplicates,
+    # - deep-space objects,
+    # - objects whose sgp4 propagation at jd_begin:
+    #   - returns an error code, or
+    #   - results in a nonfinite state, or
+    #   - results in the object being outside the domain exit
+    #     radius or inside the reentry radius.
+    #
+    # The return values are:
+    #
+    # - the filtered-out version of orig_sat_list,
+    # - a numpy boolean mask that can be used to turn orig_sat_list
+    #   into its filtered-out version,
+    # - a pandas dataframe containing information about all the satellites
+    #   in orig_sat_list, including their IDs, names, TLEs and status at
+    #   jd_begin.
+
     try:
         from sgp4.api import Satrec, SatrecArray
     except ImportError:
@@ -252,7 +272,7 @@ def _sgp4_pre_filter_sat_list(orig_sat_list, jd_begin, exit_radius, reentry_radi
         for c_name in col_labels
     ]
 
-    # Helper to transform an sgp4 int error code into an sgp4_pj_status.
+    # Dictionary to transform an sgp4 int error code into an sgp4_pj_status.
     # NOTE: here we are skipping error code 5, which should not be in use
     # any more in the latest SGP4 implementations.
     err_status_dict = {
@@ -321,30 +341,73 @@ def _sgp4_pre_filter_sat_list(orig_sat_list, jd_begin, exit_radius, reentry_radi
     return ret_list, mask, df
 
 
-def _sgp4_set_final_status(pj, df, mask):
-    # Duplicate the init_code and init_msg columns
-    # into final_code and final_msg.
+def _sgp4_set_final_status(pj, df):
+    # This function is called at the end of the sgp4_polyjectory()
+    # function, after the propagation of the polyjectory pj. It will
+    # add 2 extra columns to the dataframe df, which was generated
+    # by the _sgp4_pre_filter_sat_list() function. The two new columns
+    # represent the status codes and messages for the objects at the
+    # end of the polyjectory.
+
+    import numpy as np
+
+    # Fetch the status vector from the polyjectory.
+    pj_status = pj.status
+
+    # Duplicate the 'init_code' and 'init_msg' columns
+    # into the new 'final_code' and 'final_msg' columns.
     df["final_code"] = df["init_code"]
     df["final_msg"] = df["init_msg"]
 
-    # Mask out the objects that do not show up in the polyjectory.
-    df_mask = df[mask]
+    # Fetch the mask of the objects in df which also
+    # appear in the polyjectory.
+    mask = df["init_code"] == sgp4_pj_status.OK
 
-    # Fetch the polyjectory statuses.
-    pj_status = pj.status
-
-    # Iterate over the objects in the polyjectory, and, if the
-    # final status is not zero, assign a new final_code and
-    # final_msg in the dataframe.
-    icode_loc = df_mask.columns.get_loc("init_code")
-    fcode_loc = df_mask.columns.get_loc("final_code")
-    fmsg_loc = df_mask.columns.get_loc("final_msg")
-    for i in range(len(df_mask)):
-        # NOTE: all objects in the polyjectory must have an init_code of OK.
-        assert df_mask.iloc[i, icode_loc] == sgp4_pj_status.OK
-
-        if pj_status[i] != 0:
-            df_mask.iloc[i, fcode_loc] == sgp4_pj_status(pj_status[i])
-            df_mask.iloc[i, fmsg_loc] == sgp4_pj_status(pj_status[i]).name
+    # Overwrite the original status codes and error
+    # messages with the statuses from the polyjectory.
+    df.loc[mask, "final_code"] = pj_status
+    df.loc[mask, "final_msg"] = [sgp4_pj_status(_).name for _ in pj_status]
 
     return df
+
+
+def make_sgp4_conjunctions_df(cj, df):
+    import pandas as pd
+
+    # Fetch the conjunctions.
+    conjs = cj.conjunctions
+
+    # Mask out df, we will be operating on the list
+    # of objects which appear in the polyjectory.
+    df = df[df["init_code"] == sgp4_pj_status.OK]
+
+    # Fetch the name column from df.
+    name_col = df["name"]
+
+    # Fetch the names of the objects.
+    i_names = name_col.iloc[conjs["i"]]
+    j_names = name_col.iloc[conjs["j"]]
+
+    # Init the return value.
+    retval = pd.DataFrame(
+        {
+            "i_name": i_names.reset_index(drop=True),
+            "j_name": j_names.reset_index(drop=True),
+        }
+    )
+
+    # Add the satellite numbers.
+    retval["i_satnum"] = i_names.index
+    retval["j_satnum"] = j_names.index
+
+    # Add tca and dca.
+    retval["tca"] = conjs["tca"]
+    retval["dca"] = conjs["dca"]
+
+    # Add ri/rj/vi/vj.
+    retval["ri"] = list(conjs["ri"])
+    retval["rj"] = list(conjs["rj"])
+    retval["vi"] = list(conjs["vi"])
+    retval["vj"] = list(conjs["vj"])
+
+    return retval

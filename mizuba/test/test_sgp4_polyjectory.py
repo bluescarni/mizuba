@@ -22,6 +22,33 @@ _s_dec = "1 04206U 69082BV  24187.08533867  .00584698  00000-0  52886-2 0  9990"
 _t_dec = "2 04206  69.8949  69.3024 0029370 203.3165 156.6698 15.65658911882875"
 
 
+def _check_sgp4_pj_ret_consistency(self, pj, df, mask):
+    # Helper to verify the consistency between the return values
+    # of sgp4_polyjectory().
+    import numpy as np
+    from .. import sgp4_pj_status
+
+    # The number of True elements in the mask must be
+    # equal to the length of the polyjectory status.
+    pj_status = pj.status
+    self.assertEqual(np.sum(mask), len(pj_status))
+
+    # mask must be consisted with the data in df.
+    df_mask = df["init_code"] == sgp4_pj_status.OK
+    self.assertTrue(np.all(df_mask == mask))
+
+    # The final codes must be consistent with the
+    # polyjectory status.
+    self.assertTrue(np.all(df.loc[df_mask, "final_code"] == pj_status))
+
+    # All objects which have a non-OK initial code, must have
+    # the same final code.
+    nonok_mask = df["init_code"] != sgp4_pj_status.OK
+    self.assertTrue(
+        np.all(df.loc[nonok_mask, "final_code"] == df.loc[nonok_mask, "init_code"])
+    )
+
+
 class sgp4_polyjectory_test_case(_ut.TestCase):
     def test_basics(self):
         try:
@@ -130,10 +157,11 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
 
         sat = Satrec.twoline2rv(_s_8000, _t_8000)
         sat_dec = Satrec.twoline2rv(_s_dec, _t_dec)
-        pt, _, mask = sgp4_polyjectory(
+        pt, df, mask = sgp4_polyjectory(
             [sat, sat_dec], 2460496.5 + 1.0 / 32, 2460496.5 + 7, exit_radius=8000.0
         )
         self.assertTrue(np.all(mask == [False, True]))
+        _check_sgp4_pj_ret_consistency(self, pt, df, mask)
 
         sat = Satrec.twoline2rv(_s_dec, _t_dec)
         with self.assertRaises(ValueError) as cm:
@@ -176,7 +204,8 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
             sat_list = sat_list[::20]
 
             # Build the polyjectory.
-            pt, _, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 1)
+            pt, df, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 1)
+            _check_sgp4_pj_ret_consistency(self, pt, df, mask)
 
             # Filter out the masked satellites from sat_list.
             sat_list = list(np.array(sat_list)[mask])

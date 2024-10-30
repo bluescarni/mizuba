@@ -381,7 +381,7 @@ PYBIND11_MODULE(core, m)
             py::object poly_obj = py::cast(std::move(poly_ret));
 
             // Amend the dataframe with the final statuses from the polyjectory.
-            pd = py::module_::import("mizuba").attr("_sgp4_set_final_status")(poly_obj, pd, mask);
+            pd = py::module_::import("mizuba").attr("_sgp4_set_final_status")(poly_obj, pd);
 
             return py::make_tuple(std::move(poly_obj), std::move(pd), std::move(mask));
         },
