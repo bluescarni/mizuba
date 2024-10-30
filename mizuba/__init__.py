@@ -42,7 +42,7 @@ del IntEnum
 
 def _have_sgp4_deps():
     # Helper to check if we have all the dependencies
-    # necessary for support of TLE propagation via sgp4.
+    # necessary to support TLE propagation via sgp4.
     try:
         import skyfield
         import sgp4
@@ -64,7 +64,7 @@ def _check_sgp4_deps():
 
 def _have_heyoka_deps():
     # Helper to check if we have all the dependencies
-    # necessary for support for propagation via heyoka.
+    # necessary to support propagation via heyoka.
     try:
         import heyoka
 
