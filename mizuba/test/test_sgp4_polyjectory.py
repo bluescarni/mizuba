@@ -264,3 +264,27 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
             [sgp4_test_tle_202407, sgp4_test_tle_202409], [2460496.5, 2460569.5]
         ):
             run_test(sgp4_test_tle, begin_jd)
+
+    def test_duplicates(self):
+        # Test case to check for duplicate satellites in the space-track catalogue.
+        try:
+            from skyfield.api import load
+            from skyfield.iokit import parse_tle_file
+        except ImportError:
+            return
+
+        from .. import sgp4_polyjectory, sgp4_pj_status
+        from ._sgp4_test_data_20241026 import sgp4_test_tle
+
+        # Load the test TLEs.
+        ts = load.timescale()
+        sat_list = list(
+            parse_tle_file((bytes(_, "ascii") for _ in sgp4_test_tle.split("\n")), ts)
+        )
+
+        # Build a very short polyjectory.
+        begin_jd = 2460609.833333
+        pt, df, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 1 / 1440.0)
+
+        # Check the number of duplicates.
+        self.assertEqual(len(df[df["init_code"] == sgp4_pj_status.DUPLICATE]), 9)
