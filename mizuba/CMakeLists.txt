@@ -6,8 +6,9 @@ set(MIZUBA_PYTHON_FILES
     __init__.py
     test/__init__.py
     test/test_sgp4_polyjectory.py
-    test/_sgp4_test_data_202407.py
-    test/_sgp4_test_data_202409.py
+    test/_sgp4_test_data_20240705.py
+    test/_sgp4_test_data_20240917.py
+    test/_sgp4_test_data_20241026.py
     test/test_conjunctions.py
     test/test_boundary_conjunctions.py
     test/_planar_circ.py

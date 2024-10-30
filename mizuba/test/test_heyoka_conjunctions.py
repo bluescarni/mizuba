@@ -119,7 +119,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
             return
 
         # NOTE: we will be using TLE data to run the test.
-        from ._sgp4_test_data_202407 import sgp4_test_tle
+        from ._sgp4_test_data_20240705 import sgp4_test_tle
         from .. import conjunctions as conj, polyjectory
         import numpy as np
 

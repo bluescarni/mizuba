@@ -18,7 +18,7 @@ class conjunctions_test_case(_ut.TestCase):
         except ImportError:
             return
 
-        from ._sgp4_test_data_202407 import sgp4_test_tle
+        from ._sgp4_test_data_20240705 import sgp4_test_tle
 
         # Load the test TLEs.
         ts = load.timescale()

@@ -188,8 +188,8 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
 
         from .. import sgp4_polyjectory
         import numpy as np
-        from ._sgp4_test_data_202407 import sgp4_test_tle as sgp4_test_tle_202407
-        from ._sgp4_test_data_202409 import sgp4_test_tle as sgp4_test_tle_202409
+        from ._sgp4_test_data_20240705 import sgp4_test_tle as sgp4_test_tle_202407
+        from ._sgp4_test_data_20240917 import sgp4_test_tle as sgp4_test_tle_202409
 
         def run_test(sgp4_test_tle, begin_jd):
             # Load the test TLEs.
