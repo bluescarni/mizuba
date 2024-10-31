@@ -16,8 +16,13 @@ export PATH="$HOME/miniconda/bin:$PATH"
 bash miniconda.sh -b -p $HOME/miniconda
 conda create -y -p $deps_dir c-compiler cxx-compiler cmake ninja \
     tbb-devel tbb libboost-devel heyoka fmt spdlog 'python=3.12' numpy \
-    pybind11 skyfield pandas sgp4 heyoka.py lcov
+    pybind11 pandas astropy heyoka.py lcov
 source activate $deps_dir
+
+# Workaround: install sgp4 and skyfield with pip
+# because the conda package for sgp4 on aarch64
+# seemingly does not ship with OMM support.
+pip install skyfield sgp4
 
 # Create the build dir and cd into it.
 mkdir build
