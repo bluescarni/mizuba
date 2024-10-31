@@ -144,8 +144,6 @@ def _sgp4_pre_filter_sat_list(orig_sat_list, jd_begin, exit_radius, reentry_radi
     #   in orig_sat_list, including their IDs, names, TLEs and status at
     #   jd_begin.
 
-    _check_sgp4_deps()
-
     from sgp4.api import Satrec, SatrecArray
     import pandas as pd
     from skyfield.sgp4lib import EarthSatellite

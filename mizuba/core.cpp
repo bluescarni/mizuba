@@ -352,6 +352,9 @@ PYBIND11_MODULE(core, m)
     m.def(
         "sgp4_polyjectory",
         [](py::list sat_list, double jd_begin, double jd_end, double exit_radius, double reentry_radius) {
+            // Check for the necessary dependencies.
+            py::module_::import("mizuba").attr("_check_sgp4_deps")();
+
             // Check and pre-filter sat_list.
             py::tuple filter_res = py::module_::import("mizuba").attr("_sgp4_pre_filter_sat_list")(
                 sat_list, jd_begin, exit_radius, reentry_radius);
