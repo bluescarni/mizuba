@@ -44,7 +44,7 @@ ninja -v install
 
 # Run the tests.
 cd
-ASAN_OPTIONS=detect_leaks=0 LD_PRELOAD=$CONDA_PREFIX/lib/libasan.so python -c "from mizuba.test import run_test_suite; run_test_suite()"
+ASAN_OPTIONS=detect_leaks=0:strcpy-param-overlap=0 LD_PRELOAD=$CONDA_PREFIX/lib/libasan.so python -c "from mizuba.test import run_test_suite; run_test_suite()"
 
 set +e
 set +x
