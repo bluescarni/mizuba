@@ -379,11 +379,12 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                                 f_output fval{
                                     // NOTE: moving in the tree here seems to bring a small performance benefit.
                                     // The tree is in any case cleared at the beginning of detect_conjunctions_bvh().
+                                    // NOTE: clang-tidy complains here, I think because it does not see that cd_bvh_tree
+                                    // is explicitly cleared before re-use in detect_conjunctions_bvh().
+                                    // NOLINTNEXTLINE(clang-analyzer-cplusplus.Move)
                                     .bvh_tree = std::move(cd_bvh_tree),
                                     // NOTE: bp_coll and conjs are created ex-novo
-                                    // and destroyed at each conjunction step, thus we move them in.
-                                    // The other data persists and is re-used across several conjunction
-                                    // steps, thus it is merely copied.
+                                    // and destroyed at each conjunction step.
                                     .bp = std::move(bp_coll),
                                     .conjunctions = std::move(conjs)};
 
