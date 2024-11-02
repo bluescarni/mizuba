@@ -17,6 +17,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build
         run: bash tools/conda_asan.sh
+  conda_clang_tidy:
+    runs-on: ubuntu-latest
+    env:
+      CONDA_INSTALLER_ARCH: Linux-x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: bash tools/conda_clang_tidy.sh
   conda_coverage:
     runs-on: ubuntu-latest
     env:
