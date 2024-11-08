@@ -700,6 +700,11 @@ polyjectory::status_span_t polyjectory::get_status() const noexcept
     return status_span_t{m_impl->m_status.data(), static_cast<std::size_t>(m_impl->m_status.size())};
 }
 
+const void *polyjectory::get_id() const noexcept
+{
+    return m_impl.get();
+}
+
 } // namespace mizuba
 
 #if defined(__GNUC__)
