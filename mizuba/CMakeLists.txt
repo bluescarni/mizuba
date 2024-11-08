@@ -29,6 +29,7 @@ set(_MIZUBA_CORE_SOURCES
     detect_conjunctions_bvh.cpp
     detect_conjunctions_broad_phase.cpp
     detect_conjunctions_narrow_phase.cpp
+    conjunctions_extend.cpp
     logging.cpp
     detail/conjunctions_jit.cpp
     detail/file_utils.cpp

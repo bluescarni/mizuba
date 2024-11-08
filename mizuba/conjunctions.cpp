@@ -227,6 +227,28 @@ const std::shared_ptr<conjunctions_impl> &fetch_cj_impl(const conjunctions &cj) 
     return cj.m_impl;
 }
 
+// Helper to compute the begin and end time coordinates for a conjunction step.
+std::array<double, 2> get_cd_begin_end(double maxT, std::size_t cd_idx, double conj_det_interval,
+                                       std::size_t n_cd_steps)
+{
+    assert(n_cd_steps > 0u);
+    assert(std::isfinite(maxT) && maxT > 0);
+    assert(std::isfinite(conj_det_interval) && conj_det_interval > 0);
+    assert(cd_idx < n_cd_steps);
+
+    auto cbegin = conj_det_interval * static_cast<double>(cd_idx);
+    // NOTE: for the last conjunction step we force the ending at maxT.
+    auto cend = (cd_idx == n_cd_steps - 1u) ? maxT : (conj_det_interval * static_cast<double>(cd_idx + 1u));
+
+    // LCOV_EXCL_START
+    if (!std::isfinite(cbegin) || !std::isfinite(cend) || !(cend > cbegin) || cbegin < 0 || cend > maxT) [[unlikely]] {
+        throw std::invalid_argument(fmt::format("Invalid conjunction step time range: [{}, {})", cbegin, cend));
+    }
+    // LCOV_EXCL_STOP
+
+    return {cbegin, cend};
+}
+
 } // namespace detail
 
 conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj_det_interval,
@@ -325,27 +347,6 @@ conjunctions &conjunctions::operator=(const conjunctions &) = default;
 conjunctions &conjunctions::operator=(conjunctions &&) noexcept = default;
 
 conjunctions::~conjunctions() = default;
-
-// Helper to compute the begin and end time coordinates for a conjunction step.
-std::array<double, 2> conjunctions::get_cd_begin_end(double maxT, std::size_t cd_idx, double conj_det_interval,
-                                                     std::size_t n_cd_steps)
-{
-    assert(n_cd_steps > 0u);
-    assert(std::isfinite(maxT) && maxT > 0);
-    assert(std::isfinite(conj_det_interval) && conj_det_interval > 0);
-
-    auto cbegin = conj_det_interval * static_cast<double>(cd_idx);
-    // NOTE: for the last conjunction step we force the ending at maxT.
-    auto cend = (cd_idx == n_cd_steps - 1u) ? maxT : (conj_det_interval * static_cast<double>(cd_idx + 1u));
-
-    // LCOV_EXCL_START
-    if (!std::isfinite(cbegin) || !std::isfinite(cend) || !(cend > cbegin) || cbegin < 0 || cend > maxT) [[unlikely]] {
-        throw std::invalid_argument(fmt::format("Invalid conjunction step time range: [{}, {})", cbegin, cend));
-    }
-    // LCOV_EXCL_STOP
-
-    return {cbegin, cend};
-}
 
 conjunctions::aabbs_span_t conjunctions::get_aabbs() const noexcept
 {

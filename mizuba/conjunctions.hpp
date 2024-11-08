@@ -46,6 +46,8 @@ struct conjunctions_impl;
 void close_cj(std::shared_ptr<conjunctions_impl> &) noexcept;
 [[nodiscard]] const std::shared_ptr<conjunctions_impl> &fetch_cj_impl(const conjunctions &) noexcept;
 
+[[nodiscard]] std::array<double, 2> get_cd_begin_end(double, std::size_t, double, std::size_t);
+
 } // namespace detail
 
 class conjunctions
@@ -197,8 +199,6 @@ private:
         }
     }
 
-    [[nodiscard]] static std::array<double, 2> get_cd_begin_end(double, std::size_t, double, std::size_t);
-
     static std::tuple<std::vector<double>, std::vector<std::tuple<std::size_t, std::size_t>>,
                       std::vector<std::tuple<std::size_t, std::size_t>>>
     detect_conjunctions(const boost::filesystem::path &, const polyjectory &, std::size_t, double, double,
@@ -218,6 +218,8 @@ private:
                                                               const std::vector<aabb_collision> &,
                                                               const detail::conj_jit_data &, double, double,
                                                               std::size_t, np_report &);
+
+    void extend_detect_conjunctions_aabbs(std::size_t, std::vector<float> &, const polyjectory &) const;
 
 public:
     template <typename WRange = std::vector<std::uint32_t>>
@@ -273,6 +275,7 @@ public:
     [[nodiscard]] whitelist_span_t get_whitelist() const noexcept;
     [[nodiscard]] double get_conj_thresh() const noexcept;
     [[nodiscard]] double get_conj_det_interval() const noexcept;
+    [[nodiscard]] std::vector<conj> extend(const polyjectory &) const;
 };
 
 } // namespace mizuba

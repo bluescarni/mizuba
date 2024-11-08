@@ -71,7 +71,7 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
     const auto conj_thresh2 = conj_thresh * conj_thresh;
 
     // Fetch the begin/end times for the current conjunction step.
-    const auto [cd_begin, cd_end] = get_cd_begin_end(pj.get_maxT(), cd_idx, conj_det_interval, n_cd_steps);
+    const auto [cd_begin, cd_end] = detail::get_cd_begin_end(pj.get_maxT(), cd_idx, conj_det_interval, n_cd_steps);
 
     // Initialise the vector to store the results of
     // narrow-phase conjunction detection for this conjunction step.
