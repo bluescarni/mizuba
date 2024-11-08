@@ -283,6 +283,10 @@ void detect_conjunctions_aabbs_impl(std::size_t cd_idx, std::vector<float> &cd_a
     oneapi::tbb::parallel_for(
         oneapi::tbb::blocked_range<std::size_t>(0, nobjs),
         [&pj, cd_begin, cd_end, conj_thresh, &cur_global_lb, &cur_global_ub, cd_aabbs_span](const auto &obj_range) {
+            // Silence compiler warnings.
+            static_cast<void>(cur_global_lb);
+            static_cast<void>(cur_global_ub);
+
             // Init the local AABB for the current obj range.
             // NOTE: these are not needed for a polyjectory extension.
             [[maybe_unused]] std::array<float, 4> cur_local_lb{{finf, finf, finf, finf}};
