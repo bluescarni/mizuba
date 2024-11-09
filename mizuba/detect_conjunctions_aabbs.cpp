@@ -277,7 +277,7 @@ void detect_conjunctions_aabbs_impl(std::size_t cd_idx, std::vector<float> &cd_a
 
     // Create a mutable span into cd_aabbs.
     using mut_aabbs_span_t = heyoka::mdspan<float, heyoka::extents<std::size_t, std::dynamic_extent, 2, 4>>;
-    mut_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), nobjs + static_cast<unsigned>(!is_extension)};
+    const mut_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), nobjs + static_cast<unsigned>(!is_extension)};
 
     // Iterate over all objects to determine their AABBs for the current conjunction step.
     oneapi::tbb::parallel_for(
