@@ -257,14 +257,13 @@ void detect_conjunctions_aabbs_impl(std::size_t cd_idx, std::vector<float> &cd_a
 
     // Cache the total number of objects in the polyjectory.
     const auto nobjs = pj.get_nobjs();
-    assert(cd_aabbs.size() == (nobjs + static_cast<unsigned>(!is_extension)) * 8u);
+    assert(cd_aabbs.size() == (nobjs + 1u) * 8u);
 
     // Prepare the global AABB for the current conjunction step.
-    // NOTE: these are not needed for a polyjectory extension.
     constexpr auto finf = std::numeric_limits<float>::infinity();
     // NOTE: the global AABB needs to be updated atomically.
-    [[maybe_unused]] std::array<std::atomic<float>, 4> cur_global_lb{{finf, finf, finf, finf}};
-    [[maybe_unused]] std::array<std::atomic<float>, 4> cur_global_ub{{-finf, -finf, -finf, -finf}};
+    std::array<std::atomic<float>, 4> cur_global_lb{{finf, finf, finf, finf}};
+    std::array<std::atomic<float>, 4> cur_global_ub{{-finf, -finf, -finf, -finf}};
 
     // Compute or fetch the begin/end times for the current conjunction step.
     const auto [cd_begin, cd_end] = [&]() {
@@ -277,82 +276,68 @@ void detect_conjunctions_aabbs_impl(std::size_t cd_idx, std::vector<float> &cd_a
 
     // Create a mutable span into cd_aabbs.
     using mut_aabbs_span_t = heyoka::mdspan<float, heyoka::extents<std::size_t, std::dynamic_extent, 2, 4>>;
-    const mut_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), nobjs + static_cast<unsigned>(!is_extension)};
+    const mut_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), nobjs + 1u};
 
     // Iterate over all objects to determine their AABBs for the current conjunction step.
     oneapi::tbb::parallel_for(
         oneapi::tbb::blocked_range<std::size_t>(0, nobjs),
         [&pj, cd_begin, cd_end, conj_thresh, &cur_global_lb, &cur_global_ub, cd_aabbs_span](const auto &obj_range) {
-            // Silence compiler warnings.
-            static_cast<void>(cur_global_lb);
-            static_cast<void>(cur_global_ub);
-
             // Init the local AABB for the current obj range.
-            // NOTE: these are not needed for a polyjectory extension.
-            [[maybe_unused]] std::array<float, 4> cur_local_lb{{finf, finf, finf, finf}};
-            [[maybe_unused]] std::array<float, 4> cur_local_ub{{-finf, -finf, -finf, -finf}};
+            std::array<float, 4> cur_local_lb{{finf, finf, finf, finf}};
+            std::array<float, 4> cur_local_ub{{-finf, -finf, -finf, -finf}};
 
             for (auto obj_idx = obj_range.begin(); obj_idx != obj_range.end(); ++obj_idx) {
                 // Compute the AABB for the current object.
                 const auto [lb, ub] = compute_object_aabb(pj, obj_idx, cd_begin, cd_end, conj_thresh);
 
-                // Update the local AABB, if needed, and write to cd_aabbs_span the aabb of the
-                // current object.
+                // Update the local AABB, and write to cd_aabbs_span the aabb of the current object.
                 // NOTE: min/max usage is safe, because compute_object_aabb()
                 // ensures that the bounding boxes are finite.
                 for (auto i = 0u; i < 4u; ++i) {
-                    if constexpr (!is_extension) {
-                        cur_local_lb[i] = std::min(cur_local_lb[i], lb[i]);
-                        cur_local_ub[i] = std::max(cur_local_ub[i], ub[i]);
-                    }
+                    cur_local_lb[i] = std::min(cur_local_lb[i], lb[i]);
+                    cur_local_ub[i] = std::max(cur_local_ub[i], ub[i]);
 
                     cd_aabbs_span(obj_idx, 0, i) = lb[i];
                     cd_aabbs_span(obj_idx, 1, i) = ub[i];
                 }
             }
 
-            // Atomically update the global AABB for the current conjunction step, if needed.
+            // Atomically update the global AABB for the current conjunction step.
             // NOTE: atomic_min/max() usage here is safe because we checked that
             // all lb/ub values are finite.
-            if constexpr (!is_extension) {
-                for (auto i = 0u; i < 4u; ++i) {
-                    atomic_min(cur_global_lb[i], cur_local_lb[i]);
-                    atomic_max(cur_global_ub[i], cur_local_ub[i]);
-                }
+            for (auto i = 0u; i < 4u; ++i) {
+                atomic_min(cur_global_lb[i], cur_local_lb[i]);
+                atomic_max(cur_global_ub[i], cur_local_ub[i]);
             }
         });
 
-    // Write out the global AABB for the current conjunction step to cd_aabbs_span, if needed.
-    if constexpr (!is_extension) {
-        for (auto i = 0u; i < 4u; ++i) {
-            const auto cur_lb = cur_global_lb[i].load();
-            const auto cur_ub = cur_global_ub[i].load();
+    // Write out the global AABB for the current conjunction step to cd_aabbs_span.
+    for (auto i = 0u; i < 4u; ++i) {
+        const auto cur_lb = cur_global_lb[i].load();
+        const auto cur_ub = cur_global_ub[i].load();
 
-            // NOTE: this is ensured by the safety margins we added when converting
-            // the double-precision AABB to single-precision. That is, even if the original
-            // double-precision AABB has a size of zero in any dimension, the conversion
-            // to single precision resulted in a small but nonzero size in every dimension.
-            assert(cur_ub > cur_lb);
+        // NOTE: this is ensured by the safety margins we added when converting
+        // the double-precision AABB to single-precision. That is, even if the original
+        // double-precision AABB has a size of zero in any dimension, the conversion
+        // to single precision resulted in a small but nonzero size in every dimension.
+        assert(cur_ub > cur_lb);
 
-            // Check that we can safely compute the difference between ub and lb. This is
-            // needed when computing morton codes.
-            // LCOV_EXCL_START
-            if (!std::isfinite(cur_ub - cur_lb)) [[unlikely]] {
-                throw std::invalid_argument("A global bounding box with non-finite size was generated");
-            }
-            // LCOV_EXCL_STOP
-
-            cd_aabbs_span(nobjs, 0, i) = cur_lb;
-            cd_aabbs_span(nobjs, 1, i) = cur_ub;
+        // Check that we can safely compute the difference between ub and lb. This is
+        // needed when computing morton codes.
+        // LCOV_EXCL_START
+        if (!std::isfinite(cur_ub - cur_lb)) [[unlikely]] {
+            throw std::invalid_argument("A global bounding box with non-finite size was generated");
         }
+        // LCOV_EXCL_STOP
+
+        cd_aabbs_span(nobjs, 0, i) = cur_lb;
+        cd_aabbs_span(nobjs, 1, i) = cur_ub;
     }
 
 #if !defined(NDEBUG)
 
-    if constexpr (!is_extension) {
-        // Validate the global AABBs in debug mode.
-        validate_global_aabbs(cd_aabbs_span);
-    }
+    // Validate the global AABBs in debug mode.
+    validate_global_aabbs(cd_aabbs_span);
 
 #endif
 

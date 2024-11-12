@@ -89,10 +89,8 @@ std::vector<conjunctions::conj> conjunctions::extend(const polyjectory &pj) cons
                                                           oneapi::tbb::ets_key_usage_type::ets_key_per_instance>;
     ets_t ets([nobjs]() {
         // Setup aabbs.
-        // NOTE: when computing the aabbs of a polyjectory extension, we do not need to keep
-        // track of the global aabbs, thus the total required size is nobjs * 8 (and not (nobjs + 1) * 8).
         std::vector<float> aabbs;
-        aabbs.resize(safe_size_t(nobjs) * 8u);
+        aabbs.resize((safe_size_t(nobjs) + 1) * 8);
 
         return ets_data{.aabbs = std::move(aabbs), .bvh_tree = {}};
     });
