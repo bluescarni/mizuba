@@ -255,7 +255,7 @@ polyjectory::polyjectory(ptag,
             }
 
             // Compute the total data size (in number of floating-point values).
-            const auto time_size = safe_size_t(cur_time.extent(0));
+            const auto time_size = cur_time.extent(0);
 
             // Update maxT.
             const auto curT = cur_time(cur_time.extent(0) - 1u);
@@ -351,11 +351,10 @@ polyjectory::polyjectory(ptag,
                     }
 
                     // Compute the total data size (in number of floating-point values).
-                    const auto time_size = safe_size_t(cur_time.extent(0));
+                    const auto time_size = cur_time.extent(0);
 
                     // Copy the data into the file.
-                    std::ranges::copy(cur_time.data_handle(),
-                                      cur_time.data_handle() + static_cast<std::size_t>(time_size),
+                    std::ranges::copy(cur_time.data_handle(), cur_time.data_handle() + time_size,
                                       time_base_ptr + time_offset_vec[i]);
                 }
             });
