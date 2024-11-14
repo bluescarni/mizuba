@@ -333,6 +333,7 @@ std::array<double, 2> conjunctions::get_cd_begin_end(double maxT, std::size_t cd
     assert(n_cd_steps > 0u);
     assert(std::isfinite(maxT) && maxT > 0);
     assert(std::isfinite(conj_det_interval) && conj_det_interval > 0);
+    assert(cd_idx < n_cd_steps);
 
     auto cbegin = conj_det_interval * static_cast<double>(cd_idx);
     // NOTE: for the last conjunction step we force the ending at maxT.
