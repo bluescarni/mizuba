@@ -306,12 +306,7 @@ PYBIND11_MODULE(core, m)
         const auto status_span = p->get_status();
 
         // Turn into an array.
-        auto ret = py::array_t<std::int32_t>(
-            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(status_span.extent(0))},
-            status_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
+        auto ret = mzpy::mdspan_to_array(self, status_span);
 
         return ret;
     });
@@ -324,22 +319,10 @@ PYBIND11_MODULE(core, m)
             const auto [traj_span, time_span, status] = (*p)[i];
 
             // Trajectory data.
-            auto traj_ret
-                = py::array_t<double>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(traj_span.extent(0)),
-                                                                boost::numeric_cast<py::ssize_t>(traj_span.extent(1)),
-                                                                boost::numeric_cast<py::ssize_t>(traj_span.extent(2))},
-                                      traj_span.data_handle(), self);
-
-            // Ensure the returned array is read-only.
-            traj_ret.attr("flags").attr("writeable") = false;
+            auto traj_ret = mzpy::mdspan_to_array(self, traj_span);
 
             // Time data.
-            auto time_ret
-                = py::array_t<double>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(time_span.extent(0))},
-                                      time_span.data_handle(), self);
-
-            // Ensure the returned array is read-only.
-            time_ret.attr("flags").attr("writeable") = false;
+            auto time_ret = mzpy::mdspan_to_array(self, time_span);
 
             return py::make_tuple(std::move(traj_ret), std::move(time_ret), status);
         },
@@ -425,14 +408,7 @@ PYBIND11_MODULE(core, m)
         const auto aabbs_span = p->get_aabbs();
 
         // Turn into an array.
-        auto ret = py::array_t<float>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(aabbs_span.extent(0)),
-                                                                boost::numeric_cast<py::ssize_t>(aabbs_span.extent(1)),
-                                                                boost::numeric_cast<py::ssize_t>(aabbs_span.extent(2)),
-                                                                boost::numeric_cast<py::ssize_t>(aabbs_span.extent(3))},
-                                      aabbs_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
+        auto ret = mzpy::mdspan_to_array(self, aabbs_span);
 
         return ret;
     });
@@ -443,12 +419,7 @@ PYBIND11_MODULE(core, m)
         const auto cd_end_times_span = p->get_cd_end_times();
 
         // Turn into an array.
-        auto ret = py::array_t<double>(
-            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(cd_end_times_span.extent(0))},
-            cd_end_times_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
+        auto ret = mzpy::mdspan_to_array(self, cd_end_times_span);
 
         return ret;
     });
@@ -460,15 +431,7 @@ PYBIND11_MODULE(core, m)
         const auto srt_aabbs_span = p->get_srt_aabbs();
 
         // Turn into an array.
-        auto ret
-            = py::array_t<float>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(0)),
-                                                           boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(1)),
-                                                           boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(2)),
-                                                           boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(3))},
-                                 srt_aabbs_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
+        auto ret = mzpy::mdspan_to_array(self, srt_aabbs_span);
 
         return ret;
     });
@@ -479,13 +442,7 @@ PYBIND11_MODULE(core, m)
         const auto mcodes_span = p->get_mcodes();
 
         // Turn into an array.
-        auto ret = py::array_t<std::uint64_t>(
-            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(mcodes_span.extent(0)),
-                                      boost::numeric_cast<py::ssize_t>(mcodes_span.extent(1))},
-            mcodes_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
+        auto ret = mzpy::mdspan_to_array(self, mcodes_span);
 
         return ret;
     });
@@ -496,13 +453,7 @@ PYBIND11_MODULE(core, m)
         const auto srt_mcodes_span = p->get_srt_mcodes();
 
         // Turn into an array.
-        auto ret = py::array_t<std::uint64_t>(
-            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(srt_mcodes_span.extent(0)),
-                                      boost::numeric_cast<py::ssize_t>(srt_mcodes_span.extent(1))},
-            srt_mcodes_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
+        auto ret = mzpy::mdspan_to_array(self, srt_mcodes_span);
 
         return ret;
     });
@@ -513,13 +464,7 @@ PYBIND11_MODULE(core, m)
         const auto srt_idx_span = p->get_srt_idx();
 
         // Turn into an array.
-        auto ret = py::array_t<std::uint32_t>(
-            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(srt_idx_span.extent(0)),
-                                      boost::numeric_cast<py::ssize_t>(srt_idx_span.extent(1))},
-            srt_idx_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
+        auto ret = mzpy::mdspan_to_array(self, srt_idx_span);
 
         return ret;
     });
@@ -530,12 +475,7 @@ PYBIND11_MODULE(core, m)
         const auto tree_span = p->get_bvh_tree(i);
 
         // Turn into an array.
-        auto ret
-            = py::array_t<bvh_node>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(tree_span.extent(0))},
-                                    tree_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
+        auto ret = mzpy::mdspan_to_array(self, tree_span);
 
         return ret;
     });
@@ -546,12 +486,7 @@ PYBIND11_MODULE(core, m)
         const auto aabb_collision_span = p->get_aabb_collisions(i);
 
         // Turn into an array.
-        auto ret = py::array_t<aabb_collision>(
-            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(aabb_collision_span.extent(0))},
-            aabb_collision_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
+        auto ret = mzpy::mdspan_to_array(self, aabb_collision_span);
 
         return ret;
     });
@@ -562,11 +497,7 @@ PYBIND11_MODULE(core, m)
         const auto conj_span = p->get_conjunctions();
 
         // Turn into an array.
-        auto ret = py::array_t<conj>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(conj_span.extent(0))},
-                                     conj_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
+        auto ret = mzpy::mdspan_to_array(self, conj_span);
 
         return ret;
     }); // LCOV_EXCL_LINE
@@ -577,12 +508,7 @@ PYBIND11_MODULE(core, m)
         const auto whitelist_span = p->get_whitelist();
 
         // Turn into an array.
-        auto ret = py::array_t<std::uint32_t>(
-            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(whitelist_span.extent(0))},
-            whitelist_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
+        auto ret = mzpy::mdspan_to_array(self, whitelist_span);
 
         return ret;
     }); // LCOV_EXCL_LINE
