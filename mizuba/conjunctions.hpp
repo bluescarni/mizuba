@@ -12,20 +12,15 @@
 #include <array>
 #include <atomic>
 #include <compare>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <initializer_list>
 #include <memory>
-#include <ranges>
+#include <optional>
 #include <span>
 #include <tuple>
-#include <type_traits>
-#include <utility>
 #include <vector>
 
 #include <boost/filesystem/path.hpp>
-#include <boost/numeric/conversion/cast.hpp>
 
 #include <heyoka/mdspan.hpp>
 
@@ -167,42 +162,12 @@ private:
         std::atomic<unsigned long long> n_tot_discarded_dist_minima = 0;
     };
 
-    // Private ctor.
-    struct ptag {
-    };
-    explicit conjunctions(ptag, polyjectory, double, double, std::vector<std::uint32_t>);
-
-    // Helper to convert an input whitelist range into a vector of indices.
-    template <typename WRange>
-    static auto wrange_to_vec(WRange &&whitelist)
-    {
-        if constexpr (std::same_as<std::vector<std::uint32_t>, std::remove_cvref_t<WRange>>) {
-            return std::forward<WRange>(whitelist);
-        } else {
-            std::vector<std::uint32_t> retval;
-            // Prepare the appropriate size if WRange is a sized range
-            // with an integral size type.
-            if constexpr (requires {
-                              requires std::ranges::sized_range<WRange>;
-                              requires std::integral<std::remove_cvref_t<std::ranges::range_reference_t<WRange>>>;
-                          }) {
-                retval.reserve(static_cast<decltype(retval.size())>(std::ranges::size(whitelist)));
-            }
-
-            for (auto idx : whitelist) {
-                retval.push_back(boost::numeric_cast<std::uint32_t>(idx));
-            }
-
-            return retval;
-        }
-    }
-
     [[nodiscard]] static std::array<double, 2> get_cd_begin_end(double, std::size_t, double, std::size_t);
 
     static std::tuple<std::vector<double>, std::vector<std::tuple<std::size_t, std::size_t>>,
                       std::vector<std::tuple<std::size_t, std::size_t>>>
     detect_conjunctions(const boost::filesystem::path &, const polyjectory &, std::size_t, double, double,
-                        const std::vector<bool> &);
+                        const std::vector<bool> &, bool);
     static void detect_conjunctions_aabbs(std::size_t, std::vector<float> &, const polyjectory &, double, double,
                                           std::size_t, std::vector<double> &);
     static void detect_conjunctions_morton(std::vector<std::uint64_t> &, std::vector<std::uint32_t> &,
@@ -220,21 +185,8 @@ private:
                                                               std::size_t, np_report &);
 
 public:
-    template <typename WRange = std::vector<std::uint32_t>>
-        requires std::ranges::input_range<WRange>
-                 && std::integral<std::remove_cvref_t<std::ranges::range_reference_t<WRange>>>
-    explicit conjunctions(polyjectory pj, double conj_thresh, double conj_det_interval, WRange &&whitelist = {})
-        : conjunctions(ptag{}, std::move(pj), conj_thresh, conj_det_interval,
-                       wrange_to_vec(std::forward<WRange>(whitelist)))
-    {
-    }
-    template <typename T>
-        requires std::integral<T>
     explicit conjunctions(polyjectory pj, double conj_thresh, double conj_det_interval,
-                          std::initializer_list<T> whitelist)
-        : conjunctions(ptag{}, std::move(pj), conj_thresh, conj_det_interval, std::vector<T>(whitelist))
-    {
-    }
+                          std::optional<std::vector<std::uint32_t>>);
 
     conjunctions(const conjunctions &);
     conjunctions(conjunctions &&) noexcept;
@@ -270,7 +222,7 @@ public:
     using conj_span_t = heyoka::mdspan<const conj, heyoka::dextents<std::size_t, 1>>;
     [[nodiscard]] conj_span_t get_conjunctions() const noexcept;
     using whitelist_span_t = heyoka::mdspan<const std::uint32_t, heyoka::dextents<std::size_t, 1>>;
-    [[nodiscard]] whitelist_span_t get_whitelist() const noexcept;
+    [[nodiscard]] std::optional<whitelist_span_t> get_whitelist() const noexcept;
     [[nodiscard]] double get_conj_thresh() const noexcept;
     [[nodiscard]] double get_conj_det_interval() const noexcept;
 };

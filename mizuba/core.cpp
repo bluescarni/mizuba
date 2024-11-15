@@ -13,6 +13,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ranges>
 #include <span>
 #include <stdexcept>
@@ -306,10 +307,8 @@ PYBIND11_MODULE(core, m)
         // Fetch the status span.
         const auto status_span = p->get_status();
 
-        // Turn into an array.
-        auto ret = mzpy::mdspan_to_array(self, status_span);
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, status_span);
     });
     pt_cl.def(
         "__getitem__",
@@ -390,7 +389,7 @@ PYBIND11_MODULE(core, m)
     // Conjunctions.
     py::class_<mz::conjunctions> conj_cl(m, "conjunctions", py::dynamic_attr{});
     conj_cl.def(py::init([](mz::polyjectory pj, double conj_thresh, double conj_det_interval,
-                            std::vector<std::uint32_t> whitelist) {
+                            std::optional<std::vector<std::uint32_t>> whitelist) {
                     // NOTE: release the GIL during conjunction detection.
                     py::gil_scoped_release release;
 
@@ -402,7 +401,7 @@ PYBIND11_MODULE(core, m)
                     return ret;
                 }),
                 "pj"_a.noconvert(), "conj_thresh"_a.noconvert(), "conj_det_interval"_a.noconvert(),
-                "whitelist"_a.noconvert() = std::vector<std::uint32_t>{});
+                "whitelist"_a.noconvert() = py::none{});
     conj_cl.def_property_readonly("n_cd_steps", &mz::conjunctions::get_n_cd_steps);
     conj_cl.def_property_readonly("aabbs", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
@@ -410,10 +409,8 @@ PYBIND11_MODULE(core, m)
         // Fetch the span.
         const auto aabbs_span = p->get_aabbs();
 
-        // Turn into an array.
-        auto ret = mzpy::mdspan_to_array(self, aabbs_span);
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, aabbs_span);
     });
     conj_cl.def_property_readonly("cd_end_times", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
@@ -421,10 +418,8 @@ PYBIND11_MODULE(core, m)
         // Fetch the span.
         const auto cd_end_times_span = p->get_cd_end_times();
 
-        // Turn into an array.
-        auto ret = mzpy::mdspan_to_array(self, cd_end_times_span);
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, cd_end_times_span);
     });
     conj_cl.def_property_readonly("polyjectory", &mz::conjunctions::get_polyjectory);
     conj_cl.def_property_readonly("srt_aabbs", [](const py::object &self) {
@@ -433,10 +428,8 @@ PYBIND11_MODULE(core, m)
         // Fetch the span.
         const auto srt_aabbs_span = p->get_srt_aabbs();
 
-        // Turn into an array.
-        auto ret = mzpy::mdspan_to_array(self, srt_aabbs_span);
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, srt_aabbs_span);
     });
     conj_cl.def_property_readonly("mcodes", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
@@ -444,10 +437,8 @@ PYBIND11_MODULE(core, m)
         // Fetch the span.
         const auto mcodes_span = p->get_mcodes();
 
-        // Turn into an array.
-        auto ret = mzpy::mdspan_to_array(self, mcodes_span);
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, mcodes_span);
     });
     conj_cl.def_property_readonly("srt_mcodes", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
@@ -455,10 +446,8 @@ PYBIND11_MODULE(core, m)
         // Fetch the span.
         const auto srt_mcodes_span = p->get_srt_mcodes();
 
-        // Turn into an array.
-        auto ret = mzpy::mdspan_to_array(self, srt_mcodes_span);
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, srt_mcodes_span);
     });
     conj_cl.def_property_readonly("srt_idx", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
@@ -466,10 +455,8 @@ PYBIND11_MODULE(core, m)
         // Fetch the span.
         const auto srt_idx_span = p->get_srt_idx();
 
-        // Turn into an array.
-        auto ret = mzpy::mdspan_to_array(self, srt_idx_span);
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, srt_idx_span);
     });
     conj_cl.def("get_bvh_tree", [](const py::object &self, std::size_t i) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
@@ -477,10 +464,8 @@ PYBIND11_MODULE(core, m)
         // Fetch the tree span.
         const auto tree_span = p->get_bvh_tree(i);
 
-        // Turn into an array.
-        auto ret = mzpy::mdspan_to_array(self, tree_span);
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, tree_span);
     });
     conj_cl.def("get_aabb_collisions", [](const py::object &self, std::size_t i) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
@@ -489,9 +474,7 @@ PYBIND11_MODULE(core, m)
         const auto aabb_collision_span = p->get_aabb_collisions(i);
 
         // Turn into an array.
-        auto ret = mzpy::mdspan_to_array(self, aabb_collision_span);
-
-        return ret;
+        return mzpy::mdspan_to_array(self, aabb_collision_span);
     });
     conj_cl.def_property_readonly("conjunctions", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
@@ -499,21 +482,21 @@ PYBIND11_MODULE(core, m)
         // Fetch the span.
         const auto conj_span = p->get_conjunctions();
 
-        // Turn into an array.
-        auto ret = mzpy::mdspan_to_array(self, conj_span);
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, conj_span);
     }); // LCOV_EXCL_LINE
-    conj_cl.def_property_readonly("whitelist", [](const py::object &self) {
+    conj_cl.def_property_readonly("whitelist", [](const py::object &self) -> std::optional<py::array_t<std::uint32_t>> {
         const auto *p = py::cast<const mz::conjunctions *>(self);
 
         // Fetch the span.
         const auto whitelist_span = p->get_whitelist();
 
-        // Turn into an array.
-        auto ret = mzpy::mdspan_to_array(self, whitelist_span);
-
-        return ret;
+        if (whitelist_span) {
+            // Turn into an array and return.
+            return mzpy::mdspan_to_array(self, *whitelist_span);
+        } else {
+            return {};
+        }
     }); // LCOV_EXCL_LINE
     conj_cl.def_property_readonly("conj_thresh", &mz::conjunctions::get_conj_thresh);
     conj_cl.def_property_readonly("conj_det_interval", &mz::conjunctions::get_conj_det_interval);
