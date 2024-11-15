@@ -46,7 +46,7 @@ auto mdspan_to_array(const py::object &self, heyoka::mdspan<T, std::experimental
     }
 
     return ret;
-}
+} // LCOV_EXCL_LINE
 
 } // namespace mizuba_py
 
