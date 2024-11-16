@@ -765,6 +765,8 @@ class conjunctions_test_case(_ut.TestCase):
         # There cannot be aabb collisions or conjunctions.
         c = conj(pt, conj_thresh=10.0, conj_det_interval=1.0, whitelist=[])
 
+        self.assertEqual(len(c.whitelist), 0)
+
         for i in range(c.n_cd_steps):
             self.assertEqual(len(c.get_aabb_collisions(i)), 0)
 
