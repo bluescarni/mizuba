@@ -326,6 +326,9 @@ class conjunctions_test_case(_ut.TestCase):
                 self.assertEqual(len(c.get_aabb_collisions(i)), 0)
             self.assertEqual(len(c.conjunctions), 0)
 
+            # Check the whitelist.
+            self.assertTrue(c.whitelist is None)
+
             # Test whitelist initialisation.
             c = conj(
                 pj, conj_thresh=0.1, conj_det_interval=conj_det_interval, whitelist=[0]
