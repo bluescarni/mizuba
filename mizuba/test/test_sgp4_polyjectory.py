@@ -207,8 +207,12 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
             sat_list = sat_list[::20]
 
             # Build the polyjectory.
-            pt, df, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 1)
+            pt, df, mask = sgp4_polyjectory(
+                sat_list, begin_jd, begin_jd + 1, init_epoch=begin_jd
+            )
             _check_sgp4_pj_ret_consistency(self, pt, df, mask)
+
+            self.assertEqual(pt.init_epoch, begin_jd)
 
             # Filter out the masked satellites from sat_list.
             sat_list = list(np.array(sat_list)[mask])
@@ -289,6 +293,8 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
         # Build a very short polyjectory.
         begin_jd = 2460609.833333
         pt, df, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 1 / 1440.0)
+
+        self.assertEqual(pt.init_epoch, 0.0)
 
         # Check the number of duplicates.
         self.assertEqual(len(df[df["init_code"] == sgp4_pj_status.DUPLICATE]), 9)

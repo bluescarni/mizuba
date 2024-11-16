@@ -45,7 +45,7 @@ std::tuple<std::vector<double>, std::vector<std::tuple<std::size_t, std::size_t>
            std::vector<std::tuple<std::size_t, std::size_t>>>
 conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, const polyjectory &pj,
                                   std::size_t n_cd_steps, double conj_thresh, double conj_det_interval,
-                                  const std::vector<bool> &conj_active)
+                                  const std::vector<bool> &conj_active, bool skip_cd)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
 
@@ -325,8 +325,8 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                 oneapi::tbb::blocked_range<std::size_t>(start_cd_step_idx, end_cd_step_idx),
                 [&ets, &pj, conj_thresh, conj_det_interval, n_cd_steps, &cd_end_times, &conj_active, &cjd, &promises,
                  nobjs, &aabbs_file, &mcodes_file, &vidx_file, &srt_aabbs_file, &srt_mcodes_file, &aabbs_time,
-                 &morton_time, &bvh_time, &broad_time, &narrow_time, &io_time, &total_time,
-                 &np_rep](const auto &cd_range) {
+                 &morton_time, &bvh_time, &broad_time, &narrow_time, &io_time, &total_time, &np_rep,
+                 skip_cd](const auto &cd_range) {
                     // Fetch the thread-local data.
                     auto &[cd_aabbs, cd_mcodes, cd_vidx, cd_srt_aabbs, cd_srt_mcodes, cd_bvh_tree, cd_bvh_aux_data,
                            cd_bvh_l_buffer]
@@ -339,7 +339,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                          &cd_mcodes, &cd_vidx, &cd_srt_aabbs, &cd_srt_mcodes, &cd_bvh_tree, &cd_bvh_aux_data,
                          &cd_bvh_l_buffer, &conj_active, &cjd, &promises, nobjs, &aabbs_file, &mcodes_file, &vidx_file,
                          &srt_aabbs_file, &srt_mcodes_file, &aabbs_time, &morton_time, &bvh_time, &broad_time,
-                         &narrow_time, &io_time, &total_time, &np_rep]() {
+                         &narrow_time, &io_time, &total_time, &np_rep, skip_cd]() {
                             stopwatch local_sw, total_sw;
 
                             for (auto cd_idx = cd_range.begin(); cd_idx != cd_range.end(); ++cd_idx) {
@@ -362,17 +362,25 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                                                         cd_srt_mcodes);
                                 bvh_time += local_sw.elapsed_ns().count();
 
-                                // Detect aabbs collisions.
-                                local_sw.reset();
-                                auto bp_coll = detect_conjunctions_broad_phase(cd_bvh_tree, cd_vidx, conj_active,
-                                                                               cd_srt_aabbs, cd_aabbs);
-                                broad_time += local_sw.elapsed_ns().count();
+                                // NOTE: the detection of aabbs collisions and conjunctions is performed only
+                                // if skip_cd is false. skip_cd is set to true if an empty whitelist was provided
+                                // to the constructor of the conjunctions class.
+                                std::vector<aabb_collision> bp_coll;
+                                std::vector<conj> conjs;
 
-                                // Detect conjunctions.
-                                local_sw.reset();
-                                auto conjs = detect_conjunctions_narrow_phase(cd_idx, pj, bp_coll, cjd, conj_thresh,
-                                                                              conj_det_interval, n_cd_steps, np_rep);
-                                narrow_time += local_sw.elapsed_ns().count();
+                                if (!skip_cd) {
+                                    // Detect aabbs collisions.
+                                    local_sw.reset();
+                                    bp_coll = detect_conjunctions_broad_phase(cd_bvh_tree, cd_vidx, conj_active,
+                                                                              cd_srt_aabbs, cd_aabbs);
+                                    broad_time += local_sw.elapsed_ns().count();
+
+                                    // Detect conjunctions.
+                                    local_sw.reset();
+                                    conjs = detect_conjunctions_narrow_phase(cd_idx, pj, bp_coll, cjd, conj_thresh,
+                                                                             conj_det_interval, n_cd_steps, np_rep);
+                                    narrow_time += local_sw.elapsed_ns().count();
+                                }
 
                                 // Prepare the value for the future.
                                 local_sw.reset();

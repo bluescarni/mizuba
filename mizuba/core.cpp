@@ -13,6 +13,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ranges>
 #include <span>
 #include <stdexcept>
@@ -213,7 +214,7 @@ PYBIND11_MODULE(core, m)
     // polyjectory.
     py::class_<mz::polyjectory> pt_cl(m, "polyjectory", py::dynamic_attr{});
     pt_cl.def(
-        py::init([](py::iterable trajs_, py::iterable times_, py::iterable status_) {
+        py::init([](py::iterable trajs_, py::iterable times_, py::iterable status_, double init_epoch) {
             auto traj_trans = [](const py::array_t<double> &arr) {
                 // Check shape/dimension.
                 if (arr.ndim() != 3) [[unlikely]] {
@@ -284,20 +285,21 @@ PYBIND11_MODULE(core, m)
 
             auto ret
                 = mz::polyjectory(trajs | std::views::transform(traj_trans), times | std::views::transform(time_trans),
-                                  std::ranges::subrange(status_ptr, status_ptr + status.shape(0)));
+                                  std::ranges::subrange(status_ptr, status_ptr + status.shape(0)), init_epoch);
 
             // Register the polyjectory implementation in the cleanup machinery.
             mzpy::detail::add_pj_weak_ptr(mz::detail::fetch_pj_impl(ret));
 
             return ret;
         }),
-        "trajs"_a.noconvert(), "times"_a.noconvert(), "status"_a.noconvert());
+        "trajs"_a.noconvert(), "times"_a.noconvert(), "status"_a.noconvert(), "init_epoch"_a.noconvert() = 0.);
     pt_cl.def(py::init<const std::filesystem::path &, const std::filesystem::path &, std::uint32_t,
-                       std::vector<traj_offset>, std::vector<std::int32_t>>(),
+                       std::vector<traj_offset>, std::vector<std::int32_t>, double>(),
               "traj_file"_a.noconvert(), "time_file"_a.noconvert(), "order"_a.noconvert(), "traj_offsets"_a.noconvert(),
-              "status"_a.noconvert());
+              "status"_a.noconvert(), "init_epoch"_a.noconvert() = 0.);
     pt_cl.def_property_readonly("nobjs", &mz::polyjectory::get_nobjs);
     pt_cl.def_property_readonly("maxT", &mz::polyjectory::get_maxT);
+    pt_cl.def_property_readonly("init_epoch", &mz::polyjectory::get_init_epoch);
     pt_cl.def_property_readonly("poly_order", &mz::polyjectory::get_poly_order);
     pt_cl.def_property_readonly("status", [](const py::object &self) {
         const auto *p = py::cast<const mz::polyjectory *>(self);
@@ -305,15 +307,8 @@ PYBIND11_MODULE(core, m)
         // Fetch the status span.
         const auto status_span = p->get_status();
 
-        // Turn into an array.
-        auto ret = py::array_t<std::int32_t>(
-            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(status_span.extent(0))},
-            status_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, status_span);
     });
     pt_cl.def(
         "__getitem__",
@@ -324,22 +319,10 @@ PYBIND11_MODULE(core, m)
             const auto [traj_span, time_span, status] = (*p)[i];
 
             // Trajectory data.
-            auto traj_ret
-                = py::array_t<double>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(traj_span.extent(0)),
-                                                                boost::numeric_cast<py::ssize_t>(traj_span.extent(1)),
-                                                                boost::numeric_cast<py::ssize_t>(traj_span.extent(2))},
-                                      traj_span.data_handle(), self);
-
-            // Ensure the returned array is read-only.
-            traj_ret.attr("flags").attr("writeable") = false;
+            auto traj_ret = mzpy::mdspan_to_array(self, traj_span);
 
             // Time data.
-            auto time_ret
-                = py::array_t<double>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(time_span.extent(0))},
-                                      time_span.data_handle(), self);
-
-            // Ensure the returned array is read-only.
-            time_ret.attr("flags").attr("writeable") = false;
+            auto time_ret = mzpy::mdspan_to_array(self, time_span);
 
             return py::make_tuple(std::move(traj_ret), std::move(time_ret), status);
         },
@@ -351,7 +334,8 @@ PYBIND11_MODULE(core, m)
     // sgp4 polyjectory.
     m.def(
         "sgp4_polyjectory",
-        [](py::list sat_list, double jd_begin, double jd_end, double exit_radius, double reentry_radius) {
+        [](py::list sat_list, double jd_begin, double jd_end, double exit_radius, double reentry_radius,
+           double init_epoch) {
             // Check for the necessary dependencies.
             py::module_::import("mizuba").attr("_check_sgp4_deps")();
 
@@ -370,11 +354,11 @@ PYBIND11_MODULE(core, m)
             using span_t = hy::mdspan<const double, hy::extents<std::size_t, 9, std::dynamic_extent>>;
             const span_t in(sat_data.data(), boost::numeric_cast<std::size_t>(sat_data.size()) / 9u);
 
-            auto poly_ret = [in, jd_begin, jd_end, exit_radius, reentry_radius]() {
+            auto poly_ret = [in, jd_begin, jd_end, exit_radius, reentry_radius, init_epoch]() {
                 // NOTE: release the GIL during propagation.
                 py::gil_scoped_release release;
 
-                return mz::sgp4_polyjectory(in, jd_begin, jd_end, exit_radius, reentry_radius);
+                return mz::sgp4_polyjectory(in, jd_begin, jd_end, exit_radius, reentry_radius, init_epoch);
             }();
 
             // Register the polyjectory implementation in the cleanup machinery.
@@ -389,7 +373,8 @@ PYBIND11_MODULE(core, m)
             return py::make_tuple(std::move(poly_obj), std::move(pd), std::move(mask));
         },
         "sat_list"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert(),
-        "exit_radius"_a.noconvert() = mz::sgp4_exit_radius, "reentry_radius"_a.noconvert() = mz::sgp4_reentry_radius);
+        "exit_radius"_a.noconvert() = mz::sgp4_exit_radius, "reentry_radius"_a.noconvert() = mz::sgp4_reentry_radius,
+        "init_epoch"_a.noconvert() = 0.);
 
     // Register conjunctions::bvh_node as a structured NumPy datatype.
     using bvh_node = mz::conjunctions::bvh_node;
@@ -404,7 +389,7 @@ PYBIND11_MODULE(core, m)
     // Conjunctions.
     py::class_<mz::conjunctions> conj_cl(m, "conjunctions", py::dynamic_attr{});
     conj_cl.def(py::init([](mz::polyjectory pj, double conj_thresh, double conj_det_interval,
-                            std::vector<std::uint32_t> whitelist) {
+                            std::optional<std::vector<std::uint32_t>> whitelist) {
                     // NOTE: release the GIL during conjunction detection.
                     py::gil_scoped_release release;
 
@@ -416,7 +401,7 @@ PYBIND11_MODULE(core, m)
                     return ret;
                 }),
                 "pj"_a.noconvert(), "conj_thresh"_a.noconvert(), "conj_det_interval"_a.noconvert(),
-                "whitelist"_a.noconvert() = std::vector<std::uint32_t>{});
+                "whitelist"_a.noconvert() = py::none{});
     conj_cl.def_property_readonly("n_cd_steps", &mz::conjunctions::get_n_cd_steps);
     conj_cl.def_property_readonly("aabbs", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
@@ -424,17 +409,8 @@ PYBIND11_MODULE(core, m)
         // Fetch the span.
         const auto aabbs_span = p->get_aabbs();
 
-        // Turn into an array.
-        auto ret = py::array_t<float>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(aabbs_span.extent(0)),
-                                                                boost::numeric_cast<py::ssize_t>(aabbs_span.extent(1)),
-                                                                boost::numeric_cast<py::ssize_t>(aabbs_span.extent(2)),
-                                                                boost::numeric_cast<py::ssize_t>(aabbs_span.extent(3))},
-                                      aabbs_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, aabbs_span);
     });
     conj_cl.def_property_readonly("cd_end_times", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
@@ -442,15 +418,8 @@ PYBIND11_MODULE(core, m)
         // Fetch the span.
         const auto cd_end_times_span = p->get_cd_end_times();
 
-        // Turn into an array.
-        auto ret = py::array_t<double>(
-            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(cd_end_times_span.extent(0))},
-            cd_end_times_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, cd_end_times_span);
     });
     conj_cl.def_property_readonly("polyjectory", &mz::conjunctions::get_polyjectory);
     conj_cl.def_property_readonly("srt_aabbs", [](const py::object &self) {
@@ -459,18 +428,8 @@ PYBIND11_MODULE(core, m)
         // Fetch the span.
         const auto srt_aabbs_span = p->get_srt_aabbs();
 
-        // Turn into an array.
-        auto ret
-            = py::array_t<float>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(0)),
-                                                           boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(1)),
-                                                           boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(2)),
-                                                           boost::numeric_cast<py::ssize_t>(srt_aabbs_span.extent(3))},
-                                 srt_aabbs_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, srt_aabbs_span);
     });
     conj_cl.def_property_readonly("mcodes", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
@@ -478,16 +437,8 @@ PYBIND11_MODULE(core, m)
         // Fetch the span.
         const auto mcodes_span = p->get_mcodes();
 
-        // Turn into an array.
-        auto ret = py::array_t<std::uint64_t>(
-            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(mcodes_span.extent(0)),
-                                      boost::numeric_cast<py::ssize_t>(mcodes_span.extent(1))},
-            mcodes_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, mcodes_span);
     });
     conj_cl.def_property_readonly("srt_mcodes", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
@@ -495,16 +446,8 @@ PYBIND11_MODULE(core, m)
         // Fetch the span.
         const auto srt_mcodes_span = p->get_srt_mcodes();
 
-        // Turn into an array.
-        auto ret = py::array_t<std::uint64_t>(
-            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(srt_mcodes_span.extent(0)),
-                                      boost::numeric_cast<py::ssize_t>(srt_mcodes_span.extent(1))},
-            srt_mcodes_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, srt_mcodes_span);
     });
     conj_cl.def_property_readonly("srt_idx", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
@@ -512,16 +455,8 @@ PYBIND11_MODULE(core, m)
         // Fetch the span.
         const auto srt_idx_span = p->get_srt_idx();
 
-        // Turn into an array.
-        auto ret = py::array_t<std::uint32_t>(
-            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(srt_idx_span.extent(0)),
-                                      boost::numeric_cast<py::ssize_t>(srt_idx_span.extent(1))},
-            srt_idx_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, srt_idx_span);
     });
     conj_cl.def("get_bvh_tree", [](const py::object &self, std::size_t i) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
@@ -529,15 +464,8 @@ PYBIND11_MODULE(core, m)
         // Fetch the tree span.
         const auto tree_span = p->get_bvh_tree(i);
 
-        // Turn into an array.
-        auto ret
-            = py::array_t<bvh_node>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(tree_span.extent(0))},
-                                    tree_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, tree_span);
     });
     conj_cl.def("get_aabb_collisions", [](const py::object &self, std::size_t i) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
@@ -546,14 +474,7 @@ PYBIND11_MODULE(core, m)
         const auto aabb_collision_span = p->get_aabb_collisions(i);
 
         // Turn into an array.
-        auto ret = py::array_t<aabb_collision>(
-            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(aabb_collision_span.extent(0))},
-            aabb_collision_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
-
-        return ret;
+        return mzpy::mdspan_to_array(self, aabb_collision_span);
     });
     conj_cl.def_property_readonly("conjunctions", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
@@ -561,30 +482,21 @@ PYBIND11_MODULE(core, m)
         // Fetch the span.
         const auto conj_span = p->get_conjunctions();
 
-        // Turn into an array.
-        auto ret = py::array_t<conj>(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(conj_span.extent(0))},
-                                     conj_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
-
-        return ret;
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, conj_span);
     }); // LCOV_EXCL_LINE
-    conj_cl.def_property_readonly("whitelist", [](const py::object &self) {
+    conj_cl.def_property_readonly("whitelist", [](const py::object &self) -> std::optional<py::array_t<std::uint32_t>> {
         const auto *p = py::cast<const mz::conjunctions *>(self);
 
         // Fetch the span.
         const auto whitelist_span = p->get_whitelist();
 
-        // Turn into an array.
-        auto ret = py::array_t<std::uint32_t>(
-            py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(whitelist_span.extent(0))},
-            whitelist_span.data_handle(), self);
-
-        // Ensure the returned array is read-only.
-        ret.attr("flags").attr("writeable") = false;
-
-        return ret;
+        if (whitelist_span) {
+            // Turn into an array and return.
+            return mzpy::mdspan_to_array(self, *whitelist_span);
+        } else {
+            return {};
+        }
     }); // LCOV_EXCL_LINE
     conj_cl.def_property_readonly("conj_thresh", &mz::conjunctions::get_conj_thresh);
     conj_cl.def_property_readonly("conj_det_interval", &mz::conjunctions::get_conj_det_interval);

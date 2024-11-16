@@ -749,7 +749,7 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
 
 polyjectory
 sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, std::dynamic_extent>> sat_data,
-                 double jd_begin, double jd_end, double exit_radius, double reentry_radius)
+                 double jd_begin, double jd_end, double exit_radius, double reentry_radius, double init_epoch)
 {
     // Check the date range.
     if (!std::isfinite(jd_begin) || !std::isfinite(jd_end) || !(jd_begin < jd_end)) [[unlikely]] {
@@ -812,7 +812,7 @@ sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, st
     // Build and return the polyjectory.
     return polyjectory(std::filesystem::path((tmp_dir_path / "traj").string()),
                        std::filesystem::path((tmp_dir_path / "time").string()), ta.get_order(), std::move(traj_offsets),
-                       std::move(status));
+                       std::move(status), init_epoch);
 }
 
 } // namespace mizuba

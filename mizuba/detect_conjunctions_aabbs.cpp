@@ -251,6 +251,8 @@ void conjunctions::detect_conjunctions_aabbs(std::size_t cd_idx, std::vector<flo
                                              double conj_thresh, double conj_det_interval, std::size_t n_cd_steps,
                                              std::vector<double> &cd_end_times)
 {
+    assert(cd_idx < cd_end_times.size());
+
     // Cache the total number of objects.
     const auto nobjs = pj.get_nobjs();
     assert(cd_aabbs.size() == (nobjs + 1u) * 8u);
@@ -269,7 +271,7 @@ void conjunctions::detect_conjunctions_aabbs(std::size_t cd_idx, std::vector<flo
 
     // Create a mutable span into cd_aabbs.
     using mut_aabbs_span_t = heyoka::mdspan<float, heyoka::extents<std::size_t, std::dynamic_extent, 2, 4>>;
-    mut_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), nobjs + 1u};
+    const mut_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), nobjs + 1u};
 
     // Iterate over all objects to determine their AABBs for the current conjunction step.
     oneapi::tbb::parallel_for(

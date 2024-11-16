@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <tuple>
 #include <utility>
@@ -80,9 +81,9 @@ struct conjunctions_impl {
     // this vector is equal to the number of conjunction steps.
     std::vector<std::tuple<std::size_t, std::size_t>> m_bp_offsets;
     // Sorted vector of whitelisted objects for conjunction detection.
-    // If empty, it means that all objects must be considered for
+    // If not provided, it means that all objects must be considered for
     // conjunction detection.
-    std::vector<std::uint32_t> m_whitelist;
+    std::optional<std::vector<std::uint32_t>> m_whitelist;
     // Vector of flags to signal which objects are active for conjunction tracking.
     // This is the flag vector analogue of m_whitelist.
     std::vector<bool> m_conj_active;
@@ -123,7 +124,7 @@ struct conjunctions_impl {
                                double conj_det_interval, std::size_t n_cd_steps, std::vector<double> cd_end_times,
                                std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets,
                                std::vector<std::tuple<std::size_t, std::size_t>> bp_offsets,
-                               std::vector<std::uint32_t> whitelist, std::vector<bool> conj_active)
+                               std::optional<std::vector<std::uint32_t>> whitelist, std::vector<bool> conj_active)
         : m_temp_dir_path(std::move(temp_dir_path)), m_pj(std::move(pj)), m_conj_thresh(conj_thresh),
           m_conj_det_interval(conj_det_interval), m_n_cd_steps(n_cd_steps), m_cd_end_times(std::move(cd_end_times)),
           m_tree_offsets(std::move(tree_offsets)), m_bp_offsets(std::move(bp_offsets)),
@@ -229,8 +230,8 @@ const std::shared_ptr<conjunctions_impl> &fetch_cj_impl(const conjunctions &cj) 
 
 } // namespace detail
 
-conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj_det_interval,
-                           std::vector<std::uint32_t> whitelist)
+conjunctions::conjunctions(polyjectory pj, double conj_thresh, double conj_det_interval,
+                           std::optional<std::vector<std::uint32_t>> whitelist)
 {
     // Check conj_thresh.
     if (!std::isfinite(conj_thresh) || conj_thresh <= 0) [[unlikely]] {
@@ -252,41 +253,37 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
             conj_det_interval));
     }
 
+    // Cache the total number of objects in the polyjectory.
+    const auto nobjs = pj.get_nobjs();
+
     // Determine the number of conjunction detection steps.
     const auto n_cd_steps = boost::numeric_cast<std::size_t>(std::ceil(pj.get_maxT() / conj_det_interval));
 
-    // Build the sorted version of whitelist, removing duplicates.
-    oneapi::tbb::parallel_sort(whitelist.begin(), whitelist.end());
-    whitelist.erase(std::unique(whitelist.begin(), whitelist.end()), whitelist.end());
-
-    // Make sure we can represent the size of a whitelist as std::size_t.
-    try {
-        static_cast<void>(boost::numeric_cast<std::size_t>(whitelist.size()));
-        // LCOV_EXCL_START
-    } catch (...) {
-        throw std::overflow_error("Overflow detected in the size of the conjunction whitelist");
-    }
-    // LCOV_EXCL_STOP
-
-    // Build a flag vector equivalent of whitelist. This is used during broad-phase conjunction detection.
-    // During its construction, sanity-check the whitelist.
-    const auto nobjs = pj.get_nobjs();
+    // Validation of whitelist, and setup of its flag vector equivalent, conj_active.
     std::vector<bool> conj_active;
-    if (whitelist.empty()) {
-        conj_active.resize(boost::numeric_cast<decltype(conj_active.size())>(nobjs), true);
-    } else {
+    if (whitelist) {
+        // Build the sorted version of whitelist, removing duplicates.
+        oneapi::tbb::parallel_sort(whitelist->begin(), whitelist->end());
+        whitelist->erase(std::unique(whitelist->begin(), whitelist->end()), whitelist->end());
+
+        // Check the contents of whitelist.
+        if (!whitelist->empty() && whitelist->back() >= nobjs) [[unlikely]] {
+            throw std::invalid_argument(
+                fmt::format("Invalid whitelist detected: the largest index in the whitelist is {}, which is not less "
+                            "than the number of objects in the polyjectory ({})",
+                            whitelist->back(), nobjs));
+        }
+
+        // Initial setup of conj_active: all objects are inactive.
         conj_active.resize(boost::numeric_cast<decltype(conj_active.size())>(nobjs), false);
 
-        for (const auto obj_idx : whitelist) {
-            if (obj_idx >= nobjs) [[unlikely]] {
-                throw std::invalid_argument(
-                    fmt::format("Invalid whitelist detected: the whitelist contains the object index {}, but the "
-                                "total number of objects is only {}",
-                                obj_idx, nobjs));
-            }
-
+        // For each object in the whitelist, flip its status to active.
+        for (const auto obj_idx : *whitelist) {
             conj_active[obj_idx] = true;
         }
+    } else {
+        // If the whitelist is not provided, then all objects are active.
+        conj_active.resize(boost::numeric_cast<decltype(conj_active.size())>(nobjs), true);
     }
 
     // Assemble a "unique" dir path into the system temp dir. This will be the root dir
@@ -301,7 +298,9 @@ conjunctions::conjunctions(ptag, polyjectory pj, double conj_thresh, double conj
 
         // Run conjunction detection.
         auto [cd_end_times, tree_offsets, bp_offsets]
-            = detect_conjunctions(tmp_dir_path, pj, n_cd_steps, conj_thresh, conj_det_interval, conj_active);
+            = detect_conjunctions(tmp_dir_path, pj, n_cd_steps, conj_thresh, conj_det_interval, conj_active,
+                                  // NOTE: conjunction detection is skipped if an empty whitelist was provided.
+                                  whitelist && whitelist->empty());
 
         // Create the impl.
         m_impl = std::make_shared<detail::conjunctions_impl>(
@@ -333,6 +332,7 @@ std::array<double, 2> conjunctions::get_cd_begin_end(double maxT, std::size_t cd
     assert(n_cd_steps > 0u);
     assert(std::isfinite(maxT) && maxT > 0);
     assert(std::isfinite(conj_det_interval) && conj_det_interval > 0);
+    assert(cd_idx < n_cd_steps);
 
     auto cbegin = conj_det_interval * static_cast<double>(cd_idx);
     // NOTE: for the last conjunction step we force the ending at maxT.
@@ -438,11 +438,17 @@ conjunctions::conj_span_t conjunctions::get_conjunctions() const noexcept
     }
 }
 
-conjunctions::whitelist_span_t conjunctions::get_whitelist() const noexcept
+std::optional<conjunctions::whitelist_span_t> conjunctions::get_whitelist() const noexcept
 {
-    // NOTE: static cast is ok, we make sure in the ctor that
-    // we can represent the size of the whitelist with std::size_t.
-    return whitelist_span_t{m_impl->m_whitelist.data(), static_cast<std::size_t>(m_impl->m_whitelist.size())};
+    if (m_impl->m_whitelist) {
+        // NOTE: static cast is ok. We know that m_whitelist is a sorted list
+        // of unsigned integrals whose largest value is less than the number of
+        // objects in the polyjectory. In turn, the number of objects in the polyjectory
+        // is represented as a std::size_t.
+        return whitelist_span_t{m_impl->m_whitelist->data(), static_cast<std::size_t>(m_impl->m_whitelist->size())};
+    } else {
+        return {};
+    }
 }
 
 double conjunctions::get_conj_thresh() const noexcept

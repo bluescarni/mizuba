@@ -289,9 +289,7 @@ class conjunctions_test_case(_ut.TestCase):
 
         # Run the test for several conjunction detection intervals.
         for conj_det_interval in [0.01, 0.1, 0.5, 2.0, 5.0, 7.0]:
-            c = conj(
-                pj, conj_thresh=0.1, conj_det_interval=conj_det_interval, whitelist=[]
-            )
+            c = conj(pj, conj_thresh=0.1, conj_det_interval=conj_det_interval)
 
             # Shape checks.
             self.assertEqual(c.aabbs.shape[0], c.cd_end_times.shape[0])
@@ -328,6 +326,9 @@ class conjunctions_test_case(_ut.TestCase):
                 self.assertEqual(len(c.get_aabb_collisions(i)), 0)
             self.assertEqual(len(c.conjunctions), 0)
 
+            # Check the whitelist.
+            self.assertTrue(c.whitelist is None)
+
             # Test whitelist initialisation.
             c = conj(
                 pj, conj_thresh=0.1, conj_det_interval=conj_det_interval, whitelist=[0]
@@ -351,7 +352,7 @@ class conjunctions_test_case(_ut.TestCase):
                     whitelist=[1],
                 )
             self.assertTrue(
-                "Invalid whitelist detected: the whitelist contains the object index 1, but the total number of objects is only 1"
+                "Invalid whitelist detected: the largest index in the whitelist is 1, which is not less than the number of objects in the polyjectory (1)"
                 in str(cm.exception)
             )
 
@@ -759,3 +760,14 @@ class conjunctions_test_case(_ut.TestCase):
             # velocity values of >1 km/s.
             self.assertLess(diff_vi, 1e-11)
             self.assertLess(diff_vj, 1e-11)
+
+        # Build a conjunctions object with an empty whitelist.
+        # There cannot be aabb collisions or conjunctions.
+        c = conj(pt, conj_thresh=10.0, conj_det_interval=1.0, whitelist=[])
+
+        self.assertEqual(len(c.whitelist), 0)
+
+        for i in range(c.n_cd_steps):
+            self.assertEqual(len(c.get_aabb_collisions(i)), 0)
+
+        self.assertEqual(len(c.conjunctions), 0)
