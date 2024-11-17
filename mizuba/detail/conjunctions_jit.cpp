@@ -16,7 +16,7 @@
 #include <fmt/core.h>
 
 #include <boost/math/special_functions/binomial.hpp>
-#include <boost/numeric/conversion/cast.hpp>
+#include <boost/safe_numerics/safe_integer.hpp>
 
 #include <heyoka/detail/event_detection.hpp>
 #include <heyoka/detail/llvm_helpers.hpp>
@@ -33,11 +33,10 @@ namespace mizuba::detail
 namespace
 {
 
-// Add a compiled function for the computation of the translation of a polynomial.
-// That is, given a polynomial represented as a list of coefficients c_i, the function
+// Create an expression for the computation of the translation of a polynomial.
+// That is, given a polynomial 'cfs' represented as a list of coefficients c_i, the function
 // will compute the coefficients c'_i of the polynomial resulting from substituting
-// the polynomial variable x with x + a, where a = par[0] is a numerical constant.
-// The formula for the translated coefficients is:
+// the original polynomial variable x with x + a. The formula for the translated coefficients is:
 //
 // c'_i = sum_{k=i}^n (c_k * choose(k, k-i) * a**(k-i))
 //
@@ -45,53 +44,78 @@ namespace
 //
 // NOTE: for my own sanity when re-deriving this formula, remember that
 // choose(k, k - i) == choose(k, i).
-void add_poly_translator_a(heyoka::llvm_state &s, std::uint32_t order)
+auto poly_translate(const std::vector<heyoka::expression> &cfs, const heyoka::expression &a)
 {
     namespace hy = heyoka;
-    using namespace hy::literals;
+    using safe_uint32_t = boost::safe_numerics::safe<std::uint32_t>;
 
-    // NOTE: this is guaranteed by the checks in polyjectory.
-    assert(order >= 2u); // LCOV_EXCL_LINE
+    assert(!cfs.empty());
 
-    // The translation amount 'a' is implemented as the
-    // first and only parameter of the compiled function.
-    auto a = hy::par[0];
+    // Fetch the polynomial order.
+    const auto order = safe_uint32_t(cfs.size() - 1u);
 
     // Pre-compute the powers of a up to 'order'.
-    std::vector a_pows = {1_dbl, a};
-    for (std::uint32_t i = 2; i <= order; ++i) {
+    std::vector<hy::expression> a_pows;
+    a_pows.reserve(order + 1);
+    // NOTE: in the corner case of a polynomial of order 0, a_pows will
+    // be larger than necessary, but it does not matter.
+    a_pows.emplace_back(1.);
+    a_pows.push_back(a);
+    for (safe_uint32_t i = 2; i <= order; ++i) {
         // NOTE: do it like this, rather than the more
         // straightforward way of multiplying repeatedly
         // by a, in order to improve instruction-level
         // parallelism.
-        if (i % 2u == 0u) {
-            a_pows.push_back(a_pows[i / 2u] * a_pows[i / 2u]);
+        if (i % 2 == 0) {
+            a_pows.push_back(a_pows[i / 2] * a_pows[i / 2]);
         } else {
-            a_pows.push_back(a_pows[i / 2u + 1u] * a_pows[i / 2u]);
+            a_pows.push_back(a_pows[i / 2 + 1] * a_pows[i / 2]);
         }
     }
 
-    // The original polynomial coefficients are the
-    // input variables for the compiled function.
-    std::vector<hy::expression> cfs;
-    for (std::uint32_t i = 0; i <= order; ++i) {
-        cfs.emplace_back(fmt::format("c_{}", i));
-    }
+    // Compute the translated coefficients, storing them in 'out'.
+    std::vector<hy::expression> out;
+    out.reserve(order + 1);
+    for (safe_uint32_t i = 0; i <= order; ++i) {
+        std::vector<hy::expression> tmp;
+        tmp.reserve(order + 1 - i);
 
-    // The new coefficients are the function outputs.
-    std::vector<hy::expression> out, tmp;
-    for (std::uint32_t i = 0; i <= order; ++i) {
-        tmp.clear();
-
-        for (std::uint32_t k = i; k <= order; ++k) {
-            tmp.push_back(cfs[k]
-                          * boost::math::binomial_coefficient<double>(boost::numeric_cast<unsigned>(k),
-                                                                      boost::numeric_cast<unsigned>(k - i))
-                          * a_pows[k - i]);
+        for (auto k = i; k <= order; ++k) {
+            tmp.push_back(
+                cfs[k]
+                * boost::math::binomial_coefficient<double>(static_cast<unsigned>(k), static_cast<unsigned>(k - i))
+                * a_pows[k - i]);
         }
 
         out.push_back(hy::sum(std::move(tmp)));
     }
+
+    return out;
+}
+
+// Add a compiled function for the computation of the translation of a polynomial.
+// The translation amount is par[0].
+void add_poly_translator_a(heyoka::llvm_state &s, std::uint32_t order_)
+{
+    namespace hy = heyoka;
+    using safe_uint32_t = boost::safe_numerics::safe<std::uint32_t>;
+
+    const auto order = safe_uint32_t(order_);
+
+    // The original polynomial coefficients are the
+    // input variables for the compiled function.
+    std::vector<hy::expression> cfs;
+    cfs.reserve(order + 1);
+    for (safe_uint32_t i = 0; i <= order; ++i) {
+        cfs.emplace_back(fmt::format("c_{}", static_cast<std::uint32_t>(i)));
+    }
+
+    // The translation amount 'a' is implemented as the
+    // first and only parameter of the compiled function.
+    const auto a = hy::par[0];
+
+    // Create the expression for the translation of the coefficients.
+    const auto out = poly_translate(cfs, a);
 
     // Add the compiled function.
     hy::add_cfunc<double>(s, "pta_cfunc", out, cfs);
