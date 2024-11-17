@@ -42,6 +42,9 @@ namespace
 // c'_i = sum_{k=i}^n (c_k * choose(k, k-i) * a**(k-i))
 //
 // (where n == order of the polynomial).
+//
+// NOTE: for my own sanity when re-deriving this formula, remember that
+// choose(k, k - i) == choose(k, i).
 void add_poly_translator_a(heyoka::llvm_state &s, std::uint32_t order)
 {
     namespace hy = heyoka;

@@ -20,8 +20,9 @@ namespace mizuba::detail
 // the conjunction-detection code. The functions are compiled
 // when an instance of this struct is constructed.
 struct conj_jit_data {
-    using pta_cfunc_t = void (*)(double *, const double *, const double *, const double *) noexcept;
-    using pssdiff3_cfunc_t = void (*)(double *, const double *, const double *, const double *) noexcept;
+    // NOTE: some of the jitted functions are created as cfuncs, and thus they share the
+    // same prototype. Others are custom written and need their own prototype.
+    using cfunc_func_t = void (*)(double *, const double *, const double *, const double *) noexcept;
     using fex_check_t = void (*)(const double *, const double *, const std::uint32_t *, std::uint32_t *) noexcept;
     using rtscc_t = void (*)(double *, double *, std::uint32_t *, const double *) noexcept;
     using pt1_t = void (*)(double *, const double *) noexcept;
@@ -34,11 +35,12 @@ struct conj_jit_data {
     ~conj_jit_data();
 
     heyoka::llvm_state state;
-    pta_cfunc_t pta_cfunc = nullptr;
-    pssdiff3_cfunc_t pssdiff3_cfunc = nullptr;
+    cfunc_func_t pta_cfunc = nullptr;
+    cfunc_func_t pssdiff3_cfunc = nullptr;
     fex_check_t fex_check = nullptr;
     rtscc_t rtscc = nullptr;
     pt1_t pt1 = nullptr;
+    cfunc_func_t cs_enc = nullptr;
 };
 
 // Helper to access a cached instance of conj_jit_data.
