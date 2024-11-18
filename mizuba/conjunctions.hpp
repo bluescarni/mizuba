@@ -169,7 +169,7 @@ private:
     detect_conjunctions(const boost::filesystem::path &, const polyjectory &, std::size_t, double, double,
                         const std::vector<bool> &, bool);
     static void detect_conjunctions_aabbs(std::size_t, std::vector<float> &, const polyjectory &, double, double,
-                                          std::size_t, std::vector<double> &);
+                                          std::size_t, std::vector<double> &, const detail::conj_jit_data &);
     static void detect_conjunctions_morton(std::vector<std::uint64_t> &, std::vector<std::uint32_t> &,
                                            std::vector<float> &, std::vector<std::uint64_t> &,
                                            const std::vector<float> &, const polyjectory &);
