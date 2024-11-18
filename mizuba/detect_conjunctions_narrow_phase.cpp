@@ -30,7 +30,6 @@
 
 #include "conjunctions.hpp"
 #include "detail/conjunctions_jit.hpp"
-#include "detail/ival.hpp"
 #include "detail/poly_utils.hpp"
 #include "polyjectory.hpp"
 
