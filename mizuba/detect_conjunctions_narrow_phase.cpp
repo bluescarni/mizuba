@@ -592,9 +592,24 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
             conj_vector.insert(conj_vector.end(), local_conj_vec.begin(), local_conj_vec.end());
         });
 
-    // Sort conj_vector according to tca.
-    oneapi::tbb::parallel_sort(conj_vector.begin(), conj_vector.end(),
-                               [](const auto &c1, const auto &c2) { return c1.tca < c2.tca; });
+    // Sort conj_vector according to tca. If the tcas are identical (this happens
+    // often at the boundaries of the polyjectory), order lexicographically: this prevents
+    // non-deterministic ordering of conjunctions with identical tca.
+    //
+    // NOTE: for documentation purposes, it is important to note that we are enforcing
+    // lexicographic ordering only within the conjunctions vector produced in a conjunction
+    // step. When this is merged into the global conj vector, we cannot guarantee lexicographic
+    // ordering any more, and we could have, in principle, two neighbouring conjunctions with
+    // equal tca that do not respect the lexicographic ordering. In other words, the only
+    // guarantee on the final conjunctions vector is ordering by tca, with undetermined (but still
+    // deterministic) ordering if the tcas are equal.
+    oneapi::tbb::parallel_sort(conj_vector.begin(), conj_vector.end(), [](const auto &c1, const auto &c2) {
+        if (c1.tca == c2.tca) {
+            return c1 < c2;
+        } else {
+            return c1.tca < c2.tca;
+        }
+    });
 
     // Atomically update np_rep with the data in cd_np_rep.
     np_rep.n_tot_conj_candidates += cd_np_rep.n_tot_conj_candidates.load();
