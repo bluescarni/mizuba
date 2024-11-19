@@ -29,8 +29,7 @@
 
 #include "conjunctions.hpp"
 #include "detail/atomic_minmax.hpp"
-#include "detail/ival.hpp"
-#include "detail/poly_utils.hpp"
+#include "detail/conjunctions_jit.hpp"
 #include "polyjectory.hpp"
 
 namespace mizuba
@@ -45,11 +44,17 @@ namespace
 // Helper to compute the AABB for a single object within a conjunction timestep.
 //
 // obj_idx is the object index in the polyjectory pj, cd_begin/end the begin/end times
-// of the conjunction timestep, conj_thresh the conjunction threshold.
-auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_begin, double cd_end, double conj_thresh)
+// of the conjunction timestep, conj_thresh the conjunction threshold, cjd the data
+// structure containing the JIT-compiled function used to compute the aabb of the object.
+auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_begin, double cd_end, double conj_thresh,
+                         const detail::conj_jit_data &cjd)
 {
-    // Cache the polynomial order.
-    const auto order = pj.get_poly_order();
+    // Fetch the compiled function for the computation of the aabb.
+    auto *aabb_cs_cfunc = cjd.aabb_cs_cfunc;
+
+    // Prepare the output and the parameters array for the compiled function.
+    std::array<double, 8> xyzr_int{};
+    std::array<double, 3> cs_pars{};
 
     // Init the return values.
     const auto finf = std::numeric_limits<float>::infinity();
@@ -134,34 +139,23 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
         // can be computed safely.
         const auto ss_idx = static_cast<std::size_t>(it - t_begin);
 
-        // Compute the pointers to the polynomial coefficients for the
+        // Fetch a pointer to the polynomial coefficients for the
         // trajectory step.
-        const auto *cf_ptr_x = &traj_span(ss_idx, 0, 0);
-        const auto *cf_ptr_y = &traj_span(ss_idx, 1, 0);
-        const auto *cf_ptr_z = &traj_span(ss_idx, 2, 0);
-        const auto *cf_ptr_r = &traj_span(ss_idx, 6, 0);
+        const auto *cf_ptr = &traj_span(ss_idx, 0, 0);
 
-        // Run the polynomial evaluations with interval arithmetics.
-        // NOTE: jit for performance? If so, we can do all 4 coordinates
-        // in a single JIT compiled function. Possibly also the update
-        // with the conjunction radius? Note also that cfunc requires
-        // input data stored in contiguous order, thus we would need
-        // a 7-arguments cfunc which ignores arguments at indices 3,4,5.
-        // NOTE: by using interval arithmetic here, we are producing intervals
+        // Prepare the parameters array for the invocation of the compiled function.
+        cs_pars[0] = h_int_lb;
+        cs_pars[1] = h_int_ub;
+        cs_pars[2] = conj_radius;
+
+        // Compute the aabb via the Cargo-Shisha algorithm.
+        // NOTE: by using the Cargo-Shisha algorithm here, we are producing intervals
         // in the form [a, b] (i.e., closed intervals), even if originally
         // the time intervals of the trajectory steps are meant to be half-open [a, b).
         // This is fine, as the end result is a slight enlargement of the aabb,
         // which is not problematic as the resulting aabb is still guaranteed
         // to contain the position of the object.
-        const auto h_int = ival(h_int_lb, h_int_ub);
-        std::array xyzr_int{detail::horner_eval(cf_ptr_x, order, h_int), detail::horner_eval(cf_ptr_y, order, h_int),
-                            detail::horner_eval(cf_ptr_z, order, h_int), detail::horner_eval(cf_ptr_r, order, h_int)};
-
-        // Adjust the intervals accounting for conjunction tracking.
-        for (auto &val : xyzr_int) {
-            val.lower -= conj_radius;
-            val.upper += conj_radius;
-        }
+        aabb_cs_cfunc(xyzr_int.data(), cf_ptr, cs_pars.data(), nullptr);
 
         // A couple of helpers to cast lower/upper bounds from double to float. After
         // the cast, we will also move slightly the bounds to add a safety margin to account
@@ -197,8 +191,8 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
         // NOTE: min/max is fine: the make_float() helpers check for finiteness,
         // and the other operand is never NaN.
         for (auto i = 0u; i < 4u; ++i) {
-            lb[i] = std::min(lb[i], lb_make_float(xyzr_int[i].lower));
-            ub[i] = std::max(ub[i], ub_make_float(xyzr_int[i].upper));
+            lb[i] = std::min(lb[i], lb_make_float(xyzr_int[i * 2u]));
+            ub[i] = std::max(ub[i], ub_make_float(xyzr_int[i * 2u + 1u]));
         }
     }
 
@@ -246,10 +240,11 @@ void validate_global_aabbs(auto cd_aabbs_span)
 // cd_idx is the index of the conjunction step, cd_aabbs the data buffer into which
 // the aabbs will be written, pj the polyjectory, conj_thresh the conjunction threshold,
 // conj_det_interval the conjunction detection interval, n_cd_steps the total number of
-// conjunction steps, cd_end_times the vector of end times for the conjunction steps.
+// conjunction steps, cd_end_times the vector of end times for the conjunction steps, cjd the data
+// structure containing the JIT-compiled function used to compute the aabbs of the objects.
 void conjunctions::detect_conjunctions_aabbs(std::size_t cd_idx, std::vector<float> &cd_aabbs, const polyjectory &pj,
                                              double conj_thresh, double conj_det_interval, std::size_t n_cd_steps,
-                                             std::vector<double> &cd_end_times)
+                                             std::vector<double> &cd_end_times, const detail::conj_jit_data &cjd)
 {
     assert(cd_idx < cd_end_times.size());
 
@@ -274,37 +269,38 @@ void conjunctions::detect_conjunctions_aabbs(std::size_t cd_idx, std::vector<flo
     const mut_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), nobjs + 1u};
 
     // Iterate over all objects to determine their AABBs for the current conjunction step.
-    oneapi::tbb::parallel_for(
-        oneapi::tbb::blocked_range<std::size_t>(0, nobjs),
-        [&pj, cd_begin, cd_end, conj_thresh, &cur_global_lb, &cur_global_ub, cd_aabbs_span](const auto &obj_range) {
-            // Init the local AABB for the current obj range.
-            std::array<float, 4> cur_local_lb{{finf, finf, finf, finf}};
-            std::array<float, 4> cur_local_ub{{-finf, -finf, -finf, -finf}};
+    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, nobjs),
+                              [&pj, cd_begin, cd_end, conj_thresh, &cur_global_lb, &cur_global_ub, cd_aabbs_span,
+                               &cjd](const auto &obj_range) {
+                                  // Init the local AABB for the current obj range.
+                                  std::array<float, 4> cur_local_lb{{finf, finf, finf, finf}};
+                                  std::array<float, 4> cur_local_ub{{-finf, -finf, -finf, -finf}};
 
-            for (auto obj_idx = obj_range.begin(); obj_idx != obj_range.end(); ++obj_idx) {
-                // Compute the AABB for the current object.
-                const auto [lb, ub] = detail::compute_object_aabb(pj, obj_idx, cd_begin, cd_end, conj_thresh);
+                                  for (auto obj_idx = obj_range.begin(); obj_idx != obj_range.end(); ++obj_idx) {
+                                      // Compute the AABB for the current object.
+                                      const auto [lb, ub] = detail::compute_object_aabb(pj, obj_idx, cd_begin, cd_end,
+                                                                                        conj_thresh, cjd);
 
-                // Update the local AABB and write to cd_aabbs_span the aabb of the
-                // current object.
-                // NOTE: min/max usage is safe, because compute_object_aabb()
-                // ensures that the bounding boxes are finite.
-                for (auto i = 0u; i < 4u; ++i) {
-                    cur_local_lb[i] = std::min(cur_local_lb[i], lb[i]);
-                    cur_local_ub[i] = std::max(cur_local_ub[i], ub[i]);
-                    cd_aabbs_span(obj_idx, 0, i) = lb[i];
-                    cd_aabbs_span(obj_idx, 1, i) = ub[i];
-                }
-            }
+                                      // Update the local AABB and write to cd_aabbs_span the aabb of the
+                                      // current object.
+                                      // NOTE: min/max usage is safe, because compute_object_aabb()
+                                      // ensures that the bounding boxes are finite.
+                                      for (auto i = 0u; i < 4u; ++i) {
+                                          cur_local_lb[i] = std::min(cur_local_lb[i], lb[i]);
+                                          cur_local_ub[i] = std::max(cur_local_ub[i], ub[i]);
+                                          cd_aabbs_span(obj_idx, 0, i) = lb[i];
+                                          cd_aabbs_span(obj_idx, 1, i) = ub[i];
+                                      }
+                                  }
 
-            // Atomically update the global AABB for the current conjunction step.
-            // NOTE: atomic_min/max() usage here is safe because we checked that
-            // all lb/ub values are finite.
-            for (auto i = 0u; i < 4u; ++i) {
-                detail::atomic_min(cur_global_lb[i], cur_local_lb[i]);
-                detail::atomic_max(cur_global_ub[i], cur_local_ub[i]);
-            }
-        });
+                                  // Atomically update the global AABB for the current conjunction step.
+                                  // NOTE: atomic_min/max() usage here is safe because we checked that
+                                  // all lb/ub values are finite.
+                                  for (auto i = 0u; i < 4u; ++i) {
+                                      detail::atomic_min(cur_global_lb[i], cur_local_lb[i]);
+                                      detail::atomic_max(cur_global_ub[i], cur_local_ub[i]);
+                                  }
+                              });
 
     // Write out the global AABB for the current conjunction step to cd_aabbs_span.
     for (auto i = 0u; i < 4u; ++i) {

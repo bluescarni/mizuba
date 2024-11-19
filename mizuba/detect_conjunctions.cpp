@@ -346,7 +346,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                                 // Compute the aabbs for all objects and store them in cd_aabbs.
                                 local_sw.reset();
                                 detect_conjunctions_aabbs(cd_idx, cd_aabbs, pj, conj_thresh, conj_det_interval,
-                                                          n_cd_steps, cd_end_times);
+                                                          n_cd_steps, cd_end_times, cjd);
                                 aabbs_time += local_sw.elapsed_ns().count();
 
                                 // Compute the morton codes for all objects and sort the aabbs data according to

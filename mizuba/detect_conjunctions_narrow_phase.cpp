@@ -30,7 +30,6 @@
 
 #include "conjunctions.hpp"
 #include "detail/conjunctions_jit.hpp"
-#include "detail/ival.hpp"
 #include "detail/poly_utils.hpp"
 #include "polyjectory.hpp"
 
@@ -58,6 +57,7 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
     auto *fex_check = cjd.fex_check;
     auto *rtscc = cjd.rtscc;
     auto *pt1 = cjd.pt1;
+    auto *cs_enc_func = cjd.cs_enc_func;
 
     // Cache the polynomial order.
     const auto order = pj.get_poly_order();
@@ -139,8 +139,8 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
     // Iterate over the detected aabbs collisions for this conjunction step.
     oneapi::tbb::parallel_for(
         oneapi::tbb::blocked_range<decltype(cd_bp_collisions.size())>(0, cd_bp_collisions.size()),
-        [&ets, cd_begin, cd_end, &cd_bp_collisions, &pj, pta_cfunc, pssdiff3_cfunc, fex_check, rtscc, pt1, order,
-         conj_thresh2, &conj_vector, &conj_vector_mutex, &cd_np_rep](const auto &bp_range) {
+        [&ets, cd_begin, cd_end, &cd_bp_collisions, &pj, pta_cfunc, pssdiff3_cfunc, fex_check, rtscc, pt1, cs_enc_func,
+         order, conj_thresh2, &conj_vector, &conj_vector_mutex, &cd_np_rep](const auto &bp_range) {
             // Fetch the thread-local data.
             // NOTE: no need to isolate here, as we are not
             // invoking any other TBB primitive from within this
@@ -156,6 +156,10 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
             // Local logging stats.
             unsigned long long n_tot_conj_candidates = 0, n_dist2_check = 0, n_poly_roots = 0, n_fex_check = 0,
                                n_poly_no_roots = 0, n_tot_dist_minima = 0, n_tot_discarded_dist_minima = 0;
+
+            // Init the output of the computation of the polynomial enclosure
+            // for the distance square between two objects.
+            std::array<double, 2> dist2_ieval{};
 
             for (auto bp_idx = bp_range.begin(); bp_idx != bp_range.end(); ++bp_idx) {
                 const auto [i, j] = cd_bp_collisions[bp_idx];
@@ -338,16 +342,16 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                     pssdiff3_cfunc(ts_diff_ptr, diff_input.data(), nullptr, nullptr);
 
                     // Evaluate the distance square in the [0, rf_int) interval.
-                    const auto dist2_ieval = detail::horner_eval(ts_diff_ptr, order, detail::ival(0, rf_int));
+                    cs_enc_func(dist2_ieval.data(), ts_diff_ptr, &rf_int, nullptr);
 
-                    if (!std::isfinite(dist2_ieval.lower) || !std::isfinite(dist2_ieval.upper)) [[unlikely]] {
+                    if (!std::isfinite(dist2_ieval[0]) || !std::isfinite(dist2_ieval[1])) [[unlikely]] {
                         // LCOV_EXCL_START
                         throw std::invalid_argument(fmt::format(
                             "Non-finite value(s) detected during conjunction tracking for objects {} and {}", i, j));
                         // LCOV_EXCL_STOP
                     }
 
-                    if (dist2_ieval.lower < conj_thresh2) {
+                    if (dist2_ieval[0] < conj_thresh2) {
                         // The mutual distance between the objects might end up being
                         // less than the conjunction threshold during the current time interval.
                         // This means that a conjunction *may* happen.
@@ -588,9 +592,24 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
             conj_vector.insert(conj_vector.end(), local_conj_vec.begin(), local_conj_vec.end());
         });
 
-    // Sort conj_vector according to tca.
-    oneapi::tbb::parallel_sort(conj_vector.begin(), conj_vector.end(),
-                               [](const auto &c1, const auto &c2) { return c1.tca < c2.tca; });
+    // Sort conj_vector according to tca. If the tcas are identical (this happens
+    // often at the boundaries of the polyjectory), order lexicographically: this prevents
+    // non-deterministic ordering of conjunctions with identical tca.
+    //
+    // NOTE: for documentation purposes, it is important to note that we are enforcing
+    // lexicographic ordering only within the conjunctions vector produced in a conjunction
+    // step. When this is merged into the global conj vector, we cannot guarantee lexicographic
+    // ordering any more, and we could have, in principle, two neighbouring conjunctions with
+    // equal tca that do not respect the lexicographic ordering. In other words, the only
+    // guarantee on the final conjunctions vector is ordering by tca, with undetermined (but still
+    // deterministic) ordering if the tcas are equal.
+    oneapi::tbb::parallel_sort(conj_vector.begin(), conj_vector.end(), [](const auto &c1, const auto &c2) {
+        if (c1.tca == c2.tca) {
+            return c1 < c2;
+        } else {
+            return c1.tca < c2.tca;
+        }
+    });
 
     // Atomically update np_rep with the data in cd_np_rep.
     np_rep.n_tot_conj_candidates += cd_np_rep.n_tot_conj_candidates.load();
