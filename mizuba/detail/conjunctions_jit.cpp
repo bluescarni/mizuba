@@ -46,6 +46,8 @@ namespace
 //
 // NOTE: for my own sanity when re-deriving this formula, remember that
 // choose(k, k - i) == choose(k, i).
+//
+// NOTE: if a is zero, cfs will be returned unchanged.
 auto poly_translate(const std::vector<heyoka::expression> &cfs, const heyoka::expression &a)
 {
     namespace hy = heyoka;
@@ -390,14 +392,13 @@ void add_aabb_cs_func(heyoka::llvm_state &s, std::uint32_t order_)
         outputs.push_back(cur_min - conj_radius);
         outputs.push_back(cur_max + conj_radius);
     }
-    {
-        // Add the outputs for r.
-        const auto [cur_min, cur_max] = cs_enclosure(std::vector(inputs.data() + static_cast<osize_t>(order + 1) * 6,
-                                                                 inputs.data() + static_cast<osize_t>(order + 1) * 7),
-                                                     lb, ub);
-        outputs.push_back(cur_min - conj_radius);
-        outputs.push_back(cur_max + conj_radius);
-    }
+
+    // Add the outputs for r.
+    const auto [cur_min, cur_max] = cs_enclosure(std::vector(inputs.data() + static_cast<osize_t>(order + 1) * 6,
+                                                             inputs.data() + static_cast<osize_t>(order + 1) * 7),
+                                                 lb, ub);
+    outputs.push_back(cur_min - conj_radius);
+    outputs.push_back(cur_max + conj_radius);
 
     // Add the compiled function.
     heyoka::add_cfunc<double>(s, "aabb_cs", outputs, inputs);
