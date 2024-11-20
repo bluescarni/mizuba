@@ -278,7 +278,12 @@ class conjunctions_test_case(_ut.TestCase):
     def test_main(self):
         import numpy as np
         import sys
-        from .. import conjunctions as conj, polyjectory, make_sgp4_conjunctions_df
+        from .. import (
+            conjunctions as conj,
+            polyjectory,
+            make_sgp4_conjunctions_df,
+            otype,
+        )
         from ._planar_circ import _planar_circ_tcs, _planar_circ_times
 
         # Deterministic seeding.
@@ -328,6 +333,7 @@ class conjunctions_test_case(_ut.TestCase):
 
             # Check the object types.
             self.assertTrue(np.all(c.otypes == [1] * pj.nobjs))
+            self.assertTrue(np.all(c.otypes == [otype.PRIMARY] * pj.nobjs))
 
             # Test otypes initialisation.
             c = conj(
@@ -708,7 +714,7 @@ class conjunctions_test_case(_ut.TestCase):
 
         # Build a list of object types that excludes two satellites
         # that we know undergo a conjunction.
-        otypes = [1] * pt.nobjs
+        otypes = [otype.PRIMARY] * pt.nobjs
         otypes[6746] = otype.SECONDARY
         otypes[4549] = otype.SECONDARY
 

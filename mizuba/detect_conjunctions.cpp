@@ -366,7 +366,10 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                                 std::vector<aabb_collision> bp_coll;
                                 std::vector<conj> conjs;
 
-                                if (!skip_cd) {
+                                if (skip_cd) {
+                                    // NOTE: keep empty for coverage checking.
+                                    ;
+                                } else {
                                     // Detect aabbs collisions.
                                     local_sw.reset();
                                     bp_coll = detect_conjunctions_broad_phase(cd_bvh_tree, cd_vidx, otypes,
