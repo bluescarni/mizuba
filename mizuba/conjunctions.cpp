@@ -251,8 +251,9 @@ conjunctions::conjunctions(polyjectory pj, double conj_thresh, double conj_det_i
     const auto nobjs = pj.get_nobjs();
 
     // Validation/setup of otypes.
-    // NOTE: the skip_cd flag will be true if all the objects are either
-    // secondaries or masked.
+    // NOTE: the skip_cd flag will be set to true if all the objects are either
+    // secondaries or masked. In that case, the broad and narrow phase conjunction
+    // detection steps are skipped.
     bool skip_cd = true;
     if (otypes) {
         // Check the size of otypes.

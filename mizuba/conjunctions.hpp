@@ -168,7 +168,7 @@ private:
     static std::tuple<std::vector<double>, std::vector<std::tuple<std::size_t, std::size_t>>,
                       std::vector<std::tuple<std::size_t, std::size_t>>>
     detect_conjunctions(const boost::filesystem::path &, const polyjectory &, std::size_t, double, double,
-                        const std::vector<int> &, bool);
+                        const std::vector<std::int32_t> &, bool);
     static void detect_conjunctions_aabbs(std::size_t, std::vector<float> &, const polyjectory &, double, double,
                                           std::size_t, std::vector<double> &, const detail::conj_jit_data &);
     static void detect_conjunctions_morton(std::vector<std::uint64_t> &, std::vector<std::uint32_t> &,
@@ -177,9 +177,11 @@ private:
     static void detect_conjunctions_bvh(std::vector<bvh_node> &, std::vector<bvh_aux_node_data> &,
                                         std::vector<bvh_level_data> &, const std::vector<float> &,
                                         const std::vector<std::uint64_t> &);
-    static std::vector<aabb_collision>
-    detect_conjunctions_broad_phase(const std::vector<bvh_node> &, const std::vector<std::uint32_t> &,
-                                    const std::vector<int> &, const std::vector<float> &, const std::vector<float> &);
+    static std::vector<aabb_collision> detect_conjunctions_broad_phase(const std::vector<bvh_node> &,
+                                                                       const std::vector<std::uint32_t> &,
+                                                                       const std::vector<std::int32_t> &,
+                                                                       const std::vector<float> &,
+                                                                       const std::vector<float> &);
     static std::vector<conj> detect_conjunctions_narrow_phase(std::size_t, const polyjectory &,
                                                               const std::vector<aabb_collision> &,
                                                               const detail::conj_jit_data &, double, double,
@@ -187,7 +189,7 @@ private:
 
 public:
     explicit conjunctions(polyjectory pj, double conj_thresh, double conj_det_interval,
-                          std::optional<std::vector<int>>);
+                          std::optional<std::vector<std::int32_t>>);
 
     conjunctions(const conjunctions &);
     conjunctions(conjunctions &&) noexcept;
@@ -222,7 +224,7 @@ public:
     [[nodiscard]] aabb_collision_span_t get_aabb_collisions(std::size_t) const;
     using conj_span_t = heyoka::mdspan<const conj, heyoka::dextents<std::size_t, 1>>;
     [[nodiscard]] conj_span_t get_conjunctions() const noexcept;
-    using otype_span_t = heyoka::mdspan<const int, heyoka::dextents<std::size_t, 1>>;
+    using otype_span_t = heyoka::mdspan<const std::int32_t, heyoka::dextents<std::size_t, 1>>;
     [[nodiscard]] otype_span_t get_otypes() const noexcept;
     [[nodiscard]] double get_conj_thresh() const noexcept;
     [[nodiscard]] double get_conj_det_interval() const noexcept;
