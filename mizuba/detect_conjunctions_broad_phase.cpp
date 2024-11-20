@@ -38,7 +38,7 @@ namespace
 
 // Helper to verify the broad-phase conjunction detection against a naive
 // n**2 algorithm.
-void verify_broad_phase(auto nobjs, const auto &bp_cv, auto aabbs, const auto &conj_active)
+void verify_broad_phase(auto nobjs, const auto &bp_cv, auto aabbs, const auto &otypes)
 {
     // LCOV_EXCL_START
     // Don't run the check if there's too many objects.
@@ -60,8 +60,8 @@ void verify_broad_phase(auto nobjs, const auto &bp_cv, auto aabbs, const auto &c
     // A counter for the N**2 collision detection algorithm below.
     std::atomic<decltype(coll_tree.size())> coll_counter(0);
 
-    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<decltype(nobjs)>(0, nobjs), [nobjs, aabbs, &conj_active,
-                                                                                      &coll_tree, &coll_counter](
+    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<decltype(nobjs)>(0, nobjs), [nobjs, aabbs, &otypes, &coll_tree,
+                                                                                      &coll_counter](
                                                                                          const auto &obj_range) {
         for (auto i = obj_range.begin(); i != obj_range.end(); ++i) {
             const auto xi_lb = aabbs(i, 0, 0);
@@ -74,8 +74,8 @@ void verify_broad_phase(auto nobjs, const auto &bp_cv, auto aabbs, const auto &c
             const auto zi_ub = aabbs(i, 1, 2);
             const auto ri_ub = aabbs(i, 1, 3);
 
-            // Check if i is active for conjunctions.
-            const auto conj_active_i = conj_active[i];
+            // Fetch the type of object i.
+            const auto otype_i = otypes[i];
 
             oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<decltype(nobjs)>(i + 1u, nobjs), [&](const auto &rj) {
                 decltype(coll_tree.size()) loc_ncoll = 0;
@@ -91,13 +91,13 @@ void verify_broad_phase(auto nobjs, const auto &bp_cv, auto aabbs, const auto &c
                     const auto zj_ub = aabbs(j, 1, 2);
                     const auto rj_ub = aabbs(j, 1, 3);
 
-                    // Check if j is active for conjunctions.
-                    const auto conj_active_j = conj_active[j];
+                    // Fetch the type of object j.
+                    const auto otype_j = otypes[j];
 
                     // Check the overlap condition.
                     const bool overlap = (xi_ub >= xj_lb && xi_lb <= xj_ub) && (yi_ub >= yj_lb && yi_lb <= yj_ub)
                                          && (zi_ub >= zj_lb && zi_lb <= zj_ub) && (ri_ub >= rj_lb && ri_lb <= rj_ub)
-                                         && (conj_active_i || conj_active_j);
+                                         && (otype_i + otype_j <= 3);
 
                     if (overlap) {
                         // Overlap detected in the simple algorithm:
@@ -134,19 +134,19 @@ void verify_broad_phase(auto nobjs, const auto &bp_cv, auto aabbs, const auto &c
 // Detect aabbs collisions within a conjunction step.
 //
 // tree is the bvh tree, cd_vidx is the sorted indexing over the objects
-// according to their morton codes, conj_active contains the active/inactive
-// flags for all objects (in the original order), cd_srt_aabbs contains the
-// morton-sorted aabbs, cd_aabbs contains the aabbs in the original order.
+// according to their morton codes, otypes contains the object types (in
+// the original order), cd_srt_aabbs contains the morton-sorted aabbs,
+// cd_aabbs contains the aabbs in the original order.
 //
 // The return value is the list of detect aabbs collisions.
 std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broad_phase(
-    const std::vector<bvh_node> &tree, const std::vector<std::uint32_t> &cd_vidx, const std::vector<bool> &conj_active,
-    const std::vector<float> &cd_srt_aabbs,
+    const std::vector<bvh_node> &tree, const std::vector<std::uint32_t> &cd_vidx,
+    const std::vector<std::int32_t> &otypes, const std::vector<float> &cd_srt_aabbs,
     // NOTE: this is used only in debug mode.
     [[maybe_unused]] const std::vector<float> &cd_aabbs)
 {
     // Cache the total number of objects.
-    const auto tot_nobjs = static_cast<std::size_t>(conj_active.size());
+    const auto tot_nobjs = static_cast<std::size_t>(otypes.size());
     assert(cd_vidx.size() == tot_nobjs);
 
     // Create a const span into cd_srt_aabbs.
@@ -196,7 +196,7 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
     // identify collisions between its aabb and the aabbs of the other objects.
     oneapi::tbb::parallel_for(
         oneapi::tbb::blocked_range<std::uint32_t>(0, nobjs),
-        [&cd_vidx, &conj_active, cd_srt_aabbs_span, &tree, &bp_coll_vector, &bp_coll_vector_mutex,
+        [&cd_vidx, &otypes, cd_srt_aabbs_span, &tree, &bp_coll_vector, &bp_coll_vector_mutex,
          &ets](const auto &obj_range) {
             // Fetch the thread-local data.
             // NOTE: no need to isolate here, as we are not
@@ -215,9 +215,8 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
                 // Load the original object index.
                 const auto orig_obj_idx = cd_vidx[obj_idx];
 
-                // Check if the object is active for conjunction
-                // detection.
-                const bool obj_is_active = conj_active[orig_obj_idx];
+                // Fetch the object type.
+                const auto obj_type = otypes[orig_obj_idx];
 
                 // Reset the stack, and add the root node to it.
                 stack.clear();
@@ -260,7 +259,8 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
                             // - obj_idx is having a conjunction with itself (obj_idx == i), or
                             // - obj_idx > i, in order to avoid counting twice
                             //   the conjunctions (obj_idx, i) and (i, obj_idx), or
-                            // - obj_idx and i are both inactive.
+                            // - obj_idx and i are either two secondaries, or at least
+                            //   one of them is masked.
                             //
                             // NOTE: in case of a multi-object leaf,
                             // the node's AABB is the composition of the AABBs
@@ -280,10 +280,12 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
                                     continue;
                                 }
 
-                                // Check if i is active for conjunctions.
-                                const auto conj_active_i = conj_active[orig_i];
+                                // Fetch the type of the i object.
+                                const auto obj_type_i = otypes[orig_i];
 
-                                if (obj_is_active || conj_active_i) {
+                                // NOTE: the type values are constructed so that obj_type + obj_type_i <= 3
+                                // for primary-primary and secondary-primary conjunctions only.
+                                if (obj_type + obj_type_i <= 3) {
                                     rng_bp_coll_vec.emplace_back(orig_obj_idx, orig_i);
                                 }
                             }
@@ -310,7 +312,7 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
 #if !defined(NDEBUG)
 
     // Verify the outcome of collision detection in debug mode.
-    detail::verify_broad_phase(nobjs, bp_coll_vector, cd_aabbs_span, conj_active);
+    detail::verify_broad_phase(nobjs, bp_coll_vector, cd_aabbs_span, otypes);
 
 #endif
 

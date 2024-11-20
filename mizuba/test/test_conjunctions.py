@@ -326,33 +326,61 @@ class conjunctions_test_case(_ut.TestCase):
                 self.assertEqual(len(c.get_aabb_collisions(i)), 0)
             self.assertEqual(len(c.conjunctions), 0)
 
-            # Check the whitelist.
-            self.assertTrue(c.whitelist is None)
+            # Check the object types.
+            self.assertTrue(np.all(c.otypes == [1] * pj.nobjs))
 
-            # Test whitelist initialisation.
+            # Test otypes initialisation.
             c = conj(
-                pj, conj_thresh=0.1, conj_det_interval=conj_det_interval, whitelist=[0]
+                pj,
+                conj_thresh=0.1,
+                conj_det_interval=conj_det_interval,
+                otypes=[1] * pj.nobjs,
             )
 
-            # Check the whitelist property.
+            # Check the otypes property.
             rc = sys.getrefcount(c)
-            wl = c.whitelist
+            otypes = c.otypes
             self.assertEqual(sys.getrefcount(c), rc + 1)
             with self.assertRaises(ValueError) as cm:
-                wl[:] = wl
+                otypes[:] = otypes
             with self.assertRaises(AttributeError) as cm:
-                c.whitelist = wl
-            self.assertEqual(len(wl), 1)
+                c.otypes = otypes
+            self.assertEqual(len(otypes), pj.nobjs)
+
+            # Error handling.
+            with self.assertRaises(ValueError) as cm:
+                conj(
+                    pj,
+                    conj_thresh=0.1,
+                    conj_det_interval=conj_det_interval,
+                    otypes=[],
+                )
+            self.assertTrue(
+                f"Invalid array of object types passed to the constructor of a conjunctions objects: the expected size is {pj.nobjs}, but the actual size is 0 instead"
+                in str(cm.exception)
+            )
 
             with self.assertRaises(ValueError) as cm:
                 conj(
                     pj,
                     conj_thresh=0.1,
                     conj_det_interval=conj_det_interval,
-                    whitelist=[1],
+                    otypes=[-5],
                 )
             self.assertTrue(
-                "Invalid whitelist detected: the largest index in the whitelist is 1, which is not less than the number of objects in the polyjectory (1)"
+                "The value of an object type must be one of [1, 2, 4], but a value of -5 was detected instead"
+                in str(cm.exception)
+            )
+
+            with self.assertRaises(ValueError) as cm:
+                conj(
+                    pj,
+                    conj_thresh=0.1,
+                    conj_det_interval=conj_det_interval,
+                    otypes=[5],
+                )
+            self.assertTrue(
+                "The value of an object type must be one of [1, 2, 4], but a value of 5 was detected instead"
                 in str(cm.exception)
             )
 
@@ -661,7 +689,12 @@ class conjunctions_test_case(_ut.TestCase):
         if not hasattr(type(self), "sparse_sat_list"):
             return
 
-        from .. import sgp4_polyjectory, conjunctions as conj, make_sgp4_conjunctions_df
+        from .. import (
+            sgp4_polyjectory,
+            conjunctions as conj,
+            make_sgp4_conjunctions_df,
+            otype,
+        )
         from .test_sgp4_polyjectory import _check_sgp4_pj_ret_consistency
         import numpy as np
 
@@ -673,15 +706,15 @@ class conjunctions_test_case(_ut.TestCase):
         pt, df, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 15.0 / 1440.0)
         _check_sgp4_pj_ret_consistency(self, pt, df, mask)
 
-        # Build a whitelist that excludes two satellites
+        # Build a list of object types that excludes two satellites
         # that we know undergo a conjunction.
-        wl = list(range(pt.nobjs))
-        for idx in [6746, 4549]:
-            del wl[idx]
+        otypes = [1] * pt.nobjs
+        otypes[6746] = otype.SECONDARY
+        otypes[4549] = otype.SECONDARY
 
         # Build the conjunctions object. This will trigger
         # the internal C++ sanity checks in debug mode.
-        c = conj(pt, conj_thresh=10.0, conj_det_interval=1.0, whitelist=wl)
+        c = conj(pt, conj_thresh=10.0, conj_det_interval=1.0, otypes=otypes)
 
         self.assertTrue(
             all(len(c.get_aabb_collisions(_)) > 0 for _ in range(c.n_cd_steps))
@@ -722,7 +755,7 @@ class conjunctions_test_case(_ut.TestCase):
             )
         )
 
-        # Conjunctions cannot happen between whitelisted indices.
+        # Conjunctions cannot happen between secondaries.
         self.assertFalse(
             (4549, 6746) in list(tuple(_) for _ in c.conjunctions[["i", "j"]])
         )
@@ -761,11 +794,16 @@ class conjunctions_test_case(_ut.TestCase):
             self.assertLess(diff_vi, 1e-11)
             self.assertLess(diff_vj, 1e-11)
 
-        # Build a conjunctions object with an empty whitelist.
+        # Build a conjunctions object with all masked otypes.
         # There cannot be aabb collisions or conjunctions.
-        c = conj(pt, conj_thresh=10.0, conj_det_interval=1.0, whitelist=[])
+        c = conj(
+            pt,
+            conj_thresh=10.0,
+            conj_det_interval=1.0,
+            otypes=[otype.MASKED] * pt.nobjs,
+        )
 
-        self.assertEqual(len(c.whitelist), 0)
+        self.assertEqual(len(c.otypes), pt.nobjs)
 
         for i in range(c.n_cd_steps):
             self.assertEqual(len(c.get_aabb_collisions(i)), 0)

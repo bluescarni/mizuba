@@ -110,7 +110,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
     # detection with a heyoka simulation in which we keep
     # track of the minimum distances between the objects.
     def test_tle(self):
-        from .. import _have_sgp4_deps, _have_heyoka_deps
+        from .. import _have_sgp4_deps, _have_heyoka_deps, otype
 
         if not _have_sgp4_deps() or not _have_heyoka_deps():
             return
@@ -194,8 +194,11 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         self.assertTrue(np.all(np.isclose(cjc["vi"], hy_conj_list["vi"], rtol=1e-12)))
         self.assertTrue(np.all(np.isclose(cjc["vj"], hy_conj_list["vj"], rtol=1e-12)))
 
-        # Re-run the same conjunction but with a whitelist.
-        cj = conj(pj, 1e6, 60.0, whitelist=[1, 0])
+        # Re-run the same conjunction but with only 0 and 1 as primaries.
+        otypes = [otype.SECONDARY] * pj.nobjs
+        otypes[0] = otype.PRIMARY
+        otypes[1] = otype.PRIMARY
+        cj = conj(pj, 1e6, 60.0, otypes=otypes)
         flist = hy_conj_list[
             np.logical_or.reduce(
                 (
@@ -251,8 +254,11 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         self.assertTrue(np.all(np.isclose(cjc["vi"], hy_conj_list["vi"], rtol=1e-12)))
         self.assertTrue(np.all(np.isclose(cjc["vj"], hy_conj_list["vj"], rtol=1e-12)))
 
-        # Re-run the same conjunction but with a whitelist.
-        cj = conj(pj, 500.0, 60.0, whitelist=[3, 8])
+        # Re-run the same conjunction but with a only 3 and 8 as primaries.
+        otypes = [otype.SECONDARY] * pj.nobjs
+        otypes[3] = otype.PRIMARY
+        otypes[8] = otype.PRIMARY
+        cj = conj(pj, 500.0, 60.0, otypes=otypes)
         flist = hy_conj_list[
             np.logical_or.reduce(
                 (
@@ -307,8 +313,11 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         self.assertTrue(np.all(np.isclose(cjc["vi"], hy_conj_list["vi"], rtol=1e-12)))
         self.assertTrue(np.all(np.isclose(cjc["vj"], hy_conj_list["vj"], rtol=1e-12)))
 
-        # Re-run the same conjunction but with a whitelist.
-        cj = conj(pj, 200.0, 60.0, whitelist=[9, 2])
+        # Re-run the same conjunction but only with 9 and 2 as primaries.
+        otypes = [otype.SECONDARY] * pj.nobjs
+        otypes[9] = otype.PRIMARY
+        otypes[2] = otype.PRIMARY
+        cj = conj(pj, 200.0, 60.0, otypes=otypes)
         flist = hy_conj_list[
             np.logical_or.reduce(
                 (
