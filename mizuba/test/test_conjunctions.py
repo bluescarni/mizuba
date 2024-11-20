@@ -815,3 +815,36 @@ class conjunctions_test_case(_ut.TestCase):
             self.assertEqual(len(c.get_aabb_collisions(i)), 0)
 
         self.assertEqual(len(c.conjunctions), 0)
+
+        # Same with all secondaries.
+        c = conj(
+            pt,
+            conj_thresh=10.0,
+            conj_det_interval=1.0,
+            otypes=[otype.SECONDARY] * pt.nobjs,
+        )
+
+        self.assertEqual(len(c.otypes), pt.nobjs)
+
+        for i in range(c.n_cd_steps):
+            self.assertEqual(len(c.get_aabb_collisions(i)), 0)
+
+        self.assertEqual(len(c.conjunctions), 0)
+
+        # Try with a mix of secondaries and masked.
+        otypes = [otype.SECONDARY] * (pt.nobjs // 2)
+        otypes += [otype.MASKED] * (pt.nobjs - pt.nobjs // 2)
+
+        c = conj(
+            pt,
+            conj_thresh=10.0,
+            conj_det_interval=1.0,
+            otypes=otypes,
+        )
+
+        self.assertEqual(len(c.otypes), pt.nobjs)
+
+        for i in range(c.n_cd_steps):
+            self.assertEqual(len(c.get_aabb_collisions(i)), 0)
+
+        self.assertEqual(len(c.conjunctions), 0)

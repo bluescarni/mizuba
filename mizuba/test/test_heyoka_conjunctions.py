@@ -350,7 +350,8 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
 
     def test_close_conjunction(self):
         # Test keplerian orbits leading to collisions.
-        from .. import _have_heyoka_deps
+        from .. import _have_heyoka_deps, otype
+        from copy import copy
 
         if not _have_heyoka_deps():
             return
@@ -387,6 +388,9 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
 
         cj = conj(pj, 1e-4, 0.1)
 
+        # Store the original conjunctions array for later use.
+        orig_conj = copy(cj.conjunctions)
+
         hy_conj_arr = np.sort(np.array(hy_conj_list, dtype=conj.conj), order="tca")
 
         self.assertEqual(len(hy_conj_arr), 2)
@@ -413,6 +417,33 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         self.assertTrue(
             np.all(np.isclose(cj.conjunctions["vj"], hy_conj_arr["vj"], rtol=1e-12))
         )
+
+        # Try primary-secondary as otypes.
+        cj = conj(pj, 1e-4, 0.1, otypes=[otype.PRIMARY, otype.SECONDARY])
+        self.assertTrue(np.all(orig_conj == cj.conjunctions))
+
+        cj = conj(pj, 1e-4, 0.1, otypes=[otype.SECONDARY, otype.PRIMARY])
+        self.assertTrue(np.all(orig_conj == cj.conjunctions))
+
+        # Try with several otype combination that must result
+        # in no detected conjunctions.
+        cj = conj(pj, 1e-4, 0.1, otypes=[otype.MASKED, otype.MASKED])
+        self.assertEqual(len(cj.conjunctions), 0)
+
+        cj = conj(pj, 1e-4, 0.1, otypes=[otype.SECONDARY, otype.SECONDARY])
+        self.assertEqual(len(cj.conjunctions), 0)
+
+        cj = conj(pj, 1e-4, 0.1, otypes=[otype.PRIMARY, otype.MASKED])
+        self.assertEqual(len(cj.conjunctions), 0)
+
+        cj = conj(pj, 1e-4, 0.1, otypes=[otype.MASKED, otype.PRIMARY])
+        self.assertEqual(len(cj.conjunctions), 0)
+
+        cj = conj(pj, 1e-4, 0.1, otypes=[otype.SECONDARY, otype.MASKED])
+        self.assertEqual(len(cj.conjunctions), 0)
+
+        cj = conj(pj, 1e-4, 0.1, otypes=[otype.MASKED, otype.SECONDARY])
+        self.assertEqual(len(cj.conjunctions), 0)
 
         # Try an equatorial collision too.
         ta.time = 0.0
