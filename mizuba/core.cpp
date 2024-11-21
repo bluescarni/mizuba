@@ -389,11 +389,11 @@ PYBIND11_MODULE(core, m)
     // Conjunctions.
     py::class_<mz::conjunctions> conj_cl(m, "conjunctions", py::dynamic_attr{});
     conj_cl.def(py::init([](mz::polyjectory pj, double conj_thresh, double conj_det_interval,
-                            std::optional<std::vector<std::uint32_t>> whitelist) {
+                            std::optional<std::vector<std::int32_t>> otypes) {
                     // NOTE: release the GIL during conjunction detection.
                     py::gil_scoped_release release;
 
-                    auto ret = mz::conjunctions(std::move(pj), conj_thresh, conj_det_interval, std::move(whitelist));
+                    auto ret = mz::conjunctions(std::move(pj), conj_thresh, conj_det_interval, std::move(otypes));
 
                     // Register the conjunctions implementation in the cleanup machinery.
                     mzpy::detail::add_cj_weak_ptr(mz::detail::fetch_cj_impl(ret));
@@ -401,7 +401,7 @@ PYBIND11_MODULE(core, m)
                     return ret;
                 }),
                 "pj"_a.noconvert(), "conj_thresh"_a.noconvert(), "conj_det_interval"_a.noconvert(),
-                "whitelist"_a.noconvert() = py::none{});
+                "otypes"_a.noconvert() = py::none{});
     conj_cl.def_property_readonly("n_cd_steps", &mz::conjunctions::get_n_cd_steps);
     conj_cl.def_property_readonly("aabbs", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
@@ -485,18 +485,14 @@ PYBIND11_MODULE(core, m)
         // Turn into an array and return.
         return mzpy::mdspan_to_array(self, conj_span);
     }); // LCOV_EXCL_LINE
-    conj_cl.def_property_readonly("whitelist", [](const py::object &self) -> std::optional<py::array_t<std::uint32_t>> {
+    conj_cl.def_property_readonly("otypes", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
 
         // Fetch the span.
-        const auto whitelist_span = p->get_whitelist();
+        const auto otypes_span = p->get_otypes();
 
-        if (whitelist_span) {
-            // Turn into an array and return.
-            return mzpy::mdspan_to_array(self, *whitelist_span);
-        } else {
-            return {};
-        }
+        // Turn into an array and return.
+        return mzpy::mdspan_to_array(self, otypes_span);
     }); // LCOV_EXCL_LINE
     conj_cl.def_property_readonly("conj_thresh", &mz::conjunctions::get_conj_thresh);
     conj_cl.def_property_readonly("conj_det_interval", &mz::conjunctions::get_conj_det_interval);

@@ -37,6 +37,14 @@ class sgp4_pj_status(IntEnum):
     SGP4_DECAY = 16
 
 
+class otype(IntEnum):
+    # NOTE: the numbering here is set up to match the codes
+    # used in C++.
+    PRIMARY = 1
+    SECONDARY = 2
+    MASKED = 4
+
+
 del IntEnum
 
 
