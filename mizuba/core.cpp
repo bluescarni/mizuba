@@ -86,6 +86,12 @@ namespace
 // If this ever becomes an issue, we can think about a more sophisticated implementation
 // (which for instance could periodically remove expired weak pointers from the
 // vector).
+//
+// NOTE: in jupyterlab the cleanup functions registered to run at exit sometimes
+// do not run to completion, thus leaving behind temporary files after shutdown.
+// I think we are seeing this issue:
+//
+// https://github.com/jupyterlab/jupyterlab/issues/16276
 
 // Vector of weak pointers plus mutex for safe multithreaded access.
 constinit std::vector<std::weak_ptr<mizuba::detail::polyjectory_impl>> pj_weak_ptr_vector;
