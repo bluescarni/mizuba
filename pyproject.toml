@@ -4,7 +4,7 @@ requires = ['scikit-build-core']
 
 [project]
 name = 'mizuba'
-version = '0.0.4'
+version = '0.0.5'
 description = "Python library for fast conjunction detection in orbital environments"
 readme = 'README.md'
 requires-python = '>=3.7'
@@ -22,7 +22,6 @@ classifiers = [
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Mathematics",
     "Topic :: Scientific/Engineering :: Physics",
-    "License :: OSI Approved :: GNU Affero General Public License v3.0 or later",
     "Programming Language :: Python :: 3",
 ]
 keywords = ['science', 'math', 'physics', 'astrodynamics', 'aerospace']
