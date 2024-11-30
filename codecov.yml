@@ -1,6 +1,6 @@
 coverage:
   ignore:
   - "mizuba/detail/mortonND_LUT.h"
-  - "mizuba/detail/sgp4/*"
+  - "mizuba/detail/sgp4"
 
 comment: off
