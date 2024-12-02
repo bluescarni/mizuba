@@ -33,6 +33,7 @@ set(_MIZUBA_CORE_SOURCES
     detail/conjunctions_jit.cpp
     detail/file_utils.cpp
     detail/poly_utils.cpp
+    detail/sgp4/SGP4_fix.cpp
 )
 
 Python3_add_library(core MODULE WITH_SOABI ${_MIZUBA_CORE_SOURCES})
