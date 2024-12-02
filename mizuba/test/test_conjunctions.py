@@ -798,13 +798,13 @@ class conjunctions_test_case(_ut.TestCase):
             diff_vi = np.linalg.norm(svi - vi)
             diff_vj = np.linalg.norm(svj - vj)
 
-            # NOTE: unit of measure here is [km], vs typical
+            # NOTE: unit of measurement here is [km], vs typical
             # values of >1e3 km in the coordinates. Thus, relative
             # error is 1e-11, absolute error is ~10µm.
             self.assertLess(diff_ri, 1e-8)
             self.assertLess(diff_rj, 1e-8)
 
-            # NOTE: unit of measure here is [km/s], vs typicial
+            # NOTE: unit of measurement here is [km/s], vs typicial
             # velocity values of >1 km/s.
             self.assertLess(diff_vi, 1e-11)
             self.assertLess(diff_vj, 1e-11)
