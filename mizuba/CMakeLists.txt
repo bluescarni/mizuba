@@ -5,15 +5,17 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/_version.py.in" "${CMAKE_CURRENT_BIN
 set(MIZUBA_PYTHON_FILES
     __init__.py
     test/__init__.py
-    test/test_sgp4_polyjectory.py
     test/_sgp4_test_data_20240705.py
     test/_sgp4_test_data_20240917.py
     test/_sgp4_test_data_20241026.py
+    test/_sample_spacetrack_json.py
+    test/test_sgp4_polyjectory.py
     test/test_conjunctions.py
     test/test_boundary_conjunctions.py
     test/_planar_circ.py
     test/test_polyjectory.py
     test/test_heyoka_conjunctions.py
+    data_sources/__init__.py
 )
 
 # Core module.
