@@ -88,6 +88,9 @@ def _reformat_gpes_spacetrack(gpes: pl.DataFrame) -> pl.DataFrame:
     # Convert the epochs to astropy Time objects.
     apy_tm = Time(gpes["EPOCH"], format="isot", scale="utc", precision=9)
 
+    # Degree to radians conversion factor.
+    deg2rad = 2.0 * np.pi / 360.0
+
     return pl.DataFrame(
         {
             "norad_id": gpes["NORAD_CAT_ID"].cast(int),
@@ -97,10 +100,10 @@ def _reformat_gpes_spacetrack(gpes: pl.DataFrame) -> pl.DataFrame:
             "epoch_jd2": apy_tm.jd2,
             "n0": gpes["MEAN_MOTION"].cast(float) * (2.0 * np.pi / 1440.0),
             "ecc0": gpes["ECCENTRICITY"].cast(float),
-            "incl0": gpes["INCLINATION"].cast(float) * (2.0 * np.pi / 360.0),
-            "argp0": gpes["ARG_OF_PERICENTER"].cast(float) * (2.0 * np.pi / 360.0),
-            "node0": gpes["RA_OF_ASC_NODE"].cast(float) * (2.0 * np.pi / 360.0),
-            "m0": gpes["MEAN_ANOMALY"].cast(float) * (2.0 * np.pi / 360.0),
+            "incl0": gpes["INCLINATION"].cast(float) * deg2rad,
+            "argp0": gpes["ARG_OF_PERICENTER"].cast(float) * deg2rad,
+            "node0": gpes["RA_OF_ASC_NODE"].cast(float) * deg2rad,
+            "m0": gpes["MEAN_ANOMALY"].cast(float) * deg2rad,
             "bstar": gpes["BSTAR"].cast(float),
             "rcs_size": gpes["RCS_SIZE"],
             # NOTE: these two are kept for debugging.
@@ -153,7 +156,7 @@ def _fetch_gpes_spacetrack(session: rq.Session) -> pl.DataFrame:
     # Validate.
     _validate_gpes_spacetrack(gpes)
 
-    # Reformat.    
+    # Reformat.
     gpes = _reformat_gpes_spacetrack(gpes)
 
     # Deduplicate and return.
@@ -161,8 +164,8 @@ def _fetch_gpes_spacetrack(session: rq.Session) -> pl.DataFrame:
 
 
 def download_gpes_spacetrack() -> pl.DataFrame:
-    session = _spacetrack_login()
-    return _fetch_gpes_spacetrack(session)
+    with _spacetrack_login() as session:
+        return _fetch_gpes_spacetrack(session)
 
 
 del pl, rq
