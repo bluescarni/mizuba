@@ -16,7 +16,9 @@ set(MIZUBA_PYTHON_FILES
     test/test_polyjectory.py
     test/test_heyoka_conjunctions.py
     data_sources/__init__.py
+    data_sources/_common.py
     data_sources/_spacetrack.py
+    data_sources/_celestrak.py
 )
 
 # Core module.

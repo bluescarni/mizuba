@@ -47,32 +47,9 @@ def _spacetrack_login() -> rq.Session:
 
 def _validate_gpes_spacetrack(gpes: pl.DataFrame) -> None:
     # Validate the GPEs downloaded from space-track.org.
+    from ._common import _common_validate_gpes
 
-    # We need all GPEs to hava a non-null, unique norad id.
-    if not gpes["NORAD_CAT_ID"].is_not_null().all():
-        raise ValueError(
-            "One or more NULL NORAD IDs detected in the GPEs downloaded from space-track.org"
-        )
-    if not gpes["NORAD_CAT_ID"].is_unique().all():
-        raise ValueError(
-            "Non-unique NORAD IDs detected in the GPEs downloaded from space-track.org"
-        )
-
-    # Check that all the data used for orbital propagation is present.
-    for col in [
-        "EPOCH",
-        "MEAN_MOTION",
-        "ECCENTRICITY",
-        "INCLINATION",
-        "ARG_OF_PERICENTER",
-        "RA_OF_ASC_NODE",
-        "MEAN_ANOMALY",
-        "BSTAR",
-    ]:
-        if not gpes[col].is_not_null().all():
-            raise ValueError(
-                f"One or more NULL values detected in the column '{col}' in the GPEs downloaded from space-track.org"
-            )
+    _common_validate_gpes(gpes)
 
     # Check the time system, as we are assuming UTC.
     if not (gpes["TIME_SYSTEM"] == "UTC").all():
@@ -104,20 +81,28 @@ def _reformat_gpes_spacetrack(gpes: pl.DataFrame) -> pl.DataFrame:
     import polars as pl
     from astropy.time import Time
     import numpy as np
+    from ._common import _eft_knuth
 
     # Convert the epochs to astropy Time objects.
     apy_tm = Time(gpes["EPOCH"], format="isot", scale="utc", precision=9)
 
+    # Normalise the hi/lo parts of the Julian dates.
+    # NOTE: we do this in order to make absolutely sure that
+    # lexicographic ordering first by jd1 and then by jd2 produces
+    # chronological order.
+    jd1, jd2 = _eft_knuth(apy_tm.jd1, apy_tm.jd2)
+
     # Degree to radians conversion factor.
     deg2rad = 2.0 * np.pi / 360.0
 
-    return pl.DataFrame(
+    # Assemble the reformatted dataframe.
+    ret = pl.DataFrame(
         {
             "norad_id": gpes["NORAD_CAT_ID"].cast(int),
             "cospar_id": gpes["OBJECT_ID"],
             "name": gpes["OBJECT_NAME"],
-            "epoch_jd1": apy_tm.jd1,
-            "epoch_jd2": apy_tm.jd2,
+            "epoch_jd1": jd1,
+            "epoch_jd2": jd2,
             "n0": gpes["MEAN_MOTION"].cast(float) * (2.0 * np.pi / 1440.0),
             "ecc0": gpes["ECCENTRICITY"].cast(float),
             "incl0": gpes["INCLINATION"].cast(float) * deg2rad,
@@ -132,23 +117,27 @@ def _reformat_gpes_spacetrack(gpes: pl.DataFrame) -> pl.DataFrame:
         }
     )
 
+    # Replace "UNKNOWN" cospar ids and "TBA - TO BE ASSIGNED" names
+    # with null values.
+    ret = ret.with_columns(
+        pl.when(pl.col("cospar_id") == "UNKNOWN")
+        .then(None)
+        .otherwise(pl.col("cospar_id"))
+        .alias("cospar_id"),
+        pl.when(pl.col("name") == "TBA - TO BE ASSIGNED")
+        .then(None)
+        .otherwise(pl.col("name"))
+        .alias("name"),
+    )
 
-def _deduplicate_gpes_spacetrack(gpes: pl.DataFrame) -> pl.DataFrame:
-    # GPEs from spacetrack often contain duplicates (e.g., ISS servicing
-    # vehicles often have their own GPE identical to the ISS one). We want
-    # to eliminate such duplicates as they will just clutter up the results
-    # of conjunction detection.
-    #
-    # In order to detect duplicates, we consider all the values in the GPEs
-    # which affect orbital propagation. These are contained in the [3, 12)
-    # column range of the dataframe.
-    return gpes.unique(subset=gpes.columns[3:12], keep="first").sort("norad_id")
+    return ret
 
 
 def _fetch_gpes_spacetrack(session: rq.Session) -> pl.DataFrame:
     # Fetch the most recent GPEs from space-track.org.
     from io import StringIO
     import polars as pl
+    from ._common import _common_deduplicate_gpes
 
     # Try to fetch the gpes.
     #
@@ -179,8 +168,11 @@ def _fetch_gpes_spacetrack(session: rq.Session) -> pl.DataFrame:
     # Reformat.
     gpes = _reformat_gpes_spacetrack(gpes)
 
-    # Deduplicate and return.
-    return _deduplicate_gpes_spacetrack(gpes)
+    # Deduplicate.
+    gpes = _common_deduplicate_gpes(gpes)
+
+    # Sort by norad id and return.
+    return gpes.sort("norad_id")
 
 
 del pl, rq
