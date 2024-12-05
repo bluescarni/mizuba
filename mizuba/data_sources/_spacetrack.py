@@ -25,6 +25,15 @@ def _spacetrack_login() -> rq.Session:
     import requests as rq
     import os
 
+    # Try to fetch identity and password from
+    # the environment.
+    identity = os.getenv("MIZUBA_SPACETRACK_IDENTITY")
+    password = os.getenv("MIZUBA_SPACETRACK_PASSWORD")
+    if identity is None or password is None:
+        raise RuntimeError(
+            "The environment variables MIZUBA_SPACETRACK_IDENTITY and MIZUBA_SPACETRACK_PASSWORD must be defined in order to be able to access data from space-track.org"
+        )
+
     # Open an http session.
     session = rq.Session()
 
@@ -33,8 +42,8 @@ def _spacetrack_login() -> rq.Session:
     login_response = session.post(
         login_url,
         {
-            "identity": os.getenv("MIZUBA_SPACETRACK_IDENTITY"),
-            "password": os.getenv("MIZUBA_SPACETRACK_PASSWORD"),
+            "identity": identity,
+            "password": password,
         },
     )
     if not login_response.ok:
