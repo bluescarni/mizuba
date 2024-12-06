@@ -93,7 +93,7 @@ def _reformat_gpes_spacetrack(gpes: pl.DataFrame) -> pl.DataFrame:
     from ._common import _eft_knuth
 
     # Convert the epochs to astropy Time objects.
-    apy_tm = Time(gpes["EPOCH"], format="isot", scale="utc", precision=9)
+    apy_tm = Time(gpes["EPOCH"].cast(str), format="isot", scale="utc", precision=9)
 
     # Normalise the hi/lo parts of the Julian dates.
     # NOTE: we do this in order to make absolutely sure that
@@ -105,11 +105,13 @@ def _reformat_gpes_spacetrack(gpes: pl.DataFrame) -> pl.DataFrame:
     deg2rad = 2.0 * np.pi / 360.0
 
     # Assemble the reformatted dataframe.
+    # NOTE: use explicit casting in order to make sure
+    # we are constructing a dataframe with the correct types.
     ret = pl.DataFrame(
         {
             "norad_id": gpes["NORAD_CAT_ID"].cast(int),
-            "cospar_id": gpes["OBJECT_ID"],
-            "name": gpes["OBJECT_NAME"],
+            "cospar_id": gpes["OBJECT_ID"].cast(str),
+            "name": gpes["OBJECT_NAME"].cast(str),
             "epoch_jd1": jd1,
             "epoch_jd2": jd2,
             "n0": gpes["MEAN_MOTION"].cast(float) * (2.0 * np.pi / 1440.0),
@@ -119,10 +121,10 @@ def _reformat_gpes_spacetrack(gpes: pl.DataFrame) -> pl.DataFrame:
             "node0": gpes["RA_OF_ASC_NODE"].cast(float) * deg2rad,
             "m0": gpes["MEAN_ANOMALY"].cast(float) * deg2rad,
             "bstar": gpes["BSTAR"].cast(float),
-            "rcs_size": gpes["RCS_SIZE"],
+            "rcs_size": gpes["RCS_SIZE"].cast(str),
             # NOTE: these two are kept for debugging.
-            "tle_line1": gpes["TLE_LINE1"],
-            "tle_line2": gpes["TLE_LINE2"],
+            "tle_line1": gpes["TLE_LINE1"].cast(str),
+            "tle_line2": gpes["TLE_LINE2"].cast(str),
         }
     )
 

@@ -25,4 +25,26 @@ def download_gpes_spacetrack() -> pl.DataFrame:
         return _fetch_gpes_spacetrack(session)
 
 
+def download_gpes_celestrak() -> pl.DataFrame:
+    import polars as pl
+    from concurrent.futures import ThreadPoolExecutor
+    from ._celestrak import (
+        _fetch_supgp_celestrak,
+        _supgp_group_names,
+        _supgp_pick_lowest_rms,
+    )
+
+    # Download in parallel the GPEs for all supgp groups.
+    with ThreadPoolExecutor() as executor:
+        ret = executor.map(_fetch_supgp_celestrak, _supgp_group_names)
+
+    # Concatenate the datasets into a single dataframe.
+    gpes = pl.concat(ret)
+
+    # Pick the GPEs with the lowest rms.
+    gpes = _supgp_pick_lowest_rms(gpes)
+
+    return gpes
+
+
 del pl
