@@ -16,7 +16,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import polars as pl
-from typing import Any
+from typing import Any, Tuple
 
 
 def _common_validate_gpes(gpes: pl.DataFrame, unique_norad_id: bool = True) -> None:
@@ -61,7 +61,7 @@ def _common_deduplicate_gpes(gpes: pl.DataFrame) -> pl.DataFrame:
     return gpes.unique(subset=gpes.columns[3:12], keep="first")
 
 
-def _eft_knuth(a: Any, b: Any) -> Any:
+def _eft_knuth(a: Any, b: Any) -> Tuple[Any, Any]:
     # Error-free transformation of the sum of two floating point numbers.
     # This is Knuth's algorithm. See algorithm 2.1 here:
     # https://www.researchgate.net/publication/228568591_Error-free_transformations_in_real_and_complex_floating_point_arithmetic
@@ -74,3 +74,4 @@ def _eft_knuth(a: Any, b: Any) -> Any:
 
 del pl
 del Any
+del Tuple
