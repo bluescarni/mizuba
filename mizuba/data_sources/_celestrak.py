@@ -77,7 +77,7 @@ def _fetch_supgp_celestrak(group_name: str) -> pl.DataFrame:
             f"Unable to download GPEs from celestrak.org for the group '{group_name}': {download_response.reason}"
         )
 
-    # Parse the gpes as polars dataframes.
+    # Parse the gpes into a polars dataframe.
     gpes = pl.read_json(StringIO(download_response.text))
 
     # Validate.

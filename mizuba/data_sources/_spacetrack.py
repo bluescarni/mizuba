@@ -168,7 +168,7 @@ def _fetch_gpes_spacetrack(session: rq.Session) -> pl.DataFrame:
             f"Unable to download GPEs from space-track.org: {download_response.reason}"
         )
 
-    # Parse the gpes as polars dataframes.
+    # Parse the gpes into a polars dataframes.
     gpes = pl.read_json(StringIO(download_response.text))
 
     # Validate.
