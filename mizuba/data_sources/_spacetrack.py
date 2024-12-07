@@ -61,19 +61,19 @@ def _validate_gpes_spacetrack(gpes: pl.DataFrame) -> None:
     _common_validate_gpes(gpes)
 
     # Check the time system, as we are assuming UTC.
-    if not (gpes["TIME_SYSTEM"] == "UTC").all():
+    if not (gpes["TIME_SYSTEM"].cast(str) == "UTC").all():
         raise ValueError(
             "One or more non-UTC time systems detected in the GPEs downloaded from space-track.org"
         )
 
     # Check the reference frame.
-    if not (gpes["REF_FRAME"] == "TEME").all():
+    if not (gpes["REF_FRAME"].cast(str) == "TEME").all():
         raise ValueError(
             "One or more non-TEME reference frames detected in the GPEs downloaded from space-track.org"
         )
 
     # Check the center.
-    if not (gpes["CENTER_NAME"] == "EARTH").all():
+    if not (gpes["CENTER_NAME"].cast(str) == "EARTH").all():
         raise ValueError(
             "One or more non-Earth centers detected in the GPEs downloaded from space-track.org"
         )
@@ -121,7 +121,6 @@ def _reformat_gpes_spacetrack(gpes: pl.DataFrame) -> pl.DataFrame:
             "node0": gpes["RA_OF_ASC_NODE"].cast(float) * deg2rad,
             "m0": gpes["MEAN_ANOMALY"].cast(float) * deg2rad,
             "bstar": gpes["BSTAR"].cast(float),
-            "rcs_size": gpes["RCS_SIZE"].cast(str),
             # NOTE: these two are kept for debugging.
             "tle_line1": gpes["TLE_LINE1"].cast(str),
             "tle_line2": gpes["TLE_LINE2"].cast(str),

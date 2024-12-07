@@ -28,7 +28,7 @@ def _common_validate_gpes(gpes: pl.DataFrame, unique_norad_id: bool = True) -> N
 
     # If unique_norad_id is True, check that the norad ids
     # are unique.
-    if unique_norad_id and not gpes["NORAD_CAT_ID"].is_unique().all():
+    if unique_norad_id and not gpes["NORAD_CAT_ID"].cast(int).is_unique().all():
         raise ValueError("Non-unique NORAD IDs detected in GPEs")
 
     # Check that all the data used for orbital propagation is present.

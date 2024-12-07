@@ -125,7 +125,7 @@ def _validate_satcat_celestrak(satcat: pl.DataFrame) -> None:
         raise ValueError(
             "One or more NULL NORAD IDs detected in the satcat downloaded from celestrak.org"
         )
-    if not satcat["NORAD_CAT_ID"].is_unique().all():
+    if not satcat["NORAD_CAT_ID"].cast(int).is_unique().all():
         raise ValueError(
             "Non-unique NORAD IDs detected in the satcat downloaded from celestrak.org"
         )
