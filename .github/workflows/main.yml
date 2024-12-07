@@ -68,14 +68,14 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
-          conda install -y cmake tbb-devel tbb libboost-devel heyoka fmt spdlog 'python=3.12' numpy pybind11 skyfield pandas astropy sgp4 heyoka.py
+          conda install -y cmake tbb-devel tbb libboost-devel heyoka fmt spdlog 'python=3.12' numpy pybind11 skyfield pandas astropy sgp4 heyoka.py requests polars
           mkdir build
           cd build
           cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH=C:\Miniconda\envs\test\Library
           cmake --build . --config Release --target install -j2
           cd ..
           cd tools
-          python -c "from mizuba.test import run_test_suite; run_test_suite()"
+          python -c "from mizuba.test import run_test_suite; run_test_suite(True)"
   manylinux228_x86_64-py312:
      runs-on: ubuntu-latest
      container:

@@ -53,6 +53,31 @@ def download_satcat_celestrak() -> pl.DataFrame:
     return _fetch_satcat_celestrak()
 
 
+# The schema for the dataframe returned
+# by download_all_gpes().
+gpes_schema = pl.Schema(
+    {
+        "norad_id": pl.Int64,
+        "cospar_id": pl.String,
+        "name": pl.String,
+        "epoch_jd1": pl.Float64,
+        "epoch_jd2": pl.Float64,
+        "n0": pl.Float64,
+        "ecc0": pl.Float64,
+        "incl0": pl.Float64,
+        "argp0": pl.Float64,
+        "node0": pl.Float64,
+        "m0": pl.Float64,
+        "bstar": pl.Float64,
+        "tle_line1": pl.String,
+        "tle_line2": pl.String,
+        "rms": pl.Float64,
+        "rcs": pl.Float64,
+        "ops_code": pl.String,
+    }
+)
+
+
 def download_all_gpes(with_supgp: bool = True) -> pl.DataFrame:
     import polars as pl
     from concurrent.futures import ThreadPoolExecutor
@@ -126,8 +151,8 @@ def download_all_gpes(with_supgp: bool = True) -> pl.DataFrame:
         gpes = gpes.with_columns(
             [
                 pl.coalesce(
-                    pl.col(c_col_name), pl.col(c_col_name[: -supgp_suffix_len])
-                ).alias(c_col_name[: -supgp_suffix_len])
+                    pl.col(c_col_name), pl.col(c_col_name[:-supgp_suffix_len])
+                ).alias(c_col_name[:-supgp_suffix_len])
                 for c_col_name in c_cols
             ]
         ).drop(c_cols)

@@ -13,7 +13,7 @@ export PATH="$HOME/miniconda/bin:$PATH"
 bash miniconda.sh -b -p $HOME/miniconda
 conda create -y -p $deps_dir c-compiler cxx-compiler cmake ninja \
     tbb-devel tbb libboost-devel heyoka fmt spdlog 'python=3.12' numpy \
-    pybind11 pandas astropy heyoka.py
+    pybind11 pandas astropy heyoka.py requests polars
 source activate $deps_dir
 
 # Workaround: install sgp4 and skyfield with pip
@@ -40,7 +40,7 @@ ninja -v install
 
 # Run the tests.
 cd
-python -c "from mizuba.test import run_test_suite; run_test_suite()"
+python -c "from mizuba.test import run_test_suite; run_test_suite(True)"
 
 set +e
 set +x

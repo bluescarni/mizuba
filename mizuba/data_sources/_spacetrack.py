@@ -90,7 +90,7 @@ def _reformat_gpes_spacetrack(gpes: pl.DataFrame) -> pl.DataFrame:
     import polars as pl
     from astropy.time import Time
     import numpy as np
-    from ._common import _eft_knuth
+    from ._common import _eft_add_knuth
 
     # Convert the epochs to astropy Time objects.
     apy_tm = Time(gpes["EPOCH"].cast(str), format="isot", scale="utc", precision=9)
@@ -99,7 +99,7 @@ def _reformat_gpes_spacetrack(gpes: pl.DataFrame) -> pl.DataFrame:
     # NOTE: we do this in order to make absolutely sure that
     # lexicographic ordering first by jd1 and then by jd2 produces
     # chronological order.
-    jd1, jd2 = _eft_knuth(apy_tm.jd1, apy_tm.jd2)
+    jd1, jd2 = _eft_add_knuth(apy_tm.jd1, apy_tm.jd2)
 
     # Degree to radians conversion factor.
     deg2rad = 2.0 * np.pi / 360.0

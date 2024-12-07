@@ -8,7 +8,7 @@ version = '0.0.6'
 description = "Python library for fast conjunction detection in orbital environments"
 readme = 'README.md'
 requires-python = '>=3.7'
-dependencies = ['numpy']
+dependencies = ['numpy', 'polars', 'requests', 'astropy']
 authors = [{ name = 'Francesco Biscarni', email = 'bluescarni@gmail.com' }]
 license = { text = 'AGPL-3.0-or-later' }
 classifiers = [
@@ -31,7 +31,7 @@ Documentation = "https://github.com/bluescarni/mizuba"
 Repository = "https://github.com/bluescarni/mizuba"
 
 [project.optional-dependencies]
-sgp4 = ["sgp4", "skyfield", "pandas", "astropy", "polars", "requests"]
+sgp4 = ["sgp4", "skyfield", "pandas"]
 heyoka = ["heyoka >= 6.1.0, < 7"]
 
 [tool.scikit-build]
