@@ -10,15 +10,13 @@ on:
     branches:
       - main
 
-env:
-  MIZUBA_SPACETRACK_IDENTITY: ${{ secrets.MIZUBA_SPACETRACK_IDENTITY }}
-  MIZUBA_SPACETRACK_PASSWORD: ${{ secrets.MIZUBA_SPACETRACK_PASSWORD }}
-
 jobs:
   conda_asan:
     runs-on: ubuntu-latest
     env:
       CONDA_INSTALLER_ARCH: Linux-x86_64
+      MIZUBA_SPACETRACK_IDENTITY: ${{ secrets.MIZUBA_SPACETRACK_IDENTITY }}
+      MIZUBA_SPACETRACK_PASSWORD: ${{ secrets.MIZUBA_SPACETRACK_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - name: Build
@@ -81,7 +79,7 @@ jobs:
           cmake --build . --config Release --target install -j2
           cd ..
           cd tools
-          python -c "from mizuba.test import run_test_suite; run_test_suite(True)"
+          python -c "from mizuba.test import run_test_suite; run_test_suite()"
   manylinux228_x86_64-py312:
      runs-on: ubuntu-latest
      container:

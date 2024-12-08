@@ -40,7 +40,7 @@ ninja -v install
 
 # Run the tests.
 cd
-python -c "from mizuba.test import run_test_suite; run_test_suite(True)"
+python -c "from mizuba.test import run_test_suite; run_test_suite()"
 
 set +e
 set +x

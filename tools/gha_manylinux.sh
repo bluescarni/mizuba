@@ -82,7 +82,7 @@ echo "REPAIRED_WHEEL_FILENAME: ${REPAIRED_WHEEL_FILENAME}"
 unset LD_LIBRARY_PATH
 cd /
 /opt/python/${PYTHON_DIR}/bin/pip install ${GITHUB_WORKSPACE}/repaired_wheel/${REPAIRED_WHEEL_FILENAME}[sgp4,heyoka]
-/opt/python/${PYTHON_DIR}/bin/python -c "import mizuba; mizuba.test.run_test_suite(True);"
+/opt/python/${PYTHON_DIR}/bin/python -c "import mizuba; mizuba.test.run_test_suite();"
 
 # Upload to PyPI.
 if [[ "${MIZUBA_RELEASE_BUILD}" == "yes" ]]; then
