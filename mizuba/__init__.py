@@ -23,7 +23,7 @@ from .core import *
 
 del core
 
-from . import test
+from . import test, data_sources
 
 from enum import IntEnum
 

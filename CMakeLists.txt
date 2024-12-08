@@ -150,6 +150,8 @@ find_package(Python3 QUIET REQUIRED COMPONENTS ${_MIZUBA_PYTHON3_COMPONENTS})
 
 message(STATUS "Python3 interpreter: ${Python3_EXECUTABLE}")
 message(STATUS "Python3 installation directory: ${Python3_SITEARCH}")
+# NOTE: we rely on stable ordering of dict keys in a few places, which
+# is ensured since Python 3.7.
 if(${Python3_VERSION_MINOR} LESS 7)
     message(FATAL_ERROR "The minimum supported version of Python is 3.7, but version 3.${Python3_VERSION_MINOR} was found instead")
 endif()

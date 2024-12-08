@@ -16,7 +16,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-def run_test_suite():
+def run_test_suite(data_sources: bool = False) -> None:
     import unittest as _ut
 
     from . import (
@@ -25,6 +25,7 @@ def run_test_suite():
         test_boundary_conjunctions,
         test_polyjectory,
         test_heyoka_conjunctions,
+        test_data_sources,
     )
 
     retval = 0
@@ -44,6 +45,10 @@ def run_test_suite():
         tl.loadTestsFromTestCase(test_sgp4_polyjectory.sgp4_polyjectory_test_case)
     )
     suite.addTest(tl.loadTestsFromTestCase(test_polyjectory.polyjectory_test_case))
+    if data_sources:
+        suite.addTest(
+            tl.loadTestsFromTestCase(test_data_sources.data_sources_test_case)
+        )
 
     test_result = _ut.TextTestRunner(verbosity=2).run(suite)
 
