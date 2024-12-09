@@ -130,7 +130,8 @@ def download_all_gpes(with_supgp: bool = True) -> pl.DataFrame:
         #   N times.
         #
         # Note that we cannot have a situation with multiple norad ids from spacetrack,
-        # as we are always only getting a single GPE from spacetrack.
+        # as we are always only getting a single GPE from spacetrack (we are making
+        # sure of that).
         supgp_suffix = ":supgp"
         supgp_suffix_len = len(supgp_suffix)
         gpes = gpe_st.join(
@@ -166,7 +167,7 @@ def download_all_gpes(with_supgp: bool = True) -> pl.DataFrame:
         #
         # We set all codes of supgp satellites to '+' on account of the fact that supgp data
         # should refer only to active satellites. These '+' codes may be overridden later
-        # with the codes from the satcat (see below).
+        # with codes from the satcat (see below).
         #
         # NOTE: this strategy ensures that supgp satellites which are not in the satcat
         # yet (e.g., recently-launched ones) do have an active status.
@@ -191,7 +192,7 @@ def download_all_gpes(with_supgp: bool = True) -> pl.DataFrame:
     # For every satellite in satcat that appears in gpes, we fetch
     # the radar cross section and the ops status code. In case of supgp
     # data, if an ops code had already been set, it will be overridden
-    # with the value from satcat.
+    # with the value from the satcat.
     gpes = (
         gpes.join(
             satcat.select(["NORAD_CAT_ID", "RCS", "OPS_STATUS_CODE"]),
