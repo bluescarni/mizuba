@@ -72,8 +72,8 @@ gpes_schema = pl.Schema(
         "tle_line1": pl.String,
         "tle_line2": pl.String,
         "rms": pl.Float64,
-        "rcs": pl.Float64,
         "ops_code": pl.String,
+        "rcs": pl.Float64,
     }
 )
 
@@ -130,7 +130,8 @@ def download_all_gpes(with_supgp: bool = True) -> pl.DataFrame:
         #   N times.
         #
         # Note that we cannot have a situation with multiple norad ids from spacetrack,
-        # as we are always only getting a single GPE from spacetrack.
+        # as we are always only getting a single GPE from spacetrack (we are making
+        # sure of that).
         supgp_suffix = ":supgp"
         supgp_suffix_len = len(supgp_suffix)
         gpes = gpe_st.join(
@@ -157,16 +158,41 @@ def download_all_gpes(with_supgp: bool = True) -> pl.DataFrame:
             ]
         ).drop(c_cols)
 
+        # Next, we will be adding an 'ops_code' column that denotes the
+        # status of the satellites following the convention from the celestrak
+        # satcat:
+        #
+        # https://celestrak.org/satcat/satcat-format.php
+        # https://celestrak.org/satcat/status.php
+        #
+        # We set all codes of supgp satellites to '+' on account of the fact that supgp data
+        # should refer only to active satellites. These '+' codes may be overridden later
+        # with codes from the satcat (see below).
+        #
+        # NOTE: this strategy ensures that supgp satellites which are not in the satcat
+        # yet (e.g., recently-launched ones) do have an active status.
+        gpes = gpes.with_columns(
+            pl.when(pl.col("norad_id").is_in(gpe_ct["norad_id"]))
+            .then(pl.lit("+"))
+            .otherwise(None)
+            .alias("ops_code")
+        )
+
         # Finally, we will re-sort the data in the canonical order.
         gpes = gpes.sort(["norad_id", "epoch_jd1", "epoch_jd2"])
     else:
-        # No supgp data requested. Add an rms column filled with nulls in order
-        # to match the layout of the dataframe from the other branch.
-        gpes = gpe_st.with_columns(pl.lit(None).cast(float).alias("rms"))
+        # No supgp data requested. Add 'rms' and 'ops_code' null columns
+        # in order to match the layout produced in the other branch.
+        gpes = gpe_st.with_columns(
+            pl.lit(None).cast(float).alias("rms"),
+            pl.lit(None).cast(str).alias("ops_code"),
+        )
 
     # We are now going to include data from the satcat into gpes.
     # For every satellite in satcat that appears in gpes, we fetch
-    # the radar cross section and the ops status code.
+    # the radar cross section and the ops status code. In case of supgp
+    # data, if an ops code had already been set, it will be overridden
+    # with the value from the satcat.
     gpes = (
         gpes.join(
             satcat.select(["NORAD_CAT_ID", "RCS", "OPS_STATUS_CODE"]),
@@ -176,7 +202,16 @@ def download_all_gpes(with_supgp: bool = True) -> pl.DataFrame:
         )
         .with_columns(
             pl.col("RCS").cast(float).alias("rcs"),
-            pl.col("OPS_STATUS_CODE").cast(str).alias("ops_code"),
+            # The logic here is as follows:
+            # - if the satellite is in the satcat, then take
+            #   the ops code from the satcat. This may override
+            #   an ops code that was set up earlier for supgp data;
+            # - otherwise, take the ops code from the existing
+            #   ops code column.
+            pl.when(pl.col("norad_id").is_in(satcat["NORAD_CAT_ID"]))
+            .then(pl.col("OPS_STATUS_CODE").cast(str))
+            .otherwise(pl.col("ops_code"))
+            .alias("ops_code"),
         )
         .drop(["RCS", "OPS_STATUS_CODE"])
     )
