@@ -126,14 +126,37 @@ class polyjectory_test_case(_ut.TestCase):
             in str(cm.exception)
         )
 
+        # Check trajectories without steps.
+        pj = polyjectory(
+            trajs=[state_data, state_data[1:]],
+            times=[np.array([1.0]), np.array([], dtype=float)],
+            status=np.array([0, 0], dtype=np.int32),
+        )
+        self.assertEqual(pj.maxT, 1.0)
+        self.assertTrue(np.all(pj[0][0] == state_data))
+        self.assertTrue(np.all(pj[0][1] == [1.0]))
+        self.assertTrue(np.all(pj[1][0] == np.zeros((0, 7, 8), dtype=float)))
+        self.assertTrue(np.all(pj[1][1] == np.zeros((0,), dtype=float)))
+
+        pj = polyjectory(
+            trajs=[state_data[1:], state_data],
+            times=[np.array([], dtype=float), np.array([1.0])],
+            status=np.array([0, 0], dtype=np.int32),
+        )
+        self.assertEqual(pj.maxT, 1.0)
+        self.assertTrue(np.all(pj[0][0] == np.zeros((0, 7, 8), dtype=float)))
+        self.assertTrue(np.all(pj[0][1] == np.zeros((0,), dtype=float)))
+        self.assertTrue(np.all(pj[1][0] == state_data))
+        self.assertTrue(np.all(pj[1][1] == [1.0]))
+
         with self.assertRaises(ValueError) as cm:
             polyjectory(
-                trajs=[state_data, state_data[1:]],
-                times=[np.array([1.0]), np.array([3.0])],
+                trajs=[state_data[1:], state_data[1:]],
+                times=[np.array([], dtype=float), np.array([], dtype=float)],
                 status=np.array([0, 0], dtype=np.int32),
             )
         self.assertTrue(
-            "The trajectory for the object at index 1 consists of zero steps - this is not allowed"
+            "All the trajectories in a polyjectory have a number of steps equal to zero: this is not allowed"
             in str(cm.exception)
         )
 
