@@ -17,22 +17,27 @@
 
 import polars as pl
 import requests as rq
+from typing import Optional
 
 
-def _spacetrack_login() -> rq.Session:
+def _spacetrack_login(identity: Optional[str], password: Optional[str]) -> rq.Session:
     # Attempt to log into space-track.org. If successful,
     # an http session will be returned.
     import requests as rq
     import os
 
-    # Try to fetch identity and password from
-    # the environment.
-    identity = os.getenv("MIZUBA_SPACETRACK_IDENTITY")
-    password = os.getenv("MIZUBA_SPACETRACK_PASSWORD")
     if identity is None or password is None:
-        raise RuntimeError(
-            "The environment variables MIZUBA_SPACETRACK_IDENTITY and MIZUBA_SPACETRACK_PASSWORD must be defined in order to be able to access data from space-track.org"
-        )
+        # The user did not pass both identity and password,
+        # try to fetch them from the environment.
+        identity = os.getenv("MIZUBA_SPACETRACK_IDENTITY")
+        password = os.getenv("MIZUBA_SPACETRACK_PASSWORD")
+        if identity is None or password is None:
+            raise RuntimeError(
+                "In order to access the data on space-track.org, you must provide an"
+                " identity and a password, either passing them as arguments or via the"
+                " environment variables MIZUBA_SPACETRACK_IDENTITY and"
+                " MIZUBA_SPACETRACK_PASSWORD"
+            )
 
     # Open an http session.
     session = rq.Session()
@@ -63,19 +68,22 @@ def _validate_gpes_spacetrack(gpes: pl.DataFrame) -> None:
     # Check the time system, as we are assuming UTC.
     if not (gpes["TIME_SYSTEM"].cast(str) == "UTC").all():
         raise ValueError(
-            "One or more non-UTC time systems detected in the GPEs downloaded from space-track.org"
+            "One or more non-UTC time systems detected in the GPEs downloaded from"
+            " space-track.org"
         )
 
     # Check the reference frame.
     if not (gpes["REF_FRAME"].cast(str) == "TEME").all():
         raise ValueError(
-            "One or more non-TEME reference frames detected in the GPEs downloaded from space-track.org"
+            "One or more non-TEME reference frames detected in the GPEs downloaded from"
+            " space-track.org"
         )
 
     # Check the center.
     if not (gpes["CENTER_NAME"].cast(str) == "EARTH").all():
         raise ValueError(
-            "One or more non-Earth centers detected in the GPEs downloaded from space-track.org"
+            "One or more non-Earth centers detected in the GPEs downloaded from"
+            " space-track.org"
         )
 
 
@@ -185,4 +193,4 @@ def _fetch_gpes_spacetrack(session: rq.Session) -> pl.DataFrame:
     return gpes.sort("norad_id")
 
 
-del pl, rq
+del pl, rq, Optional

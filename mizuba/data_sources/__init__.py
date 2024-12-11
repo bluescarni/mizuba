@@ -16,12 +16,15 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import polars as pl
+from typing import Optional
 
 
-def download_gpes_spacetrack() -> pl.DataFrame:
+def download_gpes_spacetrack(
+    identity: Optional[str] = None, password: Optional[str] = None
+) -> pl.DataFrame:
     from ._spacetrack import _spacetrack_login, _fetch_gpes_spacetrack
 
-    with _spacetrack_login() as session:
+    with _spacetrack_login(identity, password) as session:
         return _fetch_gpes_spacetrack(session)
 
 
@@ -78,7 +81,11 @@ gpes_schema = pl.Schema(
 )
 
 
-def download_all_gpes(with_supgp: bool = True) -> pl.DataFrame:
+def download_all_gpes(
+    with_supgp: bool = True,
+    st_identity: Optional[str] = None,
+    st_password: Optional[str] = None,
+) -> pl.DataFrame:
     import polars as pl
     from concurrent.futures import ThreadPoolExecutor
     from ._celestrak import (
@@ -89,7 +96,7 @@ def download_all_gpes(with_supgp: bool = True) -> pl.DataFrame:
 
     with ThreadPoolExecutor() as executor:
         # Fetch all data asynchronously.
-        gpe_st = executor.submit(download_gpes_spacetrack)
+        gpe_st = executor.submit(download_gpes_spacetrack, st_identity, st_password)
         satcat = executor.submit(download_satcat_celestrak)
 
         if with_supgp:
@@ -219,4 +226,4 @@ def download_all_gpes(with_supgp: bool = True) -> pl.DataFrame:
     return gpes
 
 
-del pl
+del pl, Optional
