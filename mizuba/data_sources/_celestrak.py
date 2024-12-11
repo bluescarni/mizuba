@@ -96,7 +96,8 @@ def _fetch_supgp_celestrak(group_name: str) -> pl.DataFrame:
 
     if not download_response.ok:
         raise RuntimeError(
-            f"Unable to download GPEs from celestrak.org for the group '{group_name}': {download_response.reason}"
+            f"Unable to download GPEs from celestrak.org for the group '{group_name}':"
+            f" {download_response.reason}"
         )
 
     # Parse the gpes into a polars dataframe.
@@ -123,7 +124,8 @@ def _validate_satcat_celestrak(satcat: pl.DataFrame) -> None:
     # We need all satellites to have a non-null and unique norad id.
     if not satcat["NORAD_CAT_ID"].is_not_null().all():
         raise ValueError(
-            "One or more NULL NORAD IDs detected in the satcat downloaded from celestrak.org"
+            "One or more NULL NORAD IDs detected in the satcat downloaded from"
+            " celestrak.org"
         )
     if not satcat["NORAD_CAT_ID"].cast(int).is_unique().all():
         raise ValueError(
@@ -142,7 +144,8 @@ def _fetch_satcat_celestrak() -> pl.DataFrame:
 
     if not download_response.ok:
         raise RuntimeError(
-            f"Unable to download the satcat from celestrak.org: {download_response.reason}"
+            "Unable to download the satcat from celestrak.org:"
+            f" {download_response.reason}"
         )
 
     # Parse the satcat into a polars dataframes.

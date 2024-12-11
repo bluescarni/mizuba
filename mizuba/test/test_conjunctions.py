@@ -182,7 +182,8 @@ class conjunctions_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             conj(conj_det_interval=0.0, pj=pj, conj_thresh=0.0)
         self.assertTrue(
-            "The conjunction threshold must be finite and positive, but instead a value of"
+            "The conjunction threshold must be finite and positive, but instead a"
+            " value of"
             in str(cm.exception)
         )
 
@@ -195,7 +196,8 @@ class conjunctions_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             conj(pj, conj_thresh=float("inf"), conj_det_interval=0.0)
         self.assertTrue(
-            "The conjunction threshold must be finite and positive, but instead a value of"
+            "The conjunction threshold must be finite and positive, but instead a"
+            " value of"
             in str(cm.exception)
         )
 
@@ -371,7 +373,9 @@ class conjunctions_test_case(_ut.TestCase):
                     otypes=[],
                 )
             self.assertTrue(
-                f"Invalid array of object types passed to the constructor of a conjunctions objects: the expected size is {pj.nobjs}, but the actual size is 0 instead"
+                "Invalid array of object types passed to the constructor of a"
+                f" conjunctions objects: the expected size is {pj.nobjs}, but the"
+                " actual size is 0 instead"
                 in str(cm.exception)
             )
 
@@ -383,7 +387,8 @@ class conjunctions_test_case(_ut.TestCase):
                     otypes=[-5],
                 )
             self.assertTrue(
-                "The value of an object type must be one of [1, 2, 4], but a value of -5 was detected instead"
+                "The value of an object type must be one of [1, 2, 4], but a value of"
+                " -5 was detected instead"
                 in str(cm.exception)
             )
 
@@ -395,7 +400,8 @@ class conjunctions_test_case(_ut.TestCase):
                     otypes=[5],
                 )
             self.assertTrue(
-                "The value of an object type must be one of [1, 2, 4], but a value of 5 was detected instead"
+                "The value of an object type must be one of [1, 2, 4], but a value of 5"
+                " was detected instead"
                 in str(cm.exception)
             )
 
@@ -622,7 +628,8 @@ class conjunctions_test_case(_ut.TestCase):
         with self.assertRaises(IndexError) as cm:
             conjs.get_bvh_tree(1)
         self.assertTrue(
-            "Cannot fetch the BVH tree for the conjunction timestep at index 1: the total number of conjunction steps is only 1"
+            "Cannot fetch the BVH tree for the conjunction timestep at index 1: the"
+            " total number of conjunction steps is only 1"
             in str(cm.exception)
         )
 
@@ -738,7 +745,9 @@ class conjunctions_test_case(_ut.TestCase):
         with self.assertRaises(IndexError) as cm:
             c.get_aabb_collisions(c.n_cd_steps)
         self.assertTrue(
-            f"Cannot fetch the list of AABB collisions for the conjunction timestep at index {c.n_cd_steps}: the total number of conjunction steps is only {c.n_cd_steps}"
+            "Cannot fetch the list of AABB collisions for the conjunction timestep at"
+            f" index {c.n_cd_steps}: the total number of conjunction steps is only"
+            f" {c.n_cd_steps}"
             in str(cm.exception)
         )
 

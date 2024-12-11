@@ -28,35 +28,40 @@ class polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             polyjectory([[]], [], [])
         self.assertTrue(
-            "A trajectory array must have 3 dimensions, but instead 1 dimension(s) were detected"
+            "A trajectory array must have 3 dimensions, but instead 1 dimension(s) were"
+            " detected"
             in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
             polyjectory([[[]]], [], [])
         self.assertTrue(
-            "A trajectory array must have 3 dimensions, but instead 2 dimension(s) were detected"
+            "A trajectory array must have 3 dimensions, but instead 2 dimension(s) were"
+            " detected"
             in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
             polyjectory([[[[]]]], [], [])
         self.assertTrue(
-            "A trajectory array must have a size of 7 in the second dimension, but instead a size of 1 was detected"
+            "A trajectory array must have a size of 7 in the second dimension, but"
+            " instead a size of 1 was detected"
             in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
             polyjectory([[[[]] * 7]], [1.0], [0])
         self.assertTrue(
-            "A time array must have 1 dimension, but instead 0 dimension(s) were detected"
+            "A time array must have 1 dimension, but instead 0 dimension(s) were"
+            " detected"
             in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
             polyjectory([[[[]] * 7]], [[1.0]], [[0]])
         self.assertTrue(
-            "A status array must have 1 dimension, but instead 2 dimension(s) were detected"
+            "A status array must have 1 dimension, but instead 2 dimension(s) were"
+            " detected"
             in str(cm.exception)
         )
 
@@ -111,7 +116,9 @@ class polyjectory_test_case(_ut.TestCase):
                 status=np.array([0, 1], dtype=np.int32),
             )
         self.assertTrue(
-            "In the construction of a polyjectory, the number of objects deduced from the list of trajectories (2) is inconsistent with the number of objects deduced from the list of times (1)"
+            "In the construction of a polyjectory, the number of objects deduced from"
+            " the list of trajectories (2) is inconsistent with the number of objects"
+            " deduced from the list of times (1)"
             in str(cm.exception)
         )
 
@@ -122,7 +129,9 @@ class polyjectory_test_case(_ut.TestCase):
                 status=np.array([0], dtype=np.int32),
             )
         self.assertTrue(
-            "In the construction of a polyjectory, the number of objects deduced from the list of trajectories (2) is inconsistent with the number of objects deduced from the status list (1)"
+            "In the construction of a polyjectory, the number of objects deduced from"
+            " the list of trajectories (2) is inconsistent with the number of objects"
+            " deduced from the status list (1)"
             in str(cm.exception)
         )
 
@@ -156,7 +165,8 @@ class polyjectory_test_case(_ut.TestCase):
                 status=np.array([0, 0], dtype=np.int32),
             )
         self.assertTrue(
-            "All the trajectories in a polyjectory have a number of steps equal to zero: this is not allowed"
+            "All the trajectories in a polyjectory have a number of steps equal to"
+            " zero: this is not allowed"
             in str(cm.exception)
         )
 
@@ -168,7 +178,8 @@ class polyjectory_test_case(_ut.TestCase):
                 status=np.array([0, 0], dtype=np.int32),
             )
         self.assertTrue(
-            "The trajectory polynomial order for the first object is less than 2 - this is not allowed"
+            "The trajectory polynomial order for the first object is less than 2 - this"
+            " is not allowed"
             in str(cm.exception)
         )
 
@@ -180,7 +191,8 @@ class polyjectory_test_case(_ut.TestCase):
                 status=np.array([0, 0], dtype=np.int32),
             )
         self.assertTrue(
-            "The trajectory polynomial order for the object at index 1 is inconsistent with the polynomial order deduced from the first object (7)"
+            "The trajectory polynomial order for the object at index 1 is inconsistent"
+            " with the polynomial order deduced from the first object (7)"
             in str(cm.exception)
         )
 
@@ -191,7 +203,8 @@ class polyjectory_test_case(_ut.TestCase):
                 status=np.array([0, 0], dtype=np.int32),
             )
         self.assertTrue(
-            "The number of steps for the trajectory of the object at index 1 is 1, but the number of times is 2 - the two numbers must be equal"
+            "The number of steps for the trajectory of the object at index 1 is 1, but"
+            " the number of times is 2 - the two numbers must be equal"
             in str(cm.exception)
         )
 
@@ -238,7 +251,8 @@ class polyjectory_test_case(_ut.TestCase):
                 status=np.array([0, 0], dtype=np.int32),
             )
         self.assertTrue(
-            "The sequence of times for the object at index 1 is not monotonically increasing"
+            "The sequence of times for the object at index 1 is not monotonically"
+            " increasing"
             in str(cm.exception)
         )
 
@@ -249,7 +263,8 @@ class polyjectory_test_case(_ut.TestCase):
                 trajs=[two_state_data, two_state_data],
             )
         self.assertTrue(
-            "The sequence of times for the object at index 1 is not monotonically increasing"
+            "The sequence of times for the object at index 1 is not monotonically"
+            " increasing"
             in str(cm.exception)
         )
 

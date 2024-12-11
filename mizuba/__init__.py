@@ -75,7 +75,8 @@ def _check_sgp4_deps():
     # Throwing variant of the previous function.
     if not _have_sgp4_deps():
         raise ImportError(
-            "Support for TLE propagation via SGP4 requires the following Python modules: sgp4, skyfield, pandas and astropy"
+            "Support for TLE propagation via SGP4 requires the following Python"
+            " modules: sgp4, skyfield, pandas and astropy"
         )
 
 
@@ -168,7 +169,8 @@ def _sgp4_pre_filter_sat_list(orig_sat_list, jd_begin, exit_radius, reentry_radi
 
     if len(orig_sat_list) == 0:
         raise ValueError(
-            "The sgp4_polyjectory() function requires a non-empty list of satellites in input"
+            "The sgp4_polyjectory() function requires a non-empty list of satellites in"
+            " input"
         )
 
     # Supported types for the objects in orig_sat_list.
@@ -176,7 +178,9 @@ def _sgp4_pre_filter_sat_list(orig_sat_list, jd_begin, exit_radius, reentry_radi
 
     if not all(isinstance(sat, supported_types) for sat in orig_sat_list):
         raise TypeError(
-            "The sgp4_polyjectory() function requires in input a list of Satrec objects from the 'sgp4' module or EarthSatellite objects from the 'skyfield' module"
+            "The sgp4_polyjectory() function requires in input a list of Satrec objects"
+            " from the 'sgp4' module or EarthSatellite objects from the 'skyfield'"
+            " module"
         )
 
     # Turn orig_sat_list into an array of Satrec for advanced indexing.
@@ -263,7 +267,10 @@ def _sgp4_pre_filter_sat_list(orig_sat_list, jd_begin, exit_radius, reentry_radi
 
     if len(ret_list) == 0:
         raise ValueError(
-            "Pre-filtering the satellite list during the construction of an sgp4_polyjectory resulted in an empty list - that is, the propagation of all satellites at jd_begin resulted in either an error or an invalid state vector"
+            "Pre-filtering the satellite list during the construction of an"
+            " sgp4_polyjectory resulted in an empty list - that is, the propagation of"
+            " all satellites at jd_begin resulted in either an error or an invalid"
+            " state vector"
         )
 
     # Construct the dataframe.

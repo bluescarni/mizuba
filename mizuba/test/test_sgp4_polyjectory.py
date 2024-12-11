@@ -73,14 +73,17 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             sgp4_polyjectory([], float("inf"), 1.0)
         self.assertTrue(
-            "The sgp4_polyjectory() function requires a non-empty list of satellites in input"
+            "The sgp4_polyjectory() function requires a non-empty list of satellites in"
+            " input"
             in str(cm.exception)
         )
 
         with self.assertRaises(TypeError) as cm:
             sgp4_polyjectory([int], float("inf"), 1.0)
         self.assertTrue(
-            "The sgp4_polyjectory() function requires in input a list of Satrec objects from the 'sgp4' module or EarthSatellite objects from the 'skyfield' module"
+            "The sgp4_polyjectory() function requires in input a list of Satrec objects"
+            " from the 'sgp4' module or EarthSatellite objects from the 'skyfield'"
+            " module"
             in str(cm.exception)
         )
 
@@ -101,14 +104,20 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             sgp4_polyjectory([sat], 2460496.5, 2460496.5 + 0.1, exit_radius=-0.1)
         self.assertTrue(
-            "Pre-filtering the satellite list during the construction of an sgp4_polyjectory resulted in an empty list - that is, the propagation of all satellites at jd_begin resulted in either an error or an invalid state vector"
+            "Pre-filtering the satellite list during the construction of an"
+            " sgp4_polyjectory resulted in an empty list - that is, the propagation of"
+            " all satellites at jd_begin resulted in either an error or an invalid"
+            " state vector"
             in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
             sgp4_polyjectory([sat], 2460496.5, 2460496.5 + 0.1, exit_radius=0.0)
         self.assertTrue(
-            "Pre-filtering the satellite list during the construction of an sgp4_polyjectory resulted in an empty list - that is, the propagation of all satellites at jd_begin resulted in either an error or an invalid state vector"
+            "Pre-filtering the satellite list during the construction of an"
+            " sgp4_polyjectory resulted in an empty list - that is, the propagation of"
+            " all satellites at jd_begin resulted in either an error or an invalid"
+            " state vector"
             in str(cm.exception)
         )
 
@@ -117,7 +126,10 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
                 [sat], 2460496.5, 2460496.5 + 0.1, reentry_radius=float("inf")
             )
         self.assertTrue(
-            "Pre-filtering the satellite list during the construction of an sgp4_polyjectory resulted in an empty list - that is, the propagation of all satellites at jd_begin resulted in either an error or an invalid state vector"
+            "Pre-filtering the satellite list during the construction of an"
+            " sgp4_polyjectory resulted in an empty list - that is, the propagation of"
+            " all satellites at jd_begin resulted in either an error or an invalid"
+            " state vector"
             in str(cm.exception)
         )
 
@@ -138,7 +150,10 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
                 exit_radius=100.0,
             )
         self.assertTrue(
-            "Pre-filtering the satellite list during the construction of an sgp4_polyjectory resulted in an empty list - that is, the propagation of all satellites at jd_begin resulted in either an error or an invalid state vector"
+            "Pre-filtering the satellite list during the construction of an"
+            " sgp4_polyjectory resulted in an empty list - that is, the propagation of"
+            " all satellites at jd_begin resulted in either an error or an invalid"
+            " state vector"
             in str(cm.exception)
         )
 
@@ -151,7 +166,10 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
                 exit_radius=100.0,
             )
         self.assertTrue(
-            "Pre-filtering the satellite list during the construction of an sgp4_polyjectory resulted in an empty list - that is, the propagation of all satellites at jd_begin resulted in either an error or an invalid state vector"
+            "Pre-filtering the satellite list during the construction of an"
+            " sgp4_polyjectory resulted in an empty list - that is, the propagation of"
+            " all satellites at jd_begin resulted in either an error or an invalid"
+            " state vector"
             in str(cm.exception)
         )
 
@@ -177,7 +195,10 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             sgp4_polyjectory([sat], 2460496.5 + 40.0, 2460496.5 + 40.0 + 7)
         self.assertTrue(
-            "Pre-filtering the satellite list during the construction of an sgp4_polyjectory resulted in an empty list - that is, the propagation of all satellites at jd_begin resulted in either an error or an invalid state vector"
+            "Pre-filtering the satellite list during the construction of an"
+            " sgp4_polyjectory resulted in an empty list - that is, the propagation of"
+            " all satellites at jd_begin resulted in either an error or an invalid"
+            " state vector"
             in str(cm.exception)
         )
 
@@ -185,7 +206,10 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             sgp4_polyjectory([sat], 2460496.5 + 30.0, 2460496.5 + 30.0 + 7)
         self.assertTrue(
-            "Pre-filtering the satellite list during the construction of an sgp4_polyjectory resulted in an empty list - that is, the propagation of all satellites at jd_begin resulted in either an error or an invalid state vector"
+            "Pre-filtering the satellite list during the construction of an"
+            " sgp4_polyjectory resulted in an empty list - that is, the propagation of"
+            " all satellites at jd_begin resulted in either an error or an invalid"
+            " state vector"
             in str(cm.exception)
         )
 
