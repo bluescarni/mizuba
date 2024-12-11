@@ -857,3 +857,45 @@ class conjunctions_test_case(_ut.TestCase):
             self.assertEqual(len(c.get_aabb_collisions(i)), 0)
 
         self.assertEqual(len(c.conjunctions), 0)
+
+    def test_empty_traj(self):
+        # Test to check that a polyjectory containing one or more
+        # empty trajectories works as expected.
+        from .. import conjunctions as conj, polyjectory
+        from ._planar_circ import _planar_circ_tcs, _planar_circ_times
+        import numpy as np
+
+        # Construct a trajectory with zero steps.
+        tcs_shape = list(_planar_circ_tcs.shape)
+        tcs_shape[0] = 0
+        tcs_no_steps = np.zeros(tuple(tcs_shape), dtype=float)
+
+        pj = polyjectory(
+            [_planar_circ_tcs, tcs_no_steps], [_planar_circ_times, []], [0, 0]
+        )
+        c = conj(pj, conj_thresh=1.0, conj_det_interval=0.1)
+        self.assertEqual(len(c.conjunctions), 0)
+
+        pj = polyjectory(
+            [_planar_circ_tcs, tcs_no_steps, tcs_no_steps],
+            [_planar_circ_times, [], []],
+            [0, 0, 0],
+        )
+        c = conj(pj, conj_thresh=1.0, conj_det_interval=0.1)
+        self.assertEqual(len(c.conjunctions), 0)
+
+        pj = polyjectory(
+            [tcs_no_steps, _planar_circ_tcs, tcs_no_steps],
+            [[], _planar_circ_times, []],
+            [0, 0, 0],
+        )
+        c = conj(pj, conj_thresh=1.0, conj_det_interval=0.1)
+        self.assertEqual(len(c.conjunctions), 0)
+
+        pj = polyjectory(
+            [tcs_no_steps, tcs_no_steps, _planar_circ_tcs],
+            [[], [], _planar_circ_times],
+            [0, 0, 0],
+        )
+        c = conj(pj, conj_thresh=1.0, conj_det_interval=0.1)
+        self.assertEqual(len(c.conjunctions), 0)

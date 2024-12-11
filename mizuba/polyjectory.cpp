@@ -213,12 +213,6 @@ polyjectory::polyjectory(ptag,
             // Fetch the traj data for the current object.
             const auto cur_traj = traj_spans[i];
 
-            // Check the number of steps.
-            if (cur_traj.extent(0) == 0u) [[unlikely]] {
-                throw std::invalid_argument(fmt::format(
-                    "The trajectory for the object at index {} consists of zero steps - this is not allowed", i));
-            }
-
             // Set/check the order + 1.
             const auto op1 = cur_traj.extent(2);
             if (i == 0u) {
@@ -245,6 +239,11 @@ polyjectory::polyjectory(ptag,
 
             // Update cur_offset.
             cur_traj_offset += traj_size;
+        }
+
+        if (cur_traj_offset == 0u) [[unlikely]] {
+            throw std::invalid_argument(
+                "All the trajectories in a polyjectory have a number of steps equal to zero: this is not allowed");
         }
 
         // Offset vector for the time data.
@@ -276,8 +275,14 @@ polyjectory::polyjectory(ptag,
             const auto time_size = cur_time.extent(0);
 
             // Update maxT.
-            const auto curT = cur_time(cur_time.extent(0) - 1u);
-            maxT = (curT > maxT) ? curT : maxT;
+            // NOTE: we do this only if the current trajectory is non-empty. Note that maxT might
+            // end up begin non-finite or incorrect here, but this is fine as we will check in
+            // detail the time values in the parallel loop below. Tentatively computing maxT here
+            // allows us to avoid having to mess around with atomics in the parallel loop below.
+            if (cur_time.extent(0) > 0u) {
+                const auto curT = cur_time(cur_time.extent(0) - 1u);
+                maxT = (curT > maxT) ? curT : maxT;
+            }
 
             // Add entry to the offset vector.
             time_offset_vec.emplace_back(cur_time_offset);
@@ -377,7 +382,8 @@ polyjectory::polyjectory(ptag,
                 }
             });
 
-        // We can now assert that maxT must not be zero.
+        // We can now assert that maxT must not be zero: the time values have all been validated
+        // and we checked earlier that at least one trajectory has a nonzero number of steps.
         assert(maxT != 0);
 
         // Close the storage files.
@@ -399,13 +405,10 @@ polyjectory::polyjectory(ptag,
         m_impl = std::make_shared<detail::polyjectory_impl>(std::move(tmp_dir_path), std::move(traj_offset_vec),
                                                             std::move(time_offset_vec), poly_op1, maxT,
                                                             std::move(status), init_epoch);
-
-        // LCOV_EXCL_START
     } catch (...) {
         boost::filesystem::remove_all(tmp_dir_path);
         throw;
     }
-    // LCOV_EXCL_STOP
 }
 
 // Constructor from a traj and time data files at the locations 'orig_traj_file_path'
@@ -465,14 +468,6 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
     for (decltype(traj_offsets.size()) i = 0; i < traj_offsets.size(); ++i) {
         const auto [offset, n_steps] = traj_offsets[i];
 
-        // The number of steps must always be positive.
-        if (n_steps == 0u) [[unlikely]] {
-            throw std::invalid_argument(
-                fmt::format("Invalid trajectory offsets vector passed to the constructor of a polyjectory: the number "
-                            "of steps for the object at index {} is zero",
-                            i));
-        }
-
         // Check the offset value.
         if (i == 0u) {
             // The offset at index 0 must be zero.
@@ -505,6 +500,11 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         // Update tot_num_traj_values and tot_num_time_values.
         tot_num_traj_values += safe_size_t(n_steps) * 7u * op1;
         tot_num_time_values += n_steps;
+    }
+
+    if (tot_num_traj_values == 0u) [[unlikely]] {
+        throw std::invalid_argument(
+            "All the trajectories in a polyjectory have a number of steps equal to zero: this is not allowed");
     }
 
     // Build the time offsets vector from the trajectory offsets.
@@ -625,7 +625,10 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                     }
 
                     // Update local_maxT.
-                    local_maxT = std::max(local_maxT, cur_time(cur_time.extent(0) - 1u));
+                    // NOTE: we do this only if the current trajectory is non-empty.
+                    if (cur_time.extent(0) > 0u) {
+                        local_maxT = std::max(local_maxT, cur_time(cur_time.extent(0) - 1u));
+                    }
                 }
 
                 // Atomicaly update maxT.
@@ -633,6 +636,10 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                 // the time values are finite.
                 detail::atomic_max(maxT, local_maxT);
             });
+
+        // We can now assert that maxT must be strictly positive: the time values have all been validated
+        // and we checked earlier that at least one trajectory has a nonzero number of steps.
+        assert(maxT.load() > 0);
 
         // Close the storage files.
         traj_file.close();
