@@ -29,8 +29,11 @@
 #include <boost/math/policies/policy.hpp>
 #include <boost/math/tools/toms748_solve.hpp>
 #include <boost/numeric/conversion/cast.hpp>
+#include <boost/safe_numerics/safe_integer.hpp>
 
 #include <fmt/core.h>
+
+#include <heyoka/expression.hpp>
 
 #include "conjunctions_jit.hpp"
 #include "poly_utils.hpp"
@@ -453,6 +456,76 @@ bool run_poly_root_finding(const double *poly, std::uint32_t order, double rf_in
     }
 
     return false;
+}
+
+std::pair<std::vector<heyoka::expression>, std::vector<heyoka::expression>> vm_interp(std::uint32_t order)
+{
+    namespace hy = heyoka;
+
+    assert(order >= 1u);
+
+    // Safely compute order + 1.
+    const auto op1 = static_cast<std::uint32_t>(boost::safe_numerics::safe<std::uint32_t>(order) + 1u);
+
+    // Construct the expressions representing
+    // the evaluation points and the evaluation values.
+    std::vector<hy::expression> alpha, f;
+    alpha.reserve(op1);
+    f.reserve(op1);
+    for (std::uint32_t i = 0; i < op1; ++i) {
+        alpha.emplace_back(fmt::format("alpha_{}", i));
+        f.emplace_back(fmt::format("f_{}", i));
+    }
+
+    // Construct the c vectors.
+    std::vector<std::vector<hy::expression>> c_vecs;
+    c_vecs.reserve(op1);
+    c_vecs.push_back(f);
+
+    for (std::uint32_t k = 0; k < order; ++k) {
+        std::vector<hy::expression> cur_c_vec;
+        cur_c_vec.reserve(op1);
+
+        for (std::uint32_t j = 0; j < op1; ++j) {
+            if (j <= k) {
+                cur_c_vec.push_back(c_vecs.back()[j]);
+            } else {
+                assert(j >= 1u);
+                auto tmp = c_vecs.back()[j] - c_vecs.back()[j - 1u];
+                assert(j >= k + 1u);
+                tmp /= alpha[j] - alpha[j - k - 1u];
+                cur_c_vec.push_back(std::move(tmp));
+            }
+        }
+
+        c_vecs.push_back(std::move(cur_c_vec));
+    }
+
+    // Construct the a vectors.
+    std::vector<std::vector<hy::expression>> a_vecs;
+    a_vecs.resize(boost::numeric_cast<decltype(a_vecs.size())>(op1));
+    a_vecs.back() = c_vecs.back();
+
+    // NOTE: this is a backwards loop, in which the k index starts
+    // from order - 1 and goes back all the way to 0.
+    for (std::uint32_t idx = 0; idx < order; ++idx) {
+        const auto k = order - idx - 1u;
+        auto &cur_a_vec = a_vecs[k];
+
+        for (std::uint32_t j = 0; j < op1; ++j) {
+            if (j <= k - 1u || j == order) {
+                cur_a_vec.push_back(a_vecs[k + 1u][j]);
+            } else {
+                cur_a_vec.push_back(a_vecs[k + 1u][j] - alpha[k] * a_vecs[k + 1u][j + 1u]);
+            }
+        }
+    }
+
+    // Concatenate the evaluation values into alpha.
+    alpha.insert(alpha.end(), f.begin(), f.end());
+
+    // Build the return values.
+    return std::make_pair(std::move(alpha), std::move(a_vecs[0]));
 }
 
 } // namespace mizuba::detail

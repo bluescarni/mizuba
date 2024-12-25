@@ -47,6 +47,7 @@
 #include "common_utils.hpp"
 #include "conjunctions.hpp"
 #include "logging.hpp"
+#include "make_sgp4_polyjectory.hpp"
 #include "polyjectory.hpp"
 #include "sgp4_polyjectory.hpp"
 
@@ -345,6 +346,35 @@ PYBIND11_MODULE(core, m)
 
     // Expose static getters for the structured types.
     pt_cl.def_property_readonly_static("traj_offset", [](const py::object &) { return py::dtype::of<traj_offset>(); });
+
+    // make_sgp4_polyjectory().
+    using gpe = mz::gpe;
+    PYBIND11_NUMPY_DTYPE(gpe, norad_id, epoch_jd1, epoch_jd2, n0, e0, i0, node0, omega0, m0, bstar);
+    m.attr("_gpe_dtype") = py::dtype::of<gpe>();
+    m.def(
+        "_make_sgp4_polyjectory",
+        [](py::array_t<gpe> gpes, double jd_begin, double jd_end) {
+            // Check the number of dimensions for gpes.
+            if (gpes.ndim() != 1) [[unlikely]] {
+                throw std::invalid_argument(fmt::format("The array of gpes passed to make_sgp4_polyjectory() must have "
+                                                        "1 dimension, but the number of dimensions is {} instead",
+                                                        gpes.ndim()));
+            }
+
+            // Check that gpes is C-contiguous and properly aligned.
+            mzpy::check_array_cc_aligned(
+                gpes, "The array of gpes passed to make_sgp4_polyjectory() must be C contiguous and properly aligned");
+
+            // Construct the span over the gpes.
+            const auto gpes_span = heyoka::mdspan<const gpe, heyoka::extents<std::size_t, std::dynamic_extent>>{
+                gpes.data(), boost::numeric_cast<std::size_t>(gpes.shape(0))};
+
+            // NOTE: release the GIL during the creation of the polyjectory.
+            py::gil_scoped_release release;
+
+            return mz::make_sgp4_polyjectory(gpes_span, jd_begin, jd_end);
+        },
+        "gpes"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert());
 
     // sgp4 polyjectory.
     m.def(

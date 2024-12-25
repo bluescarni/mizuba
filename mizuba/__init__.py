@@ -24,6 +24,7 @@ from .core import *
 del core
 
 from . import test, data_sources
+from ._sgp4_polyjectory import make_sgp4_polyjectory
 
 from enum import IntEnum
 

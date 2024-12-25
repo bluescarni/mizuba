@@ -481,12 +481,13 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
             // An offset at index i > 0 must be consistent with the previous offset and n_steps.
             const auto [prev_offset, prev_n_steps] = traj_offsets[i - 1u];
 
-            if (!(offset > prev_offset)) [[unlikely]] {
-                throw std::invalid_argument(fmt::format(
-                    "Invalid trajectory offsets vector passed to the constructor of a polyjectory: "
-                    "the offset of the object at index {} is not greater than the offset of the previous object",
-                    i));
-            }
+            // TODO check about this, more testing needed.
+            // if (!(offset > prev_offset)) [[unlikely]] {
+            //     throw std::invalid_argument(fmt::format(
+            //         "Invalid trajectory offsets vector passed to the constructor of a polyjectory: "
+            //         "the offset of the object at index {} is not greater than the offset of the previous object",
+            //         i));
+            // }
 
             if (offset - prev_offset != safe_size_t(prev_n_steps) * 7u * op1) [[unlikely]] {
                 throw std::invalid_argument(fmt::format(

@@ -4,6 +4,7 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/_version.py.in" "${CMAKE_CURRENT_BIN
 # The list of mizuba's Python files.
 set(MIZUBA_PYTHON_FILES
     __init__.py
+    _sgp4_polyjectory.py
     test/__init__.py
     test/_sgp4_test_data_20240705.py
     test/_sgp4_test_data_20240917.py
@@ -34,6 +35,7 @@ set(_MIZUBA_CORE_SOURCES
     detect_conjunctions_bvh.cpp
     detect_conjunctions_broad_phase.cpp
     detect_conjunctions_narrow_phase.cpp
+    make_sgp4_polyjectory.cpp
     logging.cpp
     detail/conjunctions_jit.cpp
     detail/file_utils.cpp
@@ -67,7 +69,7 @@ target_compile_options(core PRIVATE
 )
 set_target_properties(core PROPERTIES CXX_VISIBILITY_PRESET hidden)
 set_target_properties(core PROPERTIES VISIBILITY_INLINES_HIDDEN TRUE)
-target_compile_features(core PRIVATE cxx_std_20)
+target_compile_features(core PRIVATE cxx_std_23)
 set_property(TARGET core PROPERTY CXX_EXTENSIONS NO)
 
 if (MIZUBA_ENABLE_IPO)

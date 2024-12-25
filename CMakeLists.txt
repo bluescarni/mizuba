@@ -1,4 +1,5 @@
-cmake_minimum_required(VERSION 3.18.0)
+# NOTE: C++23 recognised since 3.20.0.
+cmake_minimum_required(VERSION 3.20.0)
 
 # Set default build type to "Release".
 # NOTE: this should be done before the project command since the latter can set

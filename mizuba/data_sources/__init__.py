@@ -60,16 +60,16 @@ def download_satcat_celestrak() -> pl.DataFrame:
 # by download_all_gpes().
 gpes_schema = pl.Schema(
     {
-        "norad_id": pl.Int64,
+        "norad_id": pl.UInt64,
         "cospar_id": pl.String,
         "name": pl.String,
         "epoch_jd1": pl.Float64,
         "epoch_jd2": pl.Float64,
         "n0": pl.Float64,
-        "ecc0": pl.Float64,
-        "incl0": pl.Float64,
-        "argp0": pl.Float64,
+        "e0": pl.Float64,
+        "i0": pl.Float64,
         "node0": pl.Float64,
+        "omega0": pl.Float64,
         "m0": pl.Float64,
         "bstar": pl.Float64,
         "tle_line1": pl.String,
