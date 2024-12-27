@@ -151,7 +151,9 @@ find_package(Python3 QUIET REQUIRED COMPONENTS ${_MIZUBA_PYTHON3_COMPONENTS})
 
 message(STATUS "Python3 interpreter: ${Python3_EXECUTABLE}")
 message(STATUS "Python3 installation directory: ${Python3_SITEARCH}")
-# NOTE: heyoka.py now requires at least 3.9
+# NOTE: heyoka.py now requires at least 3.9. I think it makes sense
+# (although not strictly required) to bump up the mizuba requirement
+# as well.
 if(${Python3_VERSION_MINOR} LESS 9)
     message(FATAL_ERROR "The minimum supported version of Python is 3.9, but version 3.${Python3_VERSION_MINOR} was found instead")
 endif()

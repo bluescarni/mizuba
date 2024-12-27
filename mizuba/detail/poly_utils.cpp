@@ -458,6 +458,11 @@ bool run_poly_root_finding(const double *poly, std::uint32_t order, double rf_in
     return false;
 }
 
+// Create the heyoka expression for Vandermonde polynomial interpolation. See:
+//
+// https://www.ams.org/journals/mcom/1970-24-112/S0025-5718-1970-0290541-1/S0025-5718-1970-0290541-1.pdf
+//
+// The only input argument is the polynomial interpolation order.
 std::pair<std::vector<heyoka::expression>, std::vector<heyoka::expression>> vm_interp(std::uint32_t order)
 {
     namespace hy = heyoka;

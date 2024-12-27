@@ -209,16 +209,30 @@ void build_tplts(auto &ta_kepler_tplt, auto &sgp4_prop_tplt, auto &jit_state_tpl
         });
 }
 
-int gpe_interp_eval(auto &interp_buffer, auto &sgp4_prop, const auto &cheby_nodes, auto *cfunc_r, auto op1_)
+// Evaluate a single gpe via an sgp4 propagator at multiple time points.
+//
+// cheby_nodes is the list of time points used for evaluation, and its size is op1. sgp4_prop is the sgp4 propagator,
+// which has been initialised with op1 copies of the same gpe. cfunc_r is the compiled function to be used to
+// compute the radial coordinate from the propagated xyz coordinates. interp_buffer is a memory buffer of size
+// op1 * 21. The result of the evaluation is supposed to be stored in the middle chunk of interp_buffer,
+// that is, in the [op1 * 7, op1 * 14) range in row-major format, i.e., op1 rows and 7 columns.
+// Each row will contain the evaluation of [x, y, z, vx, vy, vz, r] for a time point in cheby_nodes.
+//
+// The return value will be 0 if everything went ok, otherwise an sgp4 error code will be returned.
+int gpe_interp_eval(auto &interp_buffer, auto &sgp4_prop, const auto &cheby_nodes, auto *cfunc_r)
 {
     namespace hy = heyoka;
 
-    // Transform op1 into a std::size_t for ease of use.
+    // Fetch the interpolation order + 1.
     // NOTE: we checked earlier that this conversion is ok: interp_buffer has a size > op1 and we checked
     // that we can build a std::size_t-sized span on top of it.
-    const auto op1 = static_cast<std::size_t>(op1_);
+    const auto op1 = static_cast<std::size_t>(cheby_nodes.size());
+    assert(sgp4_prop.get_nsats() == op1);
+    assert(interp_buffer.size() == op1 * 21u);
 
-    // Step 1: evaluate at the Chebyshev nodes. We will be writing the output at the beginning of interp_buffer.
+    // Step 1: evaluate at the Chebyshev nodes. We will be writing the output at the *beginning* of interp_buffer,
+    // i.e., not in the correct final position. We do this because the output of the propagator will have to be
+    // transposed, so we use the first chunk of interp_buffer as temporary storage.
     const auto ibspan0 = hy::mdspan<double, heyoka::dextents<std::size_t, 2>>{interp_buffer.data(), 7u, op1};
     const auto cheby_span = hy::mdspan<const double, heyoka::dextents<std::size_t, 1>>{cheby_nodes.data(), op1};
     sgp4_prop(ibspan0, cheby_span);
@@ -245,7 +259,19 @@ int gpe_interp_eval(auto &interp_buffer, auto &sgp4_prop, const auto &cheby_node
     return 0;
 }
 
-// TODO docs.
+// Interpolate the gpe g in the [jdate_begin, jdate_end) time range over one or more interpolation steps.
+//
+// The size of the interpolation steps is determined by simulating a numerical integration with Keplerian
+// dynamics and using the inferred integration steps as interpolation steps.
+//
+// ets is a bag of thread-local data. poly_cf_buf and time_buf are buffers to which the interpolating
+// polynomial coefficients and the ends of the interpolation steps will be appended. pj_jdate_begin
+// is the starting epoch of the polyjectory (we need this in order to refer the ends of the interpolation
+// steps to the beginning of the polyjectory).
+//
+// The return value will be 0 if everything went ok, otherwise it will be either an sgp4 error code,
+// or error code 10 if we end up with non-finite poly coefficients or end times.
+//
 // TODO put max limit on the number of kepler steps? Or perhaps on the step size?
 int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end, auto &ets, auto &poly_cf_buf,
                     auto &time_buf, const auto &pj_jdate_begin)
@@ -260,9 +286,12 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
     const auto epoch = fetch_gpe_epoch(g);
     // NOTE: this is the baseline reference epoch
     // used by the C++ SGP4 code.
+    // TODO verify that we can just set an epoch of zero here, it should not matter.
     constexpr auto jd_sub = 2433281.5;
-    SGP4Funcs::sgp4init(wgs72, 'i', "", static_cast<double>(epoch - jd_sub), g.bstar, 0., 0., g.e0, g.omega0, g.i0,
-                        g.m0, g.n0, g.node0, satrec);
+    SGP4Funcs::sgp4init(wgs72, 'i', "", static_cast<double>(epoch - jd_sub), g.bstar,
+                        // NOTE: xndot and xnddot are not used during propagation, thus
+                        // we just set them to zero.
+                        0., 0., g.e0, g.omega0, g.i0, g.m0, g.n0, g.node0, satrec);
     // Check for errors.
     if (satrec.error != 0) [[unlikely]] {
         return satrec.error;
@@ -374,9 +403,10 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         // within interp_buffer.
         if (is_deep_space && false) {
         } else {
-            // TODO document.
-            const auto res = gpe_interp_eval(interp_buffer, sgp4_prop, cheby_nodes, cfunc_r, op1);
+            // Run the evaluation with our propagator.
+            const auto res = gpe_interp_eval(interp_buffer, sgp4_prop, cheby_nodes, cfunc_r);
             if (res != 0) [[unlikely]] {
+                // sgp4 error detected, no point in continuing further.
                 return res;
             }
         }
@@ -403,12 +433,12 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         cfunc_interp(cf_ptr, interp_buffer.data(), nullptr, nullptr);
 
         // Check that all interpolated coefficients are finite.
-        if (!std::ranges::all_of(cf_ptr, interp_buffer.data() + op1 * static_cast<std::size_t>(21),
+        if (!std::ranges::all_of(cf_ptr, cf_ptr + op1 * static_cast<std::size_t>(7),
                                  [](double x) { return std::isfinite(x); })) [[unlikely]] {
             return 10;
         }
 
-        // Transform step_end to represent the end of the interpolation step measured in days
+        // Transform step_end to represent the end of the interpolation step measured in *days*
         // since the start epoch of the polyjectory. This is the time coordinate we need to append
         // to time_buf.
         step_end = static_cast<double>(cur_jdate - pj_jdate_begin + h / 86400.);
