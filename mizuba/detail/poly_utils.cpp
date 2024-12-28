@@ -518,8 +518,7 @@ std::pair<std::vector<heyoka::expression>, std::vector<heyoka::expression>> vm_i
         auto &cur_a_vec = a_vecs[k];
 
         for (std::uint32_t j = 0; j < op1; ++j) {
-            // TODO explain fix here.
-            if ((k > 0u && j <= k - 1u) || j == order) {
+            if (j < k || j == order) {
                 cur_a_vec.push_back(a_vecs[k + 1u][j]);
             } else {
                 cur_a_vec.push_back(a_vecs[k + 1u][j] - alpha[k] * a_vecs[k + 1u][j + 1u]);
