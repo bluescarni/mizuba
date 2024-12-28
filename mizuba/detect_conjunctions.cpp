@@ -464,8 +464,8 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     const auto broad_pctg = static_cast<double>(broad_time.load()) / ttime * 100;
     const auto narrow_pctg = static_cast<double>(narrow_time.load()) / ttime * 100;
     const auto io_pctg = static_cast<double>(io_time.load()) / ttime * 100;
-    log_trace("Conjunction detection phases timing breakdown: {:.2f}\% aabbs - {:.2f}\% morton - {:.2f}\% bvh - "
-              "{:.2f}\% broad - {:.2f}\% narrow - {:.2f}\% io",
+    log_trace(R"(Conjunction detection phases timing breakdown: {:.2f}% aabbs - {:.2f}% morton - {:.2f}% bvh - "
+              "{:.2f}% broad - {:.2f}% narrow - {:.2f}% io)",
               aabbs_pctg, morton_pctg, bvh_pctg, broad_pctg, narrow_pctg, io_pctg);
 
     // Wait for the writer thread to finish.
@@ -513,16 +513,17 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     const auto n_tot_dist_minima = np_rep.n_tot_dist_minima.load();
     const auto n_tot_discarded_dist_minima = np_rep.n_tot_discarded_dist_minima.load();
 
-    log_trace("Out of {} conjunction candidates, {} ({:.2f}\%) were discarded via the computation of the polynomial "
-              "enclosure for the distance square",
+    log_trace(R"(Out of {} conjunction candidates, {} ({:.2f}%) were discarded via the computation of the polynomial "
+              "enclosure for the distance square)",
               n_tot_conj_candidates, n_dist2_check,
               static_cast<double>(n_dist2_check) / static_cast<double>(n_tot_conj_candidates) * 100., n_fex_check);
-    log_trace("A total of {} polynomial root findings were performed, {} ({:.2f}\%) were skipped due to fast exclusion "
-              "checking and {} ({:.2f}\%) found no roots",
-              n_poly_roots, n_fex_check, static_cast<double>(n_fex_check) / static_cast<double>(n_poly_roots) * 100.,
-              n_poly_no_roots, static_cast<double>(n_poly_no_roots) / static_cast<double>(n_poly_roots) * 100.);
-    log_trace("A total of {} distance minima were computed via polynomial root finding, {} ({:.2f}\%) were discarded "
-              "because the conjunction distance is too large",
+    log_trace(
+        R"(A total of {} polynomial root findings were performed, {} ({:.2f}%) were skipped due to fast exclusion "
+              "checking and {} ({:.2f}%) found no roots)",
+        n_poly_roots, n_fex_check, static_cast<double>(n_fex_check) / static_cast<double>(n_poly_roots) * 100.,
+        n_poly_no_roots, static_cast<double>(n_poly_no_roots) / static_cast<double>(n_poly_roots) * 100.);
+    log_trace(R"(A total of {} distance minima were computed via polynomial root finding, {} ({:.2f}%) were discarded "
+              "because the conjunction distance is too large)",
               n_tot_dist_minima, n_tot_discarded_dist_minima,
               static_cast<double>(n_tot_discarded_dist_minima) / static_cast<double>(n_tot_dist_minima) * 100.);
     log_trace("Total number of detected conjunctions: {}", static_cast<std::size_t>(tot_n_conj));
