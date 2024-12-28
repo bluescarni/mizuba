@@ -1,6 +1,12 @@
 # NOTE: C++23 recognised since 3.20.0.
 cmake_minimum_required(VERSION 3.20.0)
 
+if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.31.0)
+    # NOTE: adopt the new behaviour for this policy:
+    # https://cmake.org/cmake/help/latest/policy/CMP0177.html
+    cmake_policy(SET CMP0177 NEW)
+endif()
+
 # Set default build type to "Release".
 # NOTE: this should be done before the project command since the latter can set
 # CMAKE_BUILD_TYPE itself (it does so for nmake).
