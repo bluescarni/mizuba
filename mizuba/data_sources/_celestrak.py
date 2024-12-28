@@ -170,7 +170,8 @@ _supgp_group_names = [
     "intelsat",
     "ses",
     "telesat",
-    "orbcomm",
+    # TODO figure this out.
+    #"orbcomm",
     "iss",
     "cpf",
     "kuiper",
