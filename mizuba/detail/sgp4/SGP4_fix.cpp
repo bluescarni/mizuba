@@ -28,6 +28,12 @@
 #pragma GCC diagnostic ignored "-Wformat"
 #pragma GCC diagnostic ignored "-Warray-parameter"
 
+#elif defined(_MSC_VER)
+
+#pragma warning(push)
+#pragma warning(disable : 4477)
+#pragma warning(disable : 4828)
+
 #endif
 
 #include "SGP4.cpp"
@@ -35,5 +41,9 @@
 #if defined(__GNUC__)
 
 #pragma GCC diagnostic pop
+
+#elif defined(_MSC_VER)
+
+#pragma warning(pop)
 
 #endif
