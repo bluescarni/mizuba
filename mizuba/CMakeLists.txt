@@ -16,6 +16,8 @@ set(MIZUBA_PYTHON_FILES
     test/test_polyjectory.py
     test/test_heyoka_conjunctions.py
     test/test_data_sources.py
+    test/test_make_sgp4_polyjectory.py
+    test/single_gpe.parquet
     data_sources/__init__.py
     data_sources/_common.py
     data_sources/_spacetrack.py

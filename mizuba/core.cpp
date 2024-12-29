@@ -373,7 +373,12 @@ PYBIND11_MODULE(core, m)
             // NOTE: release the GIL during the creation of the polyjectory.
             py::gil_scoped_release release;
 
-            return mz::make_sgp4_polyjectory(gpes_span, jd_begin, jd_end);
+            auto ret = mz::make_sgp4_polyjectory(gpes_span, jd_begin, jd_end);
+
+            // Register the polyjectory implementation in the cleanup machinery.
+            mzpy::detail::add_pj_weak_ptr(mz::detail::fetch_pj_impl(ret));
+
+            return ret;
         },
         "gpes"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert());
 

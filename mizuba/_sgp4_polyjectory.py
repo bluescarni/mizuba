@@ -22,7 +22,7 @@ import polars as pl
 def make_sgp4_polyjectory(
     gpes: pl.DataFrame, jd_begin: float, jd_end: float
 ) -> polyjectory:
-    from .core import _make_sgp4_polyjectory, _gpe_dtype
+    from .core import _make_sgp4_polyjectory
     import polars as pl
     import numpy as np
 
