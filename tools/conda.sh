@@ -21,6 +21,7 @@ source activate $deps_dir
 # of clang(xx) earlier than the one used to produce the binary
 # packages.
 if [[ "${CONDA_INSTALLER_ARCH}" == "MacOSX"* ]]; then
+    conda remove -y c-compiler cxx-compiler
     conda install -y 'clang=18.*' 'clangxx=18.*'
 fi
 
