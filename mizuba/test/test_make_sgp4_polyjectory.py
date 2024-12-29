@@ -71,7 +71,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
                 np.array([jd_begin] * 5), step_begin + random_times
             )
 
-            self.assertEqual(e, int(status[i]))
+            self.assertTrue(np.all(e == 0))
 
             self.assertTrue(np.allclose(r[:, 0], xvals, rtol=0.0, atol=1e-8))
             self.assertTrue(np.allclose(r[:, 1], yvals, rtol=0.0, atol=1e-8))
