@@ -349,10 +349,9 @@ PYBIND11_MODULE(core, m)
 
     // make_sgp4_polyjectory().
     using gpe = mz::gpe;
+    // NOTE: at this time we only need to register the dtype,
+    // no need to make it available on the Python side.
     PYBIND11_NUMPY_DTYPE(gpe, norad_id, epoch_jd1, epoch_jd2, n0, e0, i0, node0, omega0, m0, bstar);
-    // NOTE: at this time I do not see any use of making this dtype public, as it is
-    // used only as an implementation detail.
-    m.attr("_gpe_dtype") = py::dtype::of<gpe>();
     m.def(
         "_make_sgp4_polyjectory",
         [](py::array_t<gpe> gpes, double jd_begin, double jd_end) {

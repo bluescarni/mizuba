@@ -19,12 +19,41 @@ from .core import polyjectory
 import polars as pl
 
 
-def make_sgp4_polyjectory(gpes: pl.DataFrame) -> polyjectory:
+def make_sgp4_polyjectory(
+    gpes: pl.DataFrame, jd_begin: float, jd_end: float
+) -> polyjectory:
     from .core import _make_sgp4_polyjectory, _gpe_dtype
+    import polars as pl
+    import numpy as np
 
-    # TODO fill up
+    # Fields (and their types) to extract from gpes.
+    fields = {
+        "norad_id": pl.UInt64,
+        "epoch_jd1": float,
+        "epoch_jd2": float,
+        "n0": float,
+        "e0": float,
+        "i0": float,
+        "node0": float,
+        "omega0": float,
+        "m0": float,
+        "bstar": float,
+    }
 
-    pass
+    # Make sure the expected fields in gpes have the correct type.
+    gpes = gpes.with_columns([pl.col(name).cast(fields[name]) for name in fields])
+
+    # Extract the fields in a separate dataframe.
+    gpes = gpes.select([pl.col(name) for name in fields])
+
+    # Convert to numpy.
+    # NOTE: since we enforced types and ordering of fields,
+    # it should not be necessary to cast manually to the gpe
+    # dtype.
+    gpes_arr = np.ascontiguousarray(gpes.to_numpy(structured=True))
+
+    # Invoke the C++ function.
+    return _make_sgp4_polyjectory(gpes_arr, jd_begin, jd_end)
 
 
 del polyjectory, pl
