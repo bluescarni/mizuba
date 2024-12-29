@@ -16,6 +16,10 @@ conda create -y -p $deps_dir c-compiler cxx-compiler cmake ninja \
     pybind11 pandas astropy heyoka.py requests polars
 source activate $deps_dir
 
+if [[ "${CONDA_INSTALLER_ARCH}" == "MacOSX-x86_64" ]]; then
+    conda install -y 'clang>=18' 'clangxx>=18'
+fi
+
 # Workaround: install sgp4 and skyfield with pip
 # because the conda package for sgp4 on aarch64
 # seemingly does not ship with OMM support.
