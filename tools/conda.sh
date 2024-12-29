@@ -22,6 +22,8 @@ source activate $deps_dir
 # packages.
 if [[ "${CONDA_INSTALLER_ARCH}" == "MacOSX"* ]]; then
     conda install -y 'clang=18.*' 'clangxx=18.*'
+    # For some reason, we also really need to do this,
+    # or the system compiler is being picked up.
     export CC=clang
     export CXX=clang++
 else
