@@ -16,8 +16,12 @@ conda create -y -p $deps_dir c-compiler cxx-compiler cmake ninja \
     pybind11 pandas astropy heyoka.py requests polars
 source activate $deps_dir
 
-if [[ "${CONDA_INSTALLER_ARCH}" == "MacOSX-x86_64" ]]; then
-    conda install -y 'clang>=18' 'clangxx>=18'
+# NOTE: not sure what is going on with conda OSX, but somehow
+# at this time installing c/cxx-compiler fetches a version
+# of clang(xx) earlier than the one used to produce the binary
+# packages.
+if [[ "${CONDA_INSTALLER_ARCH}" == "MacOSX"* ]]; then
+    conda install -y 'clang=18.*' 'clangxx=18.*'
 fi
 
 # Workaround: install sgp4 and skyfield with pip
