@@ -115,6 +115,11 @@ def download_all_gpes(
         gpe_st = gpe_st.result()
         satcat = satcat.result()
 
+        # NOTE: convert the norad id in the satcat
+        # to uint64, which is the datatype used in the
+        # other dataframes for norad ids.
+        satcat = satcat.with_columns([pl.col('NORAD_CAT_ID').cast(pl.UInt64)])
+
     # Merge the supgp data into the spacetrack data, if requested.
     if with_supgp:
         # Run a full join, coalescing norad_id. The columns from
