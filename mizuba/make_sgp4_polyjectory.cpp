@@ -911,7 +911,14 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
         c_nodes_unit.push_back(std::cos((2. * i + 1) / (2. * op1) * boost::math::constants::pi<double>()));
     }
     // Sort them in ascending order.
+    //
+    // NOTE: for polynomial interpolation with the Bjorck-Pereira algorithm,
+    // it seems like sorting the sampling points in ascending order may improve
+    // numerical stability:
+    //
+    // https://link.springer.com/article/10.1007/BF01408579
     std::ranges::reverse(c_nodes_unit);
+    assert(std::ranges::is_sorted(c_nodes_unit));
 
     log_trace("make_sgp4_polyjectory() validation/preparation time: {}s", sw);
 
