@@ -65,7 +65,6 @@ def _have_sgp4_deps():
         import skyfield
         import sgp4
         import pandas
-        import astropy
 
         return True
     except ImportError:
