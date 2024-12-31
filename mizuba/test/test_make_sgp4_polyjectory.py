@@ -19,7 +19,9 @@ import unittest as _ut
 
 
 class make_sgp4_polyjectory_test_case(_ut.TestCase):
-    def _compare_sgp4(self, jd_begin, i, sat, rng, cfs, end_times):
+    def _compare_sgp4(
+        self, jd_begin, i, sat, rng, cfs, end_times, pos_atol=1e-8, vel_atol=1e-11
+    ):
         # Helper to compare the i-th step of a trajectory
         # with the output of the Python sgp4 propagator.
         # jd_begin is the start time of the polyjectory,
@@ -45,15 +47,15 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         self.assertTrue(np.all(e == 0))
 
-        self.assertTrue(np.allclose(r[:, 0], xvals, rtol=0.0, atol=1e-8))
-        self.assertTrue(np.allclose(r[:, 1], yvals, rtol=0.0, atol=1e-8))
-        self.assertTrue(np.allclose(r[:, 2], zvals, rtol=0.0, atol=1e-8))
+        self.assertTrue(np.allclose(r[:, 0], xvals, rtol=0.0, atol=pos_atol))
+        self.assertTrue(np.allclose(r[:, 1], yvals, rtol=0.0, atol=pos_atol))
+        self.assertTrue(np.allclose(r[:, 2], zvals, rtol=0.0, atol=pos_atol))
         self.assertTrue(
-            np.allclose(np.linalg.norm(r, axis=1), rvals, rtol=0.0, atol=1e-8)
+            np.allclose(np.linalg.norm(r, axis=1), rvals, rtol=0.0, atol=pos_atol)
         )
-        self.assertTrue(np.allclose(v[:, 0], vxvals, rtol=0.0, atol=1e-11))
-        self.assertTrue(np.allclose(v[:, 1], vyvals, rtol=0.0, atol=1e-11))
-        self.assertTrue(np.allclose(v[:, 2], vzvals, rtol=0.0, atol=1e-11))
+        self.assertTrue(np.allclose(v[:, 0], vxvals, rtol=0.0, atol=vel_atol))
+        self.assertTrue(np.allclose(v[:, 1], vyvals, rtol=0.0, atol=vel_atol))
+        self.assertTrue(np.allclose(v[:, 2], vzvals, rtol=0.0, atol=vel_atol))
 
     def test_single_gpe(self):
         # Simple test with a single gpe.
@@ -92,6 +94,44 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         cfs, end_times, _ = pj[0]
         for i in range(len(end_times)):
             self._compare_sgp4(jd_begin, i, sat, rng, cfs, end_times)
+
+    def test_single_gpe_ds(self):
+        # Simple test with a single gpe.
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
+            return
+
+        from .. import make_sgp4_polyjectory
+        import pathlib
+        from sgp4.api import Satrec
+        import polars as pl
+        import numpy as np
+
+        # Deterministic seeding.
+        rng = np.random.default_rng(42)
+
+        # Fetch the current directory.
+        cur_dir = pathlib.Path(__file__).parent.resolve()
+
+        # Load the test data.
+        gpes = pl.read_parquet(cur_dir / "single_gpe_ds.parquet")
+
+        # Build the polyjectory.
+        jd_begin = 2460669.0
+        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1)
+
+        # Build the satrec.
+        s = gpes["tle_line1"][0]
+        t = gpes["tle_line2"][0]
+        sat = Satrec.twoline2rv(s, t)
+
+        # Iterate over the trajectory steps, sampling randomly,
+        # evaluating the polynomials and comparing with the
+        # sgp4 python module.
+        cfs, end_times, _ = pj[0]
+        for i in range(len(end_times)):
+            self._compare_sgp4(jd_begin, i, sat, rng, cfs, end_times, 1e-7, 1e-10)
 
     def test_multi_gpes(self):
         # Simple test with multiple GPEs.

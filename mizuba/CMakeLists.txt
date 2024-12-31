@@ -18,6 +18,7 @@ set(MIZUBA_PYTHON_FILES
     test/test_data_sources.py
     test/test_make_sgp4_polyjectory.py
     test/single_gpe.parquet
+    test/single_gpe_ds.parquet
     test/multi_gpes.parquet
     data_sources/__init__.py
     data_sources/_common.py

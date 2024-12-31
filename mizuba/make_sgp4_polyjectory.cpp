@@ -209,14 +209,53 @@ void build_tplts(auto &ta_kepler_tplt, auto &sgp4_prop_tplt, auto &jit_state_tpl
         });
 }
 
+// Evaluate a single gpe via the official sgp4 code at multiple time points.
+//
+// cheby_nodes is the list of time points used for evaluation, and its size is op1.
+// satrec is the already-initialised satellite object to be passed to the sgp4 propagator.
+// interp_buffer is a memory buffer of size op1 * 21. The result of the evaluation
+// is supposed to be stored in the middle chunk of interp_buffer, that is, in the
+// [op1 * 7, op1 * 14) range in row-major format, i.e., op1 rows and 7 columns. Each row
+// will contain the evaluation of [x, y, z, vx, vy, vz, r] for a time point in cheby_nodes.
+//
+// The return value will be 0 if everything went ok, otherwise an sgp4 error code will be returned.
+int gpe_interp_eval(auto &interp_buffer, elsetrec &satrec, const auto &cheby_nodes)
+{
+    namespace hy = heyoka;
+
+    // Fetch the interpolation order + 1.
+    // NOTE: we checked earlier that this conversion is ok: interp_buffer has a size > op1 and we checked
+    // that we can build a std::size_t-sized span on top of it.
+    const auto op1 = static_cast<std::size_t>(cheby_nodes.size());
+    assert(interp_buffer.size() == op1 * 21u);
+
+    // Evaluate positions and velocities at the Chebyshev nodes, writing the result
+    // into the middle chunk of interp_buffer.
+    const auto ibspan1 = hy::mdspan<double, heyoka::dextents<std::size_t, 2>>{interp_buffer.data() + op1 * 7u, op1, 7u};
+    for (std::size_t i = 0; i < op1; ++i) {
+        // NOTE: we can write directly into ibspan1.
+        SGP4Funcs::sgp4(satrec, cheby_nodes[i], &ibspan1[i, 0], &ibspan1[i, 3]);
+        // Check for errors.
+        if (satrec.error != 0) [[unlikely]] {
+            return satrec.error;
+        }
+
+        // Compute the radius.
+        ibspan1[i, 6]
+            = std::sqrt(ibspan1[i, 0] * ibspan1[i, 0] + ibspan1[i, 1] * ibspan1[i, 1] + ibspan1[i, 2] * ibspan1[i, 2]);
+    }
+
+    return 0;
+}
+
 // Evaluate a single gpe via an sgp4 propagator at multiple time points.
 //
-// cheby_nodes is the list of time points used for evaluation, and its size is op1. sgp4_prop is the sgp4 propagator,
-// which has been initialised with op1 copies of the same gpe. cfunc_r is the compiled function to be used to
-// compute the radial coordinate from the propagated xyz coordinates. interp_buffer is a memory buffer of size
-// op1 * 21. The result of the evaluation is supposed to be stored in the middle chunk of interp_buffer,
-// that is, in the [op1 * 7, op1 * 14) range in row-major format, i.e., op1 rows and 7 columns.
-// Each row will contain the evaluation of [x, y, z, vx, vy, vz, r] for a time point in cheby_nodes.
+// cheby_nodes is the list of time points used for evaluation, and its size is op1. sgp4_prop is the sgp4
+// propagator, which has been initialised with op1 copies of the same gpe. cfunc_r is the compiled function to be
+// used to compute the radial coordinate from the propagated xyz coordinates. interp_buffer is a memory buffer of
+// size op1 * 21. The result of the evaluation is supposed to be stored in the middle chunk of interp_buffer, that
+// is, in the [op1 * 7, op1 * 14) range in row-major format, i.e., op1 rows and 7 columns. Each row will contain the
+// evaluation of [x, y, z, vx, vy, vz, r] for a time point in cheby_nodes.
 //
 // The return value will be 0 if everything went ok, otherwise an sgp4 error code will be returned.
 int gpe_interp_eval(auto &interp_buffer, auto &sgp4_prop, const auto &cheby_nodes, auto *cfunc_r)
@@ -398,10 +437,15 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         }
 
         // Evaluate at the interpolation points.
-        // TODO
         // TODO document where the gpe_interp_eval() functions are supposed to store the result
         // within interp_buffer.
-        if (is_deep_space && false) {
+        if (is_deep_space) {
+            // Run the evaluation with the official sgp4 code.
+            const auto res = gpe_interp_eval(interp_buffer, satrec, cheby_nodes);
+            if (res != 0) [[unlikely]] {
+                // sgp4 error detected, no point in continuing further.
+                return res;
+            }
         } else {
             // Run the evaluation with our propagator.
             const auto res = gpe_interp_eval(interp_buffer, sgp4_prop, cheby_nodes, cfunc_r);
