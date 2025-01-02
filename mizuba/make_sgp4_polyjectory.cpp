@@ -323,11 +323,26 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
     // Initialise the satrec for computations with the official sgp4 code.
     elsetrec satrec;
     const auto epoch = fetch_gpe_epoch(g);
-    // NOTE: this is the baseline reference epoch
-    // used by the C++ SGP4 code.
-    // TODO verify that we can just set an epoch of zero here, it should not matter.
+    // NOTE: this is the baseline reference epoch used by the C++ SGP4 code,
+    // corresponding to "jan 0, 1950. 0 hr".
     constexpr auto jd_sub = 2433281.5;
-    SGP4Funcs::sgp4init(wgs72, 'i', "", static_cast<double>(epoch - jd_sub), g.bstar,
+    SGP4Funcs::sgp4init(wgs72, 'i', "",
+                        // NOTE: here we are directly subtracting the UTC *Julian dates*
+                        // in order to compute the epoch, which, according to the C++ code,
+                        // must be expressed as the "number of days from jan 0, 1950. 0 hr".
+                        // As far as I have understood, this epoch is being used by SDP4 to compute the
+                        // lunisolar perturbations according to simplified ephemeris included in
+                        // the C++ code. But, when using UTC Julian dates to compute the epoch,
+                        // we are losing leap seconds and thus the real physical time
+                        // elapsed since "jan 0, 1950. 0 hr" is off by a few seconds. The "correct"
+                        // thing to do here, I believe, would be to convert the UTC dates to
+                        // TAI dates and then subtract to construct the epoch. However, this
+                        // is likely not consistent with the the official SGP4 C++ code which seems to
+                        // ignore leap seconds altogether (and testing with the Python SGP4 module
+                        // indicates that indeed all calculations are being done with UTC Julian dates).
+                        // Thus, at least for the time being, we ignore leap seconds for this
+                        // calculation.
+                        static_cast<double>(epoch - jd_sub), g.bstar,
                         // NOTE: xndot and xnddot are not used during propagation, thus
                         // we just set them to zero.
                         0., 0., g.e0, g.omega0, g.i0, g.m0, g.n0, g.node0, satrec);
