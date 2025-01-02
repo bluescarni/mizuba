@@ -212,11 +212,12 @@ void build_tplts(auto &ta_kepler_tplt, auto &sgp4_prop_tplt, auto &jit_state_tpl
 // Evaluate a single gpe via the official sgp4 code at multiple time points.
 //
 // cheby_nodes is the list of time points used for evaluation, and its size is op1.
-// satrec is the already-initialised satellite object to be passed to the sgp4 propagator.
+// satrec is the already-initialised satellite object to be passed to the propagation function.
 // interp_buffer is a memory buffer of size op1 * 21. The result of the evaluation
 // is supposed to be stored in the middle chunk of interp_buffer, that is, in the
 // [op1 * 7, op1 * 14) range in row-major format, i.e., op1 rows and 7 columns. Each row
-// will contain the evaluation of [x, y, z, vx, vy, vz, r] for a time point in cheby_nodes.
+// will contain the evaluation of [x, y, z, vx, vy, vz, r] for the corresponding time point
+// in cheby_nodes.
 //
 // The return value will be 0 if everything went ok, otherwise an sgp4 error code will be returned.
 int gpe_interp_eval(auto &interp_buffer, elsetrec &satrec, const auto &cheby_nodes)
@@ -248,7 +249,7 @@ int gpe_interp_eval(auto &interp_buffer, elsetrec &satrec, const auto &cheby_nod
     return 0;
 }
 
-// Evaluate a single gpe via an sgp4 propagator at multiple time points.
+// Evaluate a single gpe via our sgp4 propagator at multiple time points.
 //
 // cheby_nodes is the list of time points used for evaluation, and its size is op1. sgp4_prop is the sgp4
 // propagator, which has been initialised with op1 copies of the same gpe. cfunc_r is the compiled function to be
@@ -270,8 +271,16 @@ int gpe_interp_eval(auto &interp_buffer, auto &sgp4_prop, const auto &cheby_node
     assert(interp_buffer.size() == op1 * 21u);
 
     // Step 1: evaluate at the Chebyshev nodes. We will be writing the output at the *beginning* of interp_buffer,
-    // i.e., not in the correct final position. We do this because the output of the propagator will have to be
-    // transposed, so we use the first chunk of interp_buffer as temporary storage.
+    // i.e., not in the correct final position in the middle. We do this because the output of the propagator will have
+    // to be transposed, so we use the first chunk of interp_buffer as temporary storage.
+    //
+    // NOTE: the evaluation produces a 7 x op1 array with the following layout:
+    //
+    // x0 x1 x2 ...
+    // y0 y1 y2 ...
+    // ...
+    // vz0 vz1 vz2 ...
+    // err0 err1 err2 ...
     const auto ibspan0 = hy::mdspan<double, heyoka::dextents<std::size_t, 2>>{interp_buffer.data(), 7u, op1};
     const auto cheby_span = hy::mdspan<const double, heyoka::dextents<std::size_t, 1>>{cheby_nodes.data(), op1};
     sgp4_prop(ibspan0, cheby_span);
@@ -284,7 +293,7 @@ int gpe_interp_eval(auto &interp_buffer, auto &sgp4_prop, const auto &cheby_node
     }
 
     // Step 3: we compute the values for the radial coordinate from the xyz coordinates,
-    // outputting the result in the last row of ibspan0.
+    // outputting the result in the last row of ibspan0 (and thus overwriting the error code).
     cfunc_r(&ibspan0[6, 0], &ibspan0[0, 0], nullptr, nullptr);
 
     // Step 4: we transpose the evaluation output into the second chunk of interp_buffer.
@@ -407,7 +416,7 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         bool last_iteration = false;
 
         // Transform cur_jdate (i.e., the beginning of the current interpolation step) into
-        // the time elapsed in minutes since the epoch. This is the time coordinate used by the
+        // the time elapsed in minutes since the GPE epoch. This is the time coordinate used by the
         // sgp4 propagators (both Vallado's and our implementation).
         const auto step_begin = static_cast<double>(cur_jdate - epoch) * 1440.;
 
@@ -442,7 +451,7 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         }
 
         // Compute the end of the current interpolation step (again, in minutes elapsed
-        // since the epoch).
+        // since the GPE epoch).
         auto step_end = step_begin + h / 60.;
 
         // Setup the interpolation points via an affine transformation.
@@ -451,23 +460,13 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
             cheby_nodes[i] = (cheby_nodes_unit[i] + 1) / 2 * (step_end - step_begin) + step_begin;
         }
 
-        // Evaluate at the interpolation points.
-        // TODO document where the gpe_interp_eval() functions are supposed to store the result
-        // within interp_buffer.
-        if (is_deep_space) {
-            // Run the evaluation with the official sgp4 code.
-            const auto res = gpe_interp_eval(interp_buffer, satrec, cheby_nodes);
-            if (res != 0) [[unlikely]] {
-                // sgp4 error detected, no point in continuing further.
-                return res;
-            }
-        } else {
-            // Run the evaluation with our propagator.
-            const auto res = gpe_interp_eval(interp_buffer, sgp4_prop, cheby_nodes, cfunc_r);
-            if (res != 0) [[unlikely]] {
-                // sgp4 error detected, no point in continuing further.
-                return res;
-            }
+        // Evaluate at the interpolation points, using either our own SGP4 implementation
+        // or the official SGP4 C++ code.
+        const auto res = is_deep_space ? gpe_interp_eval(interp_buffer, satrec, cheby_nodes)
+                                       : gpe_interp_eval(interp_buffer, sgp4_prop, cheby_nodes, cfunc_r);
+        if (res != 0) [[unlikely]] {
+            // sgp4 error detected, no point in continuing further.
+            return res;
         }
 
         // Fill in the first chunk of interp_buffer with the interpolation points.
@@ -678,14 +677,8 @@ auto interpolate_all(auto op1, const auto &c_nodes_unit, const auto &ta_kepler_t
             cheby_nodes.resize(c_nodes_unit.size());
 
             // Init the evaluation/interpolation buffer. This may be used to both:
-            //
-            // - store the evaluation results (total size = op1 x 7), and
-            // - store both the inputs and outputs of the interpolation
-            //   (total size = op1 x 7 x 3).
-            //
-            // Thus, we allocate op1 * 21 slots.
             std::vector<double> interp_buffer;
-            interp_buffer.resize(boost::safe_numerics::safe<decltype(interp_buffer.size())>(op1) * 7 * 3);
+            interp_buffer.resize(boost::safe_numerics::safe<decltype(interp_buffer.size())>(op1) * 21);
             // NOTE: we need to construct std::size_t-sized spans on top of this buffer.
             static_cast<void>(boost::numeric_cast<std::size_t>(interp_buffer.size()));
 
@@ -806,7 +799,8 @@ auto interpolate_all(auto op1, const auto &c_nodes_unit, const auto &ta_kepler_t
                                 // Compute the iterator to the next gpe.
                                 auto next_it_gpe = it_gpe + 1;
 
-                                // Compute the upper time limit for the interpolation.
+                                // Compute the upper time limit for the interpolation with
+                                // the current gpe.
                                 dfloat interpolation_end{};
                                 if (next_it_gpe == group_end) {
                                     // We are at the last gpe of the group, we have no choice
@@ -836,7 +830,7 @@ auto interpolate_all(auto op1, const auto &c_nodes_unit, const auto &ta_kepler_t
 
                                 // Check the status. If it is nonzero, set the global status
                                 // flag for the satellite and break out.
-                                if (res != 0) {
+                                if (res != 0) [[unlikely]] {
                                     global_status[sat_idx] = res;
                                     break;
                                 }
