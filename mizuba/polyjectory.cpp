@@ -415,7 +415,7 @@ polyjectory::polyjectory(ptag,
 // and 'orig_time_file_path'. The original files will be moved into the polyjectory's data dir.
 //
 // The layout of the trajectory data into the data file is described by traj_offsets, from which we
-// also deduce the layout of the time data. 'order' it the polynomial order of the polyjectory,
+// also deduce the layout of the time data. 'order' is the polynomial order of the polyjectory,
 // 'status' the vector of object statuses.
 polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                          const std::filesystem::path &orig_time_file_path, std::uint32_t order,
