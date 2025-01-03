@@ -231,9 +231,10 @@ class sgp4_polyjectory_test_case(_ut.TestCase):
 
             # Build the polyjectory.
             pt, df, mask = sgp4_polyjectory(
-                sat_list, begin_jd, begin_jd + 1, epoch=begin_jd, epoch2=0.0
+                sat_list, begin_jd, begin_jd + 1, epoch=begin_jd, epoch2=42.0
             )
             _check_sgp4_pj_ret_consistency(self, pt, df, mask)
+            self.assertEqual(pt.epoch, (begin_jd, 42.0))
 
             self.assertEqual(pt.epoch[0], begin_jd)
 
