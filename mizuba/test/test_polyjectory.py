@@ -262,7 +262,7 @@ class polyjectory_test_case(_ut.TestCase):
                 trajs=[state_data, state_data],
                 times=[np.array([1.0]), np.array([3.0])],
                 status=np.array([0, 1], dtype=np.int32),
-                init_epoch=float("inf"),
+                epoch=float("inf"),
             )
         self.assertTrue(
             "The initial epoch of a polyjectory must be finite, but instead a value of"
@@ -274,7 +274,19 @@ class polyjectory_test_case(_ut.TestCase):
                 trajs=[state_data, state_data],
                 times=[np.array([1.0]), np.array([3.0])],
                 status=np.array([0, 1], dtype=np.int32),
-                init_epoch=float("nan"),
+                epoch2=float("inf"),
+            )
+        self.assertTrue(
+            "The second component of the initial epoch of a polyjectory must be finite, "
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            polyjectory(
+                trajs=[state_data, state_data],
+                times=[np.array([1.0]), np.array([3.0])],
+                status=np.array([0, 1], dtype=np.int32),
+                epoch=float("nan"),
             )
         self.assertTrue(
             "The initial epoch of a polyjectory must be finite, but instead a value of"
@@ -286,12 +298,13 @@ class polyjectory_test_case(_ut.TestCase):
             trajs=[state_data, state_data],
             times=[np.array([1.0]), np.array([3.0])],
             status=np.array([0, 1], dtype=np.int32),
-            init_epoch=42.0,
+            epoch=42.0,
+            epoch2=1.0,
         )
 
         self.assertEqual(pj.nobjs, 2)
         self.assertEqual(pj.maxT, 3)
-        self.assertEqual(pj.init_epoch, 42.0)
+        self.assertEqual(pj.epoch, (42.0, 1.0))
         self.assertEqual(pj.poly_order, 7)
 
         rc = sys.getrefcount(pj)
@@ -364,7 +377,7 @@ class polyjectory_test_case(_ut.TestCase):
             [0] * 8,
         )
 
-        self.assertEqual(pj.init_epoch, 0.0)
+        self.assertEqual(pj.epoch[0], 0.0)
 
         self.assertTrue(np.all(pj[0][0][0] == tdata0))
         self.assertTrue(np.all(pj[0][0][1] == tdata0))
