@@ -784,7 +784,7 @@ auto interpolate_all(auto op1, const auto &c_nodes_unit, const auto &ta_kepler_t
                                 assert(fetch_gpe_epoch(*it_gpe) == dl_jd_begin);
                             }
 
-                            // The interpolation begins as jd_begin.
+                            // Init interpolation_begin.
                             auto interpolation_begin = dl_jd_begin;
 
                             // Prepare the write buffers to store the polynomial coefficients
