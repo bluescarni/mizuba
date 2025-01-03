@@ -41,7 +41,7 @@ inline constexpr double sgp4_exit_radius = 20000;
 inline constexpr double sgp4_reentry_radius = 6371 + 150.;
 
 polyjectory sgp4_polyjectory(heyoka::mdspan<const double, heyoka::extents<std::size_t, 9, std::dynamic_extent>>, double,
-                             double, double = sgp4_exit_radius, double = sgp4_reentry_radius, double = 0.);
+                             double, double = sgp4_exit_radius, double = sgp4_reentry_radius, double = 0., double = 0.);
 
 } // namespace mizuba
 

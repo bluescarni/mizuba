@@ -29,40 +29,35 @@ class polyjectory_test_case(_ut.TestCase):
             polyjectory([[]], [], [])
         self.assertTrue(
             "A trajectory array must have 3 dimensions, but instead 1 dimension(s) were"
-            " detected"
-            in str(cm.exception)
+            " detected" in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
             polyjectory([[[]]], [], [])
         self.assertTrue(
             "A trajectory array must have 3 dimensions, but instead 2 dimension(s) were"
-            " detected"
-            in str(cm.exception)
+            " detected" in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
             polyjectory([[[[]]]], [], [])
         self.assertTrue(
             "A trajectory array must have a size of 7 in the second dimension, but"
-            " instead a size of 1 was detected"
-            in str(cm.exception)
+            " instead a size of 1 was detected" in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
             polyjectory([[[[]] * 7]], [1.0], [0])
         self.assertTrue(
             "A time array must have 1 dimension, but instead 0 dimension(s) were"
-            " detected"
-            in str(cm.exception)
+            " detected" in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
             polyjectory([[[[]] * 7]], [[1.0]], [[0]])
         self.assertTrue(
             "A status array must have 1 dimension, but instead 2 dimension(s) were"
-            " detected"
-            in str(cm.exception)
+            " detected" in str(cm.exception)
         )
 
         # Check with non-contiguous arrays.
@@ -118,8 +113,7 @@ class polyjectory_test_case(_ut.TestCase):
         self.assertTrue(
             "In the construction of a polyjectory, the number of objects deduced from"
             " the list of trajectories (2) is inconsistent with the number of objects"
-            " deduced from the list of times (1)"
-            in str(cm.exception)
+            " deduced from the list of times (1)" in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
@@ -131,8 +125,7 @@ class polyjectory_test_case(_ut.TestCase):
         self.assertTrue(
             "In the construction of a polyjectory, the number of objects deduced from"
             " the list of trajectories (2) is inconsistent with the number of objects"
-            " deduced from the status list (1)"
-            in str(cm.exception)
+            " deduced from the status list (1)" in str(cm.exception)
         )
 
         # Check trajectories without steps.
@@ -166,8 +159,7 @@ class polyjectory_test_case(_ut.TestCase):
             )
         self.assertTrue(
             "All the trajectories in a polyjectory have a number of steps equal to"
-            " zero: this is not allowed"
-            in str(cm.exception)
+            " zero: this is not allowed" in str(cm.exception)
         )
 
         short_state_data = np.array([[traj_data[:2]] * 7])
@@ -179,8 +171,7 @@ class polyjectory_test_case(_ut.TestCase):
             )
         self.assertTrue(
             "The trajectory polynomial order for the first object is less than 2 - this"
-            " is not allowed"
-            in str(cm.exception)
+            " is not allowed" in str(cm.exception)
         )
 
         short_state_data = np.array([[traj_data[:5]] * 7])
@@ -252,8 +243,7 @@ class polyjectory_test_case(_ut.TestCase):
             )
         self.assertTrue(
             "The sequence of times for the object at index 1 is not monotonically"
-            " increasing"
-            in str(cm.exception)
+            " increasing" in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
@@ -264,8 +254,7 @@ class polyjectory_test_case(_ut.TestCase):
             )
         self.assertTrue(
             "The sequence of times for the object at index 1 is not monotonically"
-            " increasing"
-            in str(cm.exception)
+            " increasing" in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
@@ -273,7 +262,7 @@ class polyjectory_test_case(_ut.TestCase):
                 trajs=[state_data, state_data],
                 times=[np.array([1.0]), np.array([3.0])],
                 status=np.array([0, 1], dtype=np.int32),
-                init_epoch=float("inf"),
+                epoch=float("inf"),
             )
         self.assertTrue(
             "The initial epoch of a polyjectory must be finite, but instead a value of"
@@ -285,7 +274,19 @@ class polyjectory_test_case(_ut.TestCase):
                 trajs=[state_data, state_data],
                 times=[np.array([1.0]), np.array([3.0])],
                 status=np.array([0, 1], dtype=np.int32),
-                init_epoch=float("nan"),
+                epoch2=float("inf"),
+            )
+        self.assertTrue(
+            "The second component of the initial epoch of a polyjectory must be finite, "
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            polyjectory(
+                trajs=[state_data, state_data],
+                times=[np.array([1.0]), np.array([3.0])],
+                status=np.array([0, 1], dtype=np.int32),
+                epoch=float("nan"),
             )
         self.assertTrue(
             "The initial epoch of a polyjectory must be finite, but instead a value of"
@@ -297,12 +298,13 @@ class polyjectory_test_case(_ut.TestCase):
             trajs=[state_data, state_data],
             times=[np.array([1.0]), np.array([3.0])],
             status=np.array([0, 1], dtype=np.int32),
-            init_epoch=42.0,
+            epoch=42.0,
+            epoch2=1.0,
         )
 
         self.assertEqual(pj.nobjs, 2)
         self.assertEqual(pj.maxT, 3)
-        self.assertEqual(pj.init_epoch, 42.0)
+        self.assertEqual(pj.epoch, (42.0, 1.0))
         self.assertEqual(pj.poly_order, 7)
 
         rc = sys.getrefcount(pj)
@@ -375,7 +377,7 @@ class polyjectory_test_case(_ut.TestCase):
             [0] * 8,
         )
 
-        self.assertEqual(pj.init_epoch, 0.0)
+        self.assertEqual(pj.epoch[0], 0.0)
 
         self.assertTrue(np.all(pj[0][0][0] == tdata0))
         self.assertTrue(np.all(pj[0][0][1] == tdata0))

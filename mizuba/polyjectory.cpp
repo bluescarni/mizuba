@@ -72,7 +72,9 @@ struct polyjectory_impl {
     // The duration of the longest trajectory.
     double m_maxT = 0;
     // The initial epoch.
-    double m_init_epoch = 0;
+    double m_epoch = 0;
+    // The second component of the initial epoch.
+    double m_epoch2 = 0;
     // Vector of trajectory statuses.
     std::vector<std::int32_t> m_status;
     // The memory-mapped file for the trajectory data.
@@ -86,10 +88,10 @@ struct polyjectory_impl {
 
     explicit polyjectory_impl(boost::filesystem::path temp_dir_path, std::vector<traj_offset> traj_offset_vec,
                               std::vector<std::size_t> time_offset_vec, std::uint32_t poly_op1, double maxT,
-                              std::vector<std::int32_t> status, double init_epoch)
+                              std::vector<std::int32_t> status, double epoch, double epoch2)
         : m_temp_dir_path(std::move(temp_dir_path)), m_traj_offset_vec(std::move(traj_offset_vec)),
-          m_time_offset_vec(std::move(time_offset_vec)), m_poly_op1(poly_op1), m_maxT(maxT), m_init_epoch(init_epoch),
-          m_status(std::move(status)), m_traj_file((m_temp_dir_path / "traj").string()),
+          m_time_offset_vec(std::move(time_offset_vec)), m_poly_op1(poly_op1), m_maxT(maxT), m_epoch(epoch),
+          m_epoch2(epoch2), m_status(std::move(status)), m_traj_file((m_temp_dir_path / "traj").string()),
           m_time_file((m_temp_dir_path / "time").string())
     {
         // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
@@ -150,7 +152,7 @@ const std::shared_ptr<polyjectory_impl> &fetch_pj_impl(const polyjectory &pj) no
 
 polyjectory::polyjectory(ptag,
                          std::tuple<std::vector<traj_span_t>, std::vector<time_span_t>, std::vector<std::int32_t>> tup,
-                         double init_epoch)
+                         double epoch, double epoch2)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
 
@@ -177,10 +179,16 @@ polyjectory::polyjectory(ptag,
             n_objs, status.size()));
     }
 
-    // Check init_epoch.
-    if (!std::isfinite(init_epoch)) [[unlikely]] {
+    // Check epoch and epoch2.
+    if (!std::isfinite(epoch)) [[unlikely]] {
         throw std::invalid_argument(fmt::format(
-            "The initial epoch of a polyjectory must be finite, but instead a value of {} was provided", init_epoch));
+            "The initial epoch of a polyjectory must be finite, but instead a value of {} was provided", epoch));
+    }
+
+    if (!std::isfinite(epoch2)) [[unlikely]] {
+        throw std::invalid_argument(fmt::format("The second component of the initial epoch of a polyjectory must be "
+                                                "finite, but instead a value of {} was provided",
+                                                epoch2));
     }
 
     // Assemble a "unique" dir path into the system temp dir.
@@ -404,7 +412,7 @@ polyjectory::polyjectory(ptag,
         // performed in the catch block below.
         m_impl = std::make_shared<detail::polyjectory_impl>(std::move(tmp_dir_path), std::move(traj_offset_vec),
                                                             std::move(time_offset_vec), poly_op1, maxT,
-                                                            std::move(status), init_epoch);
+                                                            std::move(status), epoch, epoch2);
     } catch (...) {
         boost::filesystem::remove_all(tmp_dir_path);
         throw;
@@ -419,7 +427,8 @@ polyjectory::polyjectory(ptag,
 // 'status' the vector of object statuses.
 polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                          const std::filesystem::path &orig_time_file_path, std::uint32_t order,
-                         std::vector<traj_offset> traj_offsets, std::vector<std::int32_t> status, double init_epoch)
+                         std::vector<traj_offset> traj_offsets, std::vector<std::int32_t> status, double epoch,
+                         double epoch2)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
 
@@ -443,10 +452,16 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                                                 traj_offsets.size(), status.size()));
     }
 
-    // Check init_epoch.
-    if (!std::isfinite(init_epoch)) [[unlikely]] {
+    // Check epoch.
+    if (!std::isfinite(epoch)) [[unlikely]] {
         throw std::invalid_argument(fmt::format(
-            "The initial epoch of a polyjectory must be finite, but instead a value of {} was provided", init_epoch));
+            "The initial epoch of a polyjectory must be finite, but instead a value of {} was provided", epoch));
+    }
+
+    if (!std::isfinite(epoch2)) [[unlikely]] {
+        throw std::invalid_argument(fmt::format("The second component of the initial epoch of a polyjectory must be "
+                                                "finite, but instead a value of {} was provided",
+                                                epoch2));
     }
 
     // Canonicalise the file paths and turn them into Boost fs paths.
@@ -652,7 +667,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         // Construct the implementation.
         m_impl = std::make_shared<detail::polyjectory_impl>(std::move(tmp_dir_path), std::move(traj_offsets),
                                                             std::move(time_offsets), op1, maxT.load(),
-                                                            std::move(status), init_epoch);
+                                                            std::move(status), epoch, epoch2);
 
         // LCOV_EXCL_START
     } catch (...) {
@@ -717,9 +732,9 @@ double polyjectory::get_maxT() const noexcept
     return m_impl->m_maxT;
 }
 
-double polyjectory::get_init_epoch() const noexcept
+std::pair<double, double> polyjectory::get_epoch() const noexcept
 {
-    return m_impl->m_init_epoch;
+    return {m_impl->m_epoch, m_impl->m_epoch2};
 }
 
 std::uint32_t polyjectory::get_poly_order() const noexcept

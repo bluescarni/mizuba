@@ -81,7 +81,7 @@ private:
     };
     explicit polyjectory(ptag,
                          std::tuple<std::vector<traj_span_t>, std::vector<time_span_t>, std::vector<std::int32_t>>,
-                         double);
+                         double, double);
 
     template <typename TrajRng, typename TimeRng, typename StatusRng>
     static auto ctor_impl(TrajRng &&traj_rng, TimeRng &&time_rng, StatusRng &&status_rng)
@@ -106,15 +106,15 @@ public:
                  && std::same_as<time_span_t, std::remove_cvref_t<std::ranges::range_reference_t<TimeRng>>>
                  && std::ranges::input_range<StatusRng>
                  && std::same_as<std::int32_t, std::remove_cvref_t<std::ranges::range_reference_t<StatusRng>>>
-    explicit polyjectory(TrajRng &&traj_rng, TimeRng &&time_rng, StatusRng &&status_rng, double init_epoch)
+    explicit polyjectory(TrajRng &&traj_rng, TimeRng &&time_rng, StatusRng &&status_rng, double epoch, double epoch2)
         : polyjectory(ptag{},
                       ctor_impl(std::forward<TrajRng>(traj_rng), std::forward<TimeRng>(time_rng),
                                 std::forward<StatusRng>(status_rng)),
-                      init_epoch)
+                      epoch, epoch2)
     {
     }
     explicit polyjectory(const std::filesystem::path &, const std::filesystem::path &, std::uint32_t,
-                         std::vector<traj_offset>, std::vector<std::int32_t>, double);
+                         std::vector<traj_offset>, std::vector<std::int32_t>, double, double);
     polyjectory(const polyjectory &);
     polyjectory(polyjectory &&) noexcept;
     polyjectory &operator=(const polyjectory &);
@@ -123,7 +123,7 @@ public:
 
     [[nodiscard]] std::size_t get_nobjs() const noexcept;
     [[nodiscard]] double get_maxT() const noexcept;
-    [[nodiscard]] double get_init_epoch() const noexcept;
+    [[nodiscard]] std::pair<double, double> get_epoch() const noexcept;
     [[nodiscard]] std::uint32_t get_poly_order() const noexcept;
 
     [[nodiscard]] std::tuple<traj_span_t, time_span_t, std::int32_t> operator[](std::size_t) const;
