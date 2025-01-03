@@ -229,7 +229,7 @@ PYBIND11_MODULE(core, m)
     // polyjectory.
     py::class_<mz::polyjectory> pt_cl(m, "polyjectory", py::dynamic_attr{});
     pt_cl.def(
-        py::init([](py::iterable trajs_, py::iterable times_, py::iterable status_, double init_epoch) {
+        py::init([](py::iterable trajs_, py::iterable times_, py::iterable status_, double epoch, double epoch2) {
             auto traj_trans = [](const py::array_t<double> &arr) {
                 // Check shape/dimension.
                 if (arr.ndim() != 3) [[unlikely]] {
@@ -300,21 +300,22 @@ PYBIND11_MODULE(core, m)
 
             auto ret
                 = mz::polyjectory(trajs | std::views::transform(traj_trans), times | std::views::transform(time_trans),
-                                  std::ranges::subrange(status_ptr, status_ptr + status.shape(0)), init_epoch);
+                                  std::ranges::subrange(status_ptr, status_ptr + status.shape(0)), epoch, epoch2);
 
             // Register the polyjectory implementation in the cleanup machinery.
             mzpy::detail::add_pj_weak_ptr(mz::detail::fetch_pj_impl(ret));
 
             return ret;
         }),
-        "trajs"_a.noconvert(), "times"_a.noconvert(), "status"_a.noconvert(), "init_epoch"_a.noconvert() = 0.);
+        "trajs"_a.noconvert(), "times"_a.noconvert(), "status"_a.noconvert(), "epoch"_a.noconvert() = 0.,
+        "epoch2"_a.noconvert() = 0.);
     pt_cl.def(py::init<const std::filesystem::path &, const std::filesystem::path &, std::uint32_t,
-                       std::vector<traj_offset>, std::vector<std::int32_t>, double>(),
+                       std::vector<traj_offset>, std::vector<std::int32_t>, double, double>(),
               "traj_file"_a.noconvert(), "time_file"_a.noconvert(), "order"_a.noconvert(), "traj_offsets"_a.noconvert(),
-              "status"_a.noconvert(), "init_epoch"_a.noconvert() = 0.);
+              "status"_a.noconvert(), "epoch"_a.noconvert() = 0., "epoch2"_a.noconvert() = 0.);
     pt_cl.def_property_readonly("nobjs", &mz::polyjectory::get_nobjs);
     pt_cl.def_property_readonly("maxT", &mz::polyjectory::get_maxT);
-    pt_cl.def_property_readonly("init_epoch", &mz::polyjectory::get_init_epoch);
+    pt_cl.def_property_readonly("epoch", &mz::polyjectory::get_epoch);
     pt_cl.def_property_readonly("poly_order", &mz::polyjectory::get_poly_order);
     pt_cl.def_property_readonly("status", [](const py::object &self) {
         const auto *p = py::cast<const mz::polyjectory *>(self);
@@ -349,8 +350,8 @@ PYBIND11_MODULE(core, m)
     // sgp4 polyjectory.
     m.def(
         "sgp4_polyjectory",
-        [](py::list sat_list, double jd_begin, double jd_end, double exit_radius, double reentry_radius,
-           double init_epoch) {
+        [](py::list sat_list, double jd_begin, double jd_end, double exit_radius, double reentry_radius, double epoch,
+           double epoch2) {
             // Check for the necessary dependencies.
             py::module_::import("mizuba").attr("_check_sgp4_deps")();
 
@@ -369,11 +370,11 @@ PYBIND11_MODULE(core, m)
             using span_t = hy::mdspan<const double, hy::extents<std::size_t, 9, std::dynamic_extent>>;
             const span_t in(sat_data.data(), boost::numeric_cast<std::size_t>(sat_data.size()) / 9u);
 
-            auto poly_ret = [in, jd_begin, jd_end, exit_radius, reentry_radius, init_epoch]() {
+            auto poly_ret = [in, jd_begin, jd_end, exit_radius, reentry_radius, epoch, epoch2]() {
                 // NOTE: release the GIL during propagation.
                 py::gil_scoped_release release;
 
-                return mz::sgp4_polyjectory(in, jd_begin, jd_end, exit_radius, reentry_radius, init_epoch);
+                return mz::sgp4_polyjectory(in, jd_begin, jd_end, exit_radius, reentry_radius, epoch, epoch2);
             }();
 
             // Register the polyjectory implementation in the cleanup machinery.
@@ -389,7 +390,7 @@ PYBIND11_MODULE(core, m)
         },
         "sat_list"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert(),
         "exit_radius"_a.noconvert() = mz::sgp4_exit_radius, "reentry_radius"_a.noconvert() = mz::sgp4_reentry_radius,
-        "init_epoch"_a.noconvert() = 0.);
+        "epoch"_a.noconvert() = 0., "epoch2"_a.noconvert() = 0.);
 
     // Register conjunctions::bvh_node as a structured NumPy datatype.
     using bvh_node = mz::conjunctions::bvh_node;
