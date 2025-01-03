@@ -72,23 +72,38 @@ namespace detail
 namespace
 {
 
-// Helper to construct a double-double representation of the epoch of a gpe.
-auto fetch_gpe_epoch(const gpe &g)
+// Helper to normalise a two-parts floating-point value into a proper
+// double-length float (regardless of the magnitudes of the two parts).
+// If a non-finite value is detected, an error will be thrown.
+auto hilo_to_dfloat(double hi, double lo)
 {
-    // First normalise the two components of the epoch.
-    // NOTE: by using Knuth's EFT we ensure that the result is correct
+    // Normalise the two components. By using Knuth's EFT we ensure that the result is correct
     // regardless of the magnitudes of the two components.
-    const auto [hi, lo] = heyoka::detail::eft_add_knuth(g.epoch_jd1, g.epoch_jd2);
+    const auto [hi_norm, lo_norm] = heyoka::detail::eft_add_knuth(hi, lo);
 
     // Check the result.
-    if (!std::isfinite(hi) || !std::isfinite(lo)) [[unlikely]] {
+    if (!std::isfinite(hi_norm) || !std::isfinite(lo_norm)) [[unlikely]] {
         throw std::invalid_argument(fmt::format(
-            "The normalisation of the double-length epoch with components ({}, {}) produced a non-finite result",
-            g.epoch_jd1, g.epoch_jd2));
+            "The normalisation of the double-length number with components ({}, {}) produced a non-finite result", hi,
+            lo));
     }
 
     // Return the double-length float.
-    return heyoka::detail::dfloat<double>{hi, lo};
+    return heyoka::detail::dfloat<double>{hi_norm, lo_norm};
+}
+
+// Helper to construct a double-double representation of the epoch of a gpe.
+auto fetch_gpe_epoch(const gpe &g)
+{
+    return hilo_to_dfloat(g.epoch_jd1, g.epoch_jd2);
+}
+
+// Helper to convert an input double-length UTC Julian date into a double-length TAI Julian date.
+// The result is normalised and checked for finiteness.
+auto dl_utc_to_tai(auto utc)
+{
+    const auto [tai1, tai2] = heyoka::model::jd_utc_to_tai(utc.hi, utc.lo);
+    return hilo_to_dfloat(tai1, tai2);
 }
 
 // Helper to check for finiteness in the gpe data.
@@ -209,7 +224,7 @@ void build_tplts(auto &ta_kepler_tplt, auto &sgp4_prop_tplt, auto &jit_state_tpl
         });
 }
 
-// Evaluate a single gpe via the official sgp4 code at multiple time points.
+// Evaluate a single gpe via the official sgp4 C++ code at multiple time points.
 //
 // cheby_nodes is the list of time points used for evaluation, and its size is op1.
 // satrec is the already-initialised satellite object to be passed to the propagation function.
@@ -308,21 +323,22 @@ int gpe_interp_eval(auto &interp_buffer, auto &sgp4_prop, const auto &cheby_node
 }
 
 // Interpolate the gpe g in the [jdate_begin, jdate_end) time range over one or more interpolation steps.
+// jdate_begin/end are UTC Julian dates.
 //
 // The size of the interpolation steps is determined by simulating a numerical integration with Keplerian
-// dynamics and using the inferred integration steps as interpolation steps.
+// dynamics and using the adaptive integration steps as interpolation steps.
 //
 // ets is a bag of thread-local data. poly_cf_buf and time_buf are buffers to which the interpolating
-// polynomial coefficients and the ends of the interpolation steps will be appended. pj_jdate_begin
-// is the starting epoch of the polyjectory (we need this in order to refer the ends of the interpolation
-// steps to the beginning of the polyjectory).
+// polynomial coefficients and the ends of the interpolation steps will be appended. pj_epoch_tai
+// is the polyjectory's epoch in the TAI scale of time (we need this in order to refer the ends of the
+// interpolation steps to the beginning of the polyjectory).
 //
 // The return value will be 0 if everything went ok, otherwise it will be either an sgp4 error code,
-// or error code 10 if we end up with non-finite poly coefficients or end times.
+// or error code 10 if non-finite values are detected.
 //
 // TODO put max limit on the number of kepler steps? Or perhaps on the step size?
 int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end, auto &ets, auto &poly_cf_buf,
-                    auto &time_buf, const auto &pj_jdate_begin)
+                    auto &time_buf, const auto &pj_epoch_tai)
 {
     namespace hy = heyoka;
 
@@ -336,13 +352,13 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
     // corresponding to "jan 0, 1950. 0 hr".
     constexpr auto jd_sub = 2433281.5;
     SGP4Funcs::sgp4init(wgs72, 'i', "",
-                        // NOTE: here we are directly subtracting the UTC *Julian dates*
+                        // NOTE: here we are directly subtracting the UTC Julian dates
                         // in order to compute the epoch, which, according to the C++ code,
                         // must be expressed as the "number of days from jan 0, 1950. 0 hr".
                         // As far as I have understood, this epoch is being used by SDP4 to compute the
                         // lunisolar perturbations according to simplified ephemeris included in
                         // the C++ code. But, when using UTC Julian dates to compute the epoch,
-                        // we are losing leap seconds and thus the real physical time
+                        // we are not accounting for leap seconds and thus the real physical time
                         // elapsed since "jan 0, 1950. 0 hr" is off by a few seconds. The "correct"
                         // thing to do here, I believe, would be to convert the UTC dates to
                         // TAI dates and then subtract to construct the epoch. However, this
@@ -411,16 +427,29 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
     auto *cfunc_r = ets.cfunc_r;
     auto *cfunc_interp = ets.cfunc_interp;
 
-    for (auto cur_jdate = jdate_begin;;) {
+    // NOTE: we now have to transform several UTC dates/epochs into TAI
+    // in order to ensure we are operating within a uniform scale of time.
+    // If we do not do that, doing arithmetics on UTC Julian dates would
+    // give an incorrect result in case of leap second days.
+
+    // Transform the satellite's epoch to TAI.
+    const auto epoch_tai = dl_utc_to_tai(epoch);
+
+    // Transform jdate_end to TAI.
+    const auto jdate_end_tai = dl_utc_to_tai(jdate_end);
+
+    for (auto cur_jdate_tai = dl_utc_to_tai(jdate_begin);;) {
         // Flag to signal if this is the last iteration.
         bool last_iteration = false;
 
-        // Transform cur_jdate (i.e., the beginning of the current interpolation step) into
+        // Transform cur_jdate_tai (i.e., the beginning of the current interpolation step) into
         // the time elapsed in minutes since the GPE epoch. This is the time coordinate used by the
-        // sgp4 propagators (both Vallado's and our implementation).
-        const auto step_begin = static_cast<double>(cur_jdate - epoch) * 1440.;
+        // sgp4 propagators (both Vallado's and our implementation). By using TAI, we ensure we
+        // are computing a correct physical time duration even if leap second days are present
+        // within the time interval.
+        const auto step_begin = static_cast<double>(cur_jdate_tai - epoch_tai) * 1440.;
 
-        // Evaluate the state of the satellite at cur_jdate.
+        // Evaluate the state of the satellite at cur_jdate_tai.
         double sgp4_r[3], sgp4_v[3];
         SGP4Funcs::sgp4(satrec, step_begin, sgp4_r, sgp4_v);
         // Check for errors.
@@ -434,9 +463,9 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         std::ranges::copy(sgp4_r, ta_kepler_state_data);
         std::ranges::copy(sgp4_v, ta_kepler_state_data + 3);
 
-        // Take a single step, ensuring that the step does not go past jdate_end.
+        // Take a single step, ensuring that the step does not go past jdate_end_tai.
         // NOTE: ta_kepler measures time in seconds.
-        const auto [oc, h] = ta_kepler.step(static_cast<double>(jdate_end - cur_jdate) * 86400.);
+        const auto [oc, h] = ta_kepler.step(static_cast<double>(jdate_end_tai - cur_jdate_tai) * 86400.);
 
         // Check the outcome.
         if (oc == hy::taylor_outcome::time_limit) {
@@ -455,7 +484,7 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         auto step_end = step_begin + h / 60.;
 
         // Setup the interpolation points via an affine transformation.
-        // NOTE: this creates the Chebyshev nodes in the [step_begin, step_end] range.
+        // This transforms the Chebyshev nodes into the [step_begin, step_end] range.
         for (std::uint32_t i = 0; i < op1; ++i) {
             cheby_nodes[i] = (cheby_nodes_unit[i] + 1) / 2 * (step_end - step_begin) + step_begin;
         }
@@ -490,19 +519,13 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         auto *cf_ptr = interp_buffer.data() + op1 * static_cast<std::size_t>(14);
         cfunc_interp(cf_ptr, interp_buffer.data(), nullptr, nullptr);
 
-        // Check that all interpolated coefficients are finite.
-        if (!std::ranges::all_of(cf_ptr, cf_ptr + op1 * static_cast<std::size_t>(7),
-                                 [](double x) { return std::isfinite(x); })) [[unlikely]] {
-            return 10;
-        }
-
         // Transform step_end to represent the end of the interpolation step measured in *days*
         // since the start epoch of the polyjectory. This is the time coordinate we need to append
         // to time_buf.
-        step_end = static_cast<double>(cur_jdate - pj_jdate_begin + h / 86400.);
-        if (!std::isfinite(step_end)) [[unlikely]] {
-            return 10;
-        }
+        step_end = static_cast<double>(cur_jdate_tai - pj_epoch_tai + h / 86400.);
+
+        // NOTE: if we end up with non-finite poly coefficients or end times,
+        // these will be caught by the polyjectory constructor.
 
         // Add the polynomial coefficients to poly_cf_buf.
         const auto out_span = hy::mdspan<const double, hy::extents<std::size_t, std::dynamic_extent, 7>>(cf_ptr, op1);
@@ -521,20 +544,21 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         }
 
         // Update cur_jdate.
-        cur_jdate = cur_jdate + h / 86400.;
+        cur_jdate_tai = cur_jdate_tai + h / 86400.;
     }
 
     return 0;
 }
 
-// Interpolate in parallel all GPE groups between the UTC Julian dates jd_begin and jd_end.
+// Interpolate in parallel all satellites between the UTC Julian dates jd_begin and jd_end.
 //
 // c_nodes_unit are the Chebyshev interpolation nodes in the [-1, 1] interval. *_tplt are the template
 // propagator/integrator/llvm_state objects to be copied and used during interpolation. gpe_groups is the range of GPE
-// groups. tmp_dir_path is the path to the output files.
+// groups (one per satellite). tmp_dir_path is the path to the output files. epoch_tai is the polyjectory's epoch,
+// that is, jd_begin converted to double-length TAI.
 auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const auto &sgp4_prop_tplt,
-                     const auto &jit_state_tplt, const auto &gpe_groups, double jd_begin, double jd_end,
-                     const auto &tmp_dir_path)
+                     const auto &jit_state_tplt, const auto &gpe_groups, const double jd_begin, const double jd_end,
+                     const auto &tmp_dir_path, const auto epoch_tai)
 {
     namespace hy = heyoka;
     using dfloat = hy::detail::dfloat<double>;
@@ -736,7 +760,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
             oneapi::tbb::parallel_for(
                 oneapi::tbb::blocked_range<decltype(gpe_groups.size())>(start_sat_idx, end_sat_idx),
                 [&ets, &gpe_groups, dl_jd_begin = dfloat{jd_begin, 0.}, dl_jd_end = dfloat{jd_end, 0.}, &global_status,
-                 &traj_promises, &time_promises](const auto &range) {
+                 &traj_promises, &time_promises, epoch_tai](const auto &range) {
                     // Fetch the thread-local data.
                     auto &local_ets = ets.local();
 
@@ -744,7 +768,8 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
                     // https://oneapi-src.github.io/oneTBB/main/tbb_userguide/work_isolation.html
                     // We may be invoking TBB primitives when using our sgp4 propagator.
                     oneapi::tbb::this_task_arena::isolate([&local_ets, &range, &gpe_groups, dl_jd_begin, dl_jd_end,
-                                                           &global_status, &traj_promises, &time_promises]() {
+                                                           &global_status, &traj_promises, &time_promises,
+                                                           epoch_tai]() {
                         for (auto sat_idx = range.begin(); sat_idx != range.end(); ++sat_idx) {
                             // Fetch the gpe group for the current satellite.
                             const auto gpe_group = *gpe_groups[sat_idx];
@@ -835,7 +860,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
 
                                 // Interpolate using the current gpe.
                                 const auto res = gpe_interpolate(*it_gpe, interpolation_begin, interpolation_end,
-                                                                 local_ets, poly_cf_buf, time_buf, dl_jd_begin);
+                                                                 local_ets, poly_cf_buf, time_buf, epoch_tai);
 
                                 // Check the status. If it is nonzero, set the global status
                                 // flag for the satellite and break out.
@@ -906,6 +931,7 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
                                   double jd_begin, double jd_end)
 {
     namespace hy = heyoka;
+    using dfloat = hy::detail::dfloat<double>;
 
     // Check the date range.
     if (!std::isfinite(jd_begin) || !std::isfinite(jd_end) || !(jd_begin < jd_end)) [[unlikely]] {
@@ -939,6 +965,13 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
     // The llvm state that will contain auxiliary JITed functions used during interpolation.
     std::optional<hy::llvm_state> jit_state_tplt;
 
+    // The values of the Chebyshev nodes in the [-1, 1] range.
+    std::vector<double> c_nodes_unit;
+
+    // The polyjectory epoch. This will be initialised as
+    // jd_begin converted to double-length TAI.
+    dfloat epoch_tai;
+
     stopwatch sw;
 
     // NOTE: several validation and preparation steps can be performed in parallel.
@@ -954,33 +987,34 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
                 gpe_groups.push_back(it);
             }
         },
-        // Initialise the integrator, the propagator and the jitted functions.
-        [&ta_kepler_tplt, &sgp4_prop_tplt, &jit_state_tplt]() {
+        // Initialise the integrator, the propagator, the jitted functions and c_nodes_unit.
+        [&ta_kepler_tplt, &sgp4_prop_tplt, &jit_state_tplt, &c_nodes_unit]() {
             detail::build_tplts(ta_kepler_tplt, sgp4_prop_tplt, jit_state_tplt);
-        });
 
-    // Cache the interpolation order and compute order + 1.
-    const auto order = ta_kepler_tplt->get_order();
-    // NOTE: no need for overflow checks here as we checked in several
-    // places (e.g., vm interpolation, construction of the jit functions, etc.)
-    // that this is safe.
-    const std::uint32_t op1 = order + 1u;
+            // Fetch the order + 1.
+            // NOTE: no need for overflow checks here as we checked in several
+            // places (e.g., vm interpolation, construction of the jit functions, etc.)
+            // that this is safe.
+            const auto op1 = static_cast<std::uint32_t>(ta_kepler_tplt->get_order() + 1u);
 
-    // Setup the Chebyshev nodes in the [-1, 1] range.
-    std::vector<double> c_nodes_unit;
-    c_nodes_unit.reserve(op1);
-    for (std::uint32_t i = 0; i < op1; ++i) {
-        c_nodes_unit.push_back(std::cos((2. * i + 1) / (2. * op1) * boost::math::constants::pi<double>()));
-    }
-    // Sort them in ascending order.
-    //
-    // NOTE: for polynomial interpolation with the Bjorck-Pereira algorithm,
-    // it seems like sorting the sampling points in ascending order may improve
-    // numerical stability:
-    //
-    // https://link.springer.com/article/10.1007/BF01408579
-    std::ranges::reverse(c_nodes_unit);
-    assert(std::ranges::is_sorted(c_nodes_unit));
+            // Setup the Chebyshev nodes in the [-1, 1] range.
+            c_nodes_unit.reserve(op1);
+            for (std::uint32_t i = 0; i < op1; ++i) {
+                c_nodes_unit.push_back(std::cos((2. * i + 1) / (2. * op1) * boost::math::constants::pi<double>()));
+            }
+
+            // Sort them in ascending order.
+            //
+            // NOTE: for polynomial interpolation with the Bjorck-Pereira algorithm,
+            // it seems like sorting the sampling points in ascending order may improve
+            // numerical stability:
+            //
+            // https://link.springer.com/article/10.1007/BF01408579
+            std::ranges::reverse(c_nodes_unit);
+            assert(std::ranges::is_sorted(c_nodes_unit));
+        },
+        // Setup epoch_tai.
+        [&epoch_tai, jd_begin]() { epoch_tai = detail::dl_utc_to_tai(dfloat{jd_begin, 0.}); });
 
     log_trace("make_sgp4_polyjectory() validation/preparation time: {}s", sw);
 
@@ -1007,16 +1041,13 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
     // Interpolate all satellites.
     sw.reset();
     auto [status, traj_offsets] = detail::interpolate_all(c_nodes_unit, ta_kepler_tplt, sgp4_prop_tplt, jit_state_tplt,
-                                                          gpe_groups, jd_begin, jd_end, tmp_dir_path);
+                                                          gpe_groups, jd_begin, jd_end, tmp_dir_path, epoch_tai);
     log_trace("make_sgp4_polyjectory() total interpolation time: {}s", sw);
-
-    // Convert jd_begin from UTC to TAI.
-    const auto [epoch_tai, epoch2_tai] = hy::model::jd_utc_to_tai(jd_begin, 0.);
 
     // Build and return the polyjectory.
     return polyjectory(std::filesystem::path((tmp_dir_path / "traj").string()),
-                       std::filesystem::path((tmp_dir_path / "time").string()), order, std::move(traj_offsets),
-                       std::move(status), epoch_tai, epoch2_tai);
+                       std::filesystem::path((tmp_dir_path / "time").string()), ta_kepler_tplt->get_order(),
+                       std::move(traj_offsets), std::move(status), epoch_tai.hi, epoch_tai.lo);
 }
 
 } // namespace mizuba
