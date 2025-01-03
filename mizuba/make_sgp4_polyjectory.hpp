@@ -33,6 +33,7 @@ namespace mizuba
 // propagation via sgp4.
 struct gpe {
     std::uint64_t norad_id;
+    // NOTE: these must be UTC Julian dates.
     double epoch_jd1;
     double epoch_jd2;
     double n0;
@@ -46,7 +47,7 @@ struct gpe {
 
 // Construct a polyjectory using the SGP4 propagator. The set of gpes is passed in as a span,
 // the time interval for the construction of the polyjectory is given by the last two
-// arguments (begin/end as Julian dates).
+// arguments (begin/end as UTC Julian dates).
 polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std::size_t, std::dynamic_extent>>, double,
                                   double);
 

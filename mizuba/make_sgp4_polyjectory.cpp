@@ -1010,10 +1010,13 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
                                                           gpe_groups, jd_begin, jd_end, tmp_dir_path);
     log_trace("make_sgp4_polyjectory() total interpolation time: {}s", sw);
 
+    // Convert jd_begin from UTC to TAI.
+    const auto [epoch_tai, epoch2_tai] = hy::model::jd_utc_to_tai(jd_begin, 0.);
+
     // Build and return the polyjectory.
     return polyjectory(std::filesystem::path((tmp_dir_path / "traj").string()),
                        std::filesystem::path((tmp_dir_path / "time").string()), order, std::move(traj_offsets),
-                       std::move(status), jd_begin);
+                       std::move(status), epoch_tai, epoch2_tai);
 }
 
 } // namespace mizuba
