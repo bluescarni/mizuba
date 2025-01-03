@@ -527,20 +527,22 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
     return 0;
 }
 
-// Interpolate in parallel all GPE groups between the UTC Julian dates
-// jd_begin and jd_end.
+// Interpolate in parallel all GPE groups between the UTC Julian dates jd_begin and jd_end.
 //
-// op1 is the interpolation order + 1. c_nodes_unit the Chebyshev interpolation nodes
-// in the [-1, 1] interval. *_tplt are the template propagator/integrator/llvm_state
-// objects to be copied and used during interpolation. gpe_groups is the range of GPE
+// c_nodes_unit are the Chebyshev interpolation nodes in the [-1, 1] interval. *_tplt are the template
+// propagator/integrator/llvm_state objects to be copied and used during interpolation. gpe_groups is the range of GPE
 // groups. tmp_dir_path is the path to the output files.
-auto interpolate_all(const auto op1, const auto &c_nodes_unit, const auto &ta_kepler_tplt, const auto &sgp4_prop_tplt,
+auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const auto &sgp4_prop_tplt,
                      const auto &jit_state_tplt, const auto &gpe_groups, double jd_begin, double jd_end,
                      const auto &tmp_dir_path)
 {
     namespace hy = heyoka;
     using dfloat = hy::detail::dfloat<double>;
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
+
+    // Cache the order + 1.
+    // NOTE: this cast has been proven safe earlier.
+    const auto op1 = static_cast<std::uint32_t>(c_nodes_unit.size());
 
     // Cache the total number of satellites.
     const auto n_sats = boost::numeric_cast<std::size_t>(gpe_groups.size());
@@ -1004,8 +1006,8 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
 
     // Interpolate all satellites.
     sw.reset();
-    auto [status, traj_offsets] = detail::interpolate_all(op1, c_nodes_unit, ta_kepler_tplt, sgp4_prop_tplt,
-                                                          jit_state_tplt, gpe_groups, jd_begin, jd_end, tmp_dir_path);
+    auto [status, traj_offsets] = detail::interpolate_all(c_nodes_unit, ta_kepler_tplt, sgp4_prop_tplt, jit_state_tplt,
+                                                          gpe_groups, jd_begin, jd_end, tmp_dir_path);
     log_trace("make_sgp4_polyjectory() total interpolation time: {}s", sw);
 
     // Build and return the polyjectory.
