@@ -527,7 +527,14 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
     return 0;
 }
 
-auto interpolate_all(auto op1, const auto &c_nodes_unit, const auto &ta_kepler_tplt, const auto &sgp4_prop_tplt,
+// Interpolate in parallel all GPE groups between the UTC Julian dates
+// jd_begin and jd_end.
+//
+// op1 is the interpolation order + 1. c_nodes_unit the Chebyshev interpolation nodes
+// in the [-1, 1] interval. *_tplt are the template propagator/integrator/llvm_state
+// objects to be copied and used during interpolation. gpe_groups is the range of GPE
+// groups. tmp_dir_path is the path to the output files.
+auto interpolate_all(const auto op1, const auto &c_nodes_unit, const auto &ta_kepler_tplt, const auto &sgp4_prop_tplt,
                      const auto &jit_state_tplt, const auto &gpe_groups, double jd_begin, double jd_end,
                      const auto &tmp_dir_path)
 {
