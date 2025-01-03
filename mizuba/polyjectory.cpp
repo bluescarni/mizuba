@@ -452,7 +452,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                                                 traj_offsets.size(), status.size()));
     }
 
-    // Check epoch.
+    // Check epoch and epoch2.
     if (!std::isfinite(epoch)) [[unlikely]] {
         throw std::invalid_argument(fmt::format(
             "The initial epoch of a polyjectory must be finite, but instead a value of {} was provided", epoch));
