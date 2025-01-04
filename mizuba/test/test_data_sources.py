@@ -28,6 +28,7 @@ class data_sources_test_case(_ut.TestCase):
         from ..data_sources import download_all_gpes, gpes_schema
         from sgp4.api import Satrec, WGS72
         import numpy as np
+        import polars as pl
 
         # Double-length addition using error-free
         # transformations.
