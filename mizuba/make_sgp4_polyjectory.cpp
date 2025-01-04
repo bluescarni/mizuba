@@ -449,7 +449,7 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         // within the time interval.
         const auto step_begin = static_cast<double>(cur_jdate_tai - epoch_tai) * 1440.;
 
-        // Evaluate the state of the satellite at cur_jdate_tai.
+        // Evaluate the state of the satellite at the beginning of the interpolation step.
         double sgp4_r[3], sgp4_v[3];
         SGP4Funcs::sgp4(satrec, step_begin, sgp4_r, sgp4_v);
         // Check for errors.
