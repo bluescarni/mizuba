@@ -168,3 +168,108 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             cfs, end_times, _ = pj[sat_idx]
             for i in range(len(end_times)):
                 self._compare_sgp4(jd_begin, i, sat, rng, cfs, end_times)
+
+    def test_leap_seconds(self):
+        # Test creation of a polyjectory over
+        # a timespan including a leap second day.
+
+        from .. import _have_sgp4_deps, _have_heyoka_deps
+
+        if not _have_sgp4_deps() or not _have_heyoka_deps():
+            return
+
+        from sgp4.api import Satrec
+        import polars as pl
+        from .. import make_sgp4_polyjectory
+        from heyoka.model import sgp4_propagator
+        import numpy as np
+        from astropy.time import Time
+
+        s = "1 00045U 60007A   05363.79166667  .00000504  00000-0  14841-3 0  9992"
+        t = "2 00045  66.6943  81.3521 0257384 317.3173  40.8180 14.34783636277898"
+
+        sat = Satrec.twoline2rv(s, t)
+
+        # Fetch the data from sat.
+        n0 = [sat.no_kozai]
+        e0 = [sat.ecco]
+        i0 = [sat.inclo]
+        node0 = [sat.nodeo]
+        omega0 = [sat.argpo]
+        m0 = [sat.mo]
+        bstar = [sat.bstar]
+        epoch_jd1 = [sat.jdsatepoch]
+        epoch_jd2 = [sat.jdsatepochF]
+        norad_id = [1234]
+
+        gpes = pl.DataFrame(
+            {
+                "n0": n0,
+                "e0": e0,
+                "i0": i0,
+                "node0": node0,
+                "omega0": omega0,
+                "m0": m0,
+                "bstar": bstar,
+                "epoch_jd1": epoch_jd1,
+                "epoch_jd2": epoch_jd2,
+                "norad_id": norad_id,
+            }
+        )
+
+        # Build the polyjectory up to 10 days in the future,
+        # well beyond year's end.
+        jd_begin = sat.jdsatepoch + sat.jdsatepochF
+        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 10)
+
+        # Build the heyoka propagator.
+        prop = sgp4_propagator([sat])
+
+        # Fetch the poly coefficients and the end times.
+        cfs, end_times, _ = pj[0]
+
+        # Deterministic seeding.
+        rng = np.random.default_rng(420)
+
+        for i in range(len(end_times)):
+            # Pick 5 random times.
+            step_begin = 0.0 if i == 0 else end_times[i - 1]
+            step_end = end_times[i]
+            random_times = rng.uniform(0, step_end - step_begin, (5,))
+
+            xvals = np.polyval(cfs[i, 0, ::-1], random_times)
+            yvals = np.polyval(cfs[i, 1, ::-1], random_times)
+            zvals = np.polyval(cfs[i, 2, ::-1], random_times)
+            vxvals = np.polyval(cfs[i, 3, ::-1], random_times)
+            vyvals = np.polyval(cfs[i, 4, ::-1], random_times)
+            vzvals = np.polyval(cfs[i, 5, ::-1], random_times)
+            rvals = np.polyval(cfs[i, 6, ::-1], random_times)
+
+            # Convert the times to UTC Julian dates.
+            utc_jds = Time(
+                val=[pj.epoch[0]] * 5,
+                val2=step_begin + random_times + [pj.epoch[1]] * 5,
+                format="jd",
+                scale="tai",
+            ).utc
+
+            # Evaluate with the heyoka propagator.
+            dates = np.zeros((5, 1), dtype=prop.jdtype)
+            dates[:, 0]["jd"] = utc_jds.jd1
+            dates[:, 0]["frac"] = utc_jds.jd2
+
+            res = prop(dates)
+
+            self.assertTrue(np.allclose(res[:, 0, 0], xvals, rtol=0.0, atol=1e-8))
+            self.assertTrue(np.allclose(res[:, 1, 0], yvals, rtol=0.0, atol=1e-8))
+            self.assertTrue(np.allclose(res[:, 2, 0], zvals, rtol=0.0, atol=1e-8))
+
+            self.assertTrue(np.allclose(res[:, 3, 0], vxvals, rtol=0.0, atol=1e-11))
+            self.assertTrue(np.allclose(res[:, 4, 0], vyvals, rtol=0.0, atol=1e-11))
+            self.assertTrue(np.allclose(res[:, 5, 0], vzvals, rtol=0.0, atol=1e-11))
+
+            self.assertTrue(
+                np.allclose(
+                    np.linalg.norm(res[:, :3, 0], axis=1), rvals, rtol=0.0, atol=1e-8
+                )
+            )
