@@ -190,6 +190,20 @@ def download_all_gpes(
             .alias("ops_code")
         )
 
+        # Next, we want to set to null the 'tle_line1' and 'tle_line2' fields
+        # for all norad ids in gpes which show up in the celestrak data. We do
+        # this because it does not make sense to retain the TLE data from spacetrack
+        # for the celestrak satellites.
+        gpes = gpes.with_columns(
+            [
+                pl.when(pl.col("norad_id").is_in(gpe_ct["norad_id"]))
+                .then(None)
+                .otherwise(pl.col(c_name))
+                .alias(c_name)
+                for c_name in ["tle_line1", "tle_line2"]
+            ]
+        )
+
         # Finally, we will re-sort the data in the canonical order.
         gpes = gpes.sort(["norad_id", "epoch_jd1", "epoch_jd2"])
     else:

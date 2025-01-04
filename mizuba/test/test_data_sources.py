@@ -126,3 +126,18 @@ class data_sources_test_case(_ut.TestCase):
                 self.assertAlmostEqual(
                     getattr(sat1, attr), getattr(sat2, attr), places=15
                 )
+
+        # For the supgp data, we want to make sure that
+        # we reset to null the TLE fields.
+        # NOTE: test is not great, as it relies on the assumption
+        # of segmented ISS data in the supgp dataset.
+        self.assertTrue(
+            gpes.filter(pl.col("name").str.contains(r"ISS.*Segment"))["tle_line1"]
+            .is_null()
+            .all()
+        )
+        self.assertTrue(
+            gpes.filter(pl.col("name").str.contains(r"ISS.*Segment"))["tle_line2"]
+            .is_null()
+            .all()
+        )
