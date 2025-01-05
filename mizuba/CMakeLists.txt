@@ -20,6 +20,7 @@ set(MIZUBA_PYTHON_FILES
     test/single_gpe.parquet
     test/single_gpe_ds.parquet
     test/multi_gpes.parquet
+    test/iss_gpes.parquet
     data_sources/__init__.py
     data_sources/_common.py
     data_sources/_spacetrack.py

@@ -169,10 +169,93 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             for i in range(len(end_times)):
                 self._compare_sgp4(jd_begin, i, sat, rng, cfs, end_times)
 
+    def test_iss_gpes(self):
+        # Test for a satellite with multiple GPEs.
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
+            return
+
+        from .. import make_sgp4_polyjectory
+        import pathlib
+        from sgp4.api import Satrec, WGS72
+        import polars as pl
+        import numpy as np
+
+        # Double-length addition using error-free
+        # transformations.
+        def _dl_add(a_hi, a_lo, b_hi, b_lo):
+            from ..data_sources._common import _eft_add_knuth
+
+            def _eft_add_dekker(a, b):
+                x = a + b
+                y = (a - x) + b
+
+                return x, y
+
+            x_hi, y_hi = _eft_add_knuth(a_hi, b_hi)
+            x_lo, y_lo = _eft_add_knuth(a_lo, b_lo)
+
+            u, v = _eft_add_dekker(x_hi, y_hi + x_lo)
+            u, v = _eft_add_dekker(u, v + y_lo)
+
+            return u, v
+
+        # Small helper to construct a Satrec from a row
+        # in the gpe dataset.
+        def make_satrec(row):
+            # NOTE: this is the baseline reference epoch
+            # used by the C++ SGP4 code.
+            jd_sub = 2433281.5
+
+            sat = Satrec()
+            sat.sgp4init(
+                WGS72,
+                "i",
+                row["norad_id"],
+                _dl_add(
+                    # NOTE: we are assuming here that the two
+                    # jd components are already normalised.
+                    row["epoch_jd1"],
+                    row["epoch_jd2"],
+                    -jd_sub,
+                    0.0,
+                )[0],
+                row["bstar"],
+                0.0,
+                0.0,
+                row["e0"],
+                row["omega0"],
+                row["i0"],
+                row["m0"],
+                row["n0"],
+                row["node0"],
+            )
+
+            return sat
+
+        # Deterministic seeding.
+        rng = np.random.default_rng(123)
+
+        # Fetch the current directory.
+        cur_dir = pathlib.Path(__file__).parent.resolve()
+
+        # Load the test data.
+        gpes = pl.read_parquet(cur_dir / "iss_gpes.parquet")
+
+        # Build the polyjectory.
+        jd_begin = 2460669.0
+        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 5)
+
+        # Fetch the poly coefficients and the end times.
+        cfs, end_times, _ = pj[0]
+
+        # Create the satellites.
+        sats = list(make_satrec(row) for row in gpes.iter_rows(named=True))
+
     def test_leap_seconds(self):
         # Test creation of a polyjectory over
         # a timespan including a leap second day.
-
         from .. import _have_sgp4_deps, _have_heyoka_deps
 
         if not _have_sgp4_deps() or not _have_heyoka_deps():
