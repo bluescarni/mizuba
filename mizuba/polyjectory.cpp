@@ -230,13 +230,11 @@ polyjectory::polyjectory(ptag,
                 }
 
                 poly_op1 = boost::numeric_cast<std::uint32_t>(op1);
-            } else {
-                if (op1 != poly_op1) [[unlikely]] {
-                    throw std::invalid_argument(
-                        fmt::format("The trajectory polynomial order for the object at index "
-                                    "{} is inconsistent with the polynomial order deduced from the first object ({})",
-                                    i, poly_op1 - 1u));
-                }
+            } else if (op1 != poly_op1) [[unlikely]] {
+                throw std::invalid_argument(
+                    fmt::format("The trajectory polynomial order for the object at index "
+                                "{} is inconsistent with the polynomial order deduced from the first object ({})",
+                                i, poly_op1 - 1u));
             }
 
             // Compute the total data size (in number of floating-point values).
