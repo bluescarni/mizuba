@@ -57,16 +57,19 @@ class polyjectory
     friend const std::shared_ptr<detail::polyjectory_impl> &detail::fetch_pj_impl(const polyjectory &) noexcept;
 
 public:
-    // NOTE: the three dimensions here are, respectively:
+    // Span representing a single trajectory. The three dimensions here are, respectively:
+    //
     // - the total number of steps,
     // - the total number of state variables (which is always 7, i.e.,
     //   the Cartesian state vector + radius),
     // - the polynomial order + 1.
     using traj_span_t
         = heyoka::mdspan<const double, heyoka::extents<std::size_t, std::dynamic_extent, 7, std::dynamic_extent>>;
+    // Span representing the sequence of step end times for a trajectory.
     using time_span_t = heyoka::mdspan<const double, heyoka::dextents<std::size_t, 1>>;
 
     // Datatype representing:
+    //
     // - the offset (in number of floating-point values) at which data for a
     //   specific trajectory begins in a datafile,
     // - the total number of steps in the trajectory.
