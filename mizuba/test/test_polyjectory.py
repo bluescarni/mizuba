@@ -131,25 +131,25 @@ class polyjectory_test_case(_ut.TestCase):
         # Check trajectories without steps.
         pj = polyjectory(
             trajs=[state_data, state_data[1:]],
-            times=[np.array([1.0]), np.array([], dtype=float)],
+            times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
             status=np.array([0, 0], dtype=np.int32),
         )
         self.assertEqual(pj.maxT, 1.0)
         self.assertTrue(np.all(pj[0][0] == state_data))
-        self.assertTrue(np.all(pj[0][1] == [1.0]))
+        self.assertTrue(np.all(pj[0][1] == [0.0, 1.0]))
         self.assertTrue(np.all(pj[1][0] == np.zeros((0, 7, 8), dtype=float)))
         self.assertTrue(np.all(pj[1][1] == np.zeros((0,), dtype=float)))
 
         pj = polyjectory(
             trajs=[state_data[1:], state_data],
-            times=[np.array([], dtype=float), np.array([1.0])],
+            times=[np.array([], dtype=float), np.array([0.0, 1.0])],
             status=np.array([0, 0], dtype=np.int32),
         )
         self.assertEqual(pj.maxT, 1.0)
         self.assertTrue(np.all(pj[0][0] == np.zeros((0, 7, 8), dtype=float)))
         self.assertTrue(np.all(pj[0][1] == np.zeros((0,), dtype=float)))
         self.assertTrue(np.all(pj[1][0] == state_data))
-        self.assertTrue(np.all(pj[1][1] == [1.0]))
+        self.assertTrue(np.all(pj[1][1] == [0.0, 1.0]))
 
         with self.assertRaises(ValueError) as cm:
             polyjectory(
@@ -187,6 +187,7 @@ class polyjectory_test_case(_ut.TestCase):
             in str(cm.exception)
         )
 
+        # Inconsistencies between traj and time data sizes.
         with self.assertRaises(ValueError) as cm:
             polyjectory(
                 trajs=[state_data, state_data],
@@ -194,8 +195,19 @@ class polyjectory_test_case(_ut.TestCase):
                 status=np.array([0, 0], dtype=np.int32),
             )
         self.assertTrue(
-            "The number of steps for the trajectory of the object at index 1 is 1, but"
-            " the number of times is 2 - the two numbers must be equal"
+            "The number of steps for the trajectory of the object at index 0 is 1, but"
+            " the number of times is 1 (the number of times must be equal to the number of steps + 1)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            polyjectory(
+                trajs=[state_data, state_data],
+                times=[np.array([1.0, 2.0]), np.array([], dtype=float)],
+                status=np.array([0, 0], dtype=np.int32),
+            )
+        self.assertTrue(
+            "The trajectory of the object at index 1 has a nonzero number of steps but no associated time data"
             in str(cm.exception)
         )
 
@@ -204,7 +216,7 @@ class polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             polyjectory(
                 trajs=[state_data, inf_state_data],
-                times=[np.array([1.0]), np.array([1.0])],
+                times=[np.array([0.0, 1.0]), np.array([0.0, 1.0])],
                 status=np.array([0, 0], dtype=np.int32),
             )
         self.assertTrue(
@@ -215,7 +227,7 @@ class polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             polyjectory(
                 trajs=[state_data, state_data],
-                times=[np.array([1.0]), np.array([float("nan")])],
+                times=[np.array([0.0, 1.0]), np.array([1.0, float("nan")])],
                 status=np.array([0, 0], dtype=np.int32),
             )
         self.assertTrue(
@@ -226,11 +238,11 @@ class polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             polyjectory(
                 trajs=[state_data, state_data],
-                times=[np.array([-1.0]), np.array([1.0])],
+                times=[np.array([-1.0, 0.0]), np.array([0.0, 1.0])],
                 status=np.array([0, 0], dtype=np.int32),
             )
         self.assertTrue(
-            "A non-positive time coordinate was found for the object at index 0"
+            "A negative time coordinate was found for the object at index 0"
             in str(cm.exception)
         )
 
@@ -238,7 +250,7 @@ class polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             polyjectory(
                 trajs=[two_state_data, two_state_data],
-                times=[np.array([1.0, 2.0]), np.array([1.0, 1.0])],
+                times=[np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0, 1.0])],
                 status=np.array([0, 0], dtype=np.int32),
             )
         self.assertTrue(
@@ -249,7 +261,7 @@ class polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             polyjectory(
                 status=np.array([0, 0], dtype=np.int32),
-                times=[np.array([1.0, 2.0]), np.array([1.0, 0.5])],
+                times=[np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0, 0.5])],
                 trajs=[two_state_data, two_state_data],
             )
         self.assertTrue(
@@ -260,7 +272,7 @@ class polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             polyjectory(
                 trajs=[state_data, state_data],
-                times=[np.array([1.0]), np.array([3.0])],
+                times=[np.array([0.0, 1.0]), np.array([0.0, 3.0])],
                 status=np.array([0, 1], dtype=np.int32),
                 epoch=float("inf"),
             )
@@ -272,7 +284,7 @@ class polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             polyjectory(
                 trajs=[state_data, state_data],
-                times=[np.array([1.0]), np.array([3.0])],
+                times=[np.array([0.0, 1.0]), np.array([0.0, 3.0])],
                 status=np.array([0, 1], dtype=np.int32),
                 epoch2=float("inf"),
             )
@@ -284,7 +296,7 @@ class polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             polyjectory(
                 trajs=[state_data, state_data],
-                times=[np.array([1.0]), np.array([3.0])],
+                times=[np.array([0.0, 1.0]), np.array([0.0, 3.0])],
                 status=np.array([0, 1], dtype=np.int32),
                 epoch=float("nan"),
             )
@@ -296,7 +308,7 @@ class polyjectory_test_case(_ut.TestCase):
         # Test properties.
         pj = polyjectory(
             trajs=[state_data, state_data],
-            times=[np.array([1.0]), np.array([3.0])],
+            times=[np.array([0.0, 1.0]), np.array([0.0, 3.0])],
             status=np.array([0, 1], dtype=np.int32),
             epoch=42.0,
             epoch2=1.0,
@@ -312,7 +324,7 @@ class polyjectory_test_case(_ut.TestCase):
         traj, time, status = pj[0]
         self.assertEqual(sys.getrefcount(pj), rc + 2)
         self.assertTrue(np.all(traj == traj_data))
-        self.assertTrue(np.all(time == np.array([1.0])))
+        self.assertTrue(np.all(time == np.array([0.0, 1.0])))
         self.assertEqual(status, 0)
 
         with self.assertRaises(ValueError) as cm:
@@ -322,11 +334,11 @@ class polyjectory_test_case(_ut.TestCase):
             time[:] = 0
 
         self.assertTrue(np.all(traj == traj_data))
-        self.assertTrue(np.all(time == np.array([1.0])))
+        self.assertTrue(np.all(time == np.array([0.0, 1.0])))
 
         traj, time, status = pj[1]
         self.assertTrue(np.all(traj == traj_data))
-        self.assertTrue(np.all(time == np.array([3.0])))
+        self.assertTrue(np.all(time == np.array([0.0, 3.0])))
         self.assertEqual(status, 1)
 
         with self.assertRaises(IndexError) as cm:
@@ -373,7 +385,7 @@ class polyjectory_test_case(_ut.TestCase):
                 [tdata6] * 2,
                 [tdata7] * 2,
             ],
-            [[1.0, 2.0]] * 8,
+            [[0.0, 1.0, 2.0]] * 8,
             [0] * 8,
         )
 

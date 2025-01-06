@@ -172,7 +172,7 @@ _supgp_group_names = [
     # NOTE: orbcomm satellites are not showing
     # up any more in the supgp data since mid/late
     # December.
-    #"orbcomm",
+    # "orbcomm",
     "iss",
     "css",
     "cpf",
