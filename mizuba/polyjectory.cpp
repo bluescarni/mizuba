@@ -270,10 +270,17 @@ polyjectory::polyjectory(ptag,
             const auto cur_time = time_spans[i];
 
             // The number of times must be consistent with the number of steps.
-            if (cur_traj.extent(0) != cur_time.extent(0)) [[unlikely]] {
+            if (cur_time.extent(0) == 0u) {
+                // No time data, this must be an empty trajectory.
+                if (cur_traj.extent(0) != 0u) [[unlikely]] {
+                    throw std::invalid_argument(fmt::format("The trajectory of the object at index {} has a nonzero "
+                                                            "number of steps but no associated time data",
+                                                            i));
+                }
+            } else if (cur_time.extent(0) - 1u != cur_traj.extent(0)) [[unlikely]] {
                 throw std::invalid_argument(
                     fmt::format("The number of steps for the trajectory of the object at index {} is {}, but the "
-                                "number of times is {} - the two numbers must be equal",
+                                "number of times is {} (the number of times must be equal to the number of steps + 1)",
                                 i, cur_traj.extent(0), cur_time.extent(0)));
             }
 
@@ -368,9 +375,9 @@ polyjectory::polyjectory(ptag,
                                 fmt::format("A non-finite time coordinate was found for the object at index {}", i));
                         }
 
-                        if (cur_time(j) <= 0) [[unlikely]] {
+                        if (cur_time(j) < 0) [[unlikely]] {
                             throw std::invalid_argument(
-                                fmt::format("A non-positive time coordinate was found for the object at index {}", i));
+                                fmt::format("A negative time coordinate was found for the object at index {}", i));
                         }
 
                         if (j > 0u && !(cur_time(j) > cur_time(j - 1u))) [[unlikely]] {
@@ -478,6 +485,8 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
     // the total number of floating-point values expected in the files.
     safe_size_t tot_num_traj_values = 0, tot_num_time_values = 0;
 
+    // NOTE: this should be parallelisable with some effort, if needed. The only complication
+    // would be the handling of safe arithmetics.
     for (decltype(traj_offsets.size()) i = 0; i < traj_offsets.size(); ++i) {
         const auto [offset, n_steps] = traj_offsets[i];
 
@@ -494,11 +503,12 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
             // An offset at index i > 0 must be consistent with the previous offset and n_steps.
             const auto [prev_offset, prev_n_steps] = traj_offsets[i - 1u];
 
-            if (!(offset > prev_offset)) [[unlikely]] {
-                throw std::invalid_argument(fmt::format(
-                    "Invalid trajectory offsets vector passed to the constructor of a polyjectory: "
-                    "the offset of the object at index {} is not greater than the offset of the previous object",
-                    i));
+            // NOTE: the two offsets will be equal if the previous trajectory is empty, thus we check with '<'.
+            if (offset < prev_offset) [[unlikely]] {
+                throw std::invalid_argument(
+                    fmt::format("Invalid trajectory offsets vector passed to the constructor of a polyjectory: "
+                                "the offset of the object at index {} is less than the offset of the previous object",
+                                i));
             }
 
             if (offset - prev_offset != safe_size_t(prev_n_steps) * 7u * op1) [[unlikely]] {
@@ -512,7 +522,10 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
 
         // Update tot_num_traj_values and tot_num_time_values.
         tot_num_traj_values += safe_size_t(n_steps) * 7u * op1;
-        tot_num_time_values += n_steps;
+        // NOTE: the total number of time values for the current trajectory is zero if n_steps == 0,
+        // otherwise it is n_steps + 1. n_steps + 1 is safe to compute as we computed n_steps * 7
+        // the line before.
+        tot_num_time_values += n_steps + static_cast<unsigned>(n_steps != 0u);
     }
 
     if (tot_num_traj_values == 0u) [[unlikely]] {
@@ -522,7 +535,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
 
     // Build the time offsets vector from the trajectory offsets.
     // NOTE: all computations here are safe because we managed to compute
-    // expected_tot_num_values without overflow.
+    // tot_num_time_values without overflow.
     std::vector<std::size_t> time_offsets;
     time_offsets.reserve(traj_offsets.size());
     for (decltype(traj_offsets.size()) i = 0; i < traj_offsets.size(); ++i) {
@@ -530,7 +543,8 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
             time_offsets.push_back(0);
         } else {
             const auto [_, prev_nsteps] = traj_offsets[i - 1u];
-            time_offsets.push_back(time_offsets.back() + prev_nsteps);
+            // NOTE: as usual, we need to add +1 to prev_nsteps if the previous trajectory is not empty.
+            time_offsets.push_back(time_offsets.back() + prev_nsteps + static_cast<unsigned>(prev_nsteps != 0u));
         }
     }
 
@@ -626,9 +640,9 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                                 fmt::format("A non-finite time coordinate was found for the object at index {}", i));
                         }
 
-                        if (cur_time(j) <= 0) [[unlikely]] {
+                        if (cur_time(j) < 0) [[unlikely]] {
                             throw std::invalid_argument(
-                                fmt::format("A non-positive time coordinate was found for the object at index {}", i));
+                                fmt::format("A negative time coordinate was found for the object at index {}", i));
                         }
 
                         if (j > 0u && !(cur_time(j) > cur_time(j - 1u))) [[unlikely]] {
@@ -714,7 +728,7 @@ polyjectory::operator[](std::size_t i) const
     return {traj_span_t{traj_ptr, nsteps,
                         // NOTE: static_cast is ok, m_poly_op1 was originally a std::size_t.
                         static_cast<std::size_t>(m_impl->m_poly_op1)},
-            time_span_t{time_ptr, nsteps}, m_impl->m_status[i]};
+            time_span_t{time_ptr, nsteps + static_cast<unsigned>(nsteps != 0u)}, m_impl->m_status[i]};
 }
 
 // NOTE: using std::size_t as a size type is ok because we used std::size_t-based

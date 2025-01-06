@@ -65,7 +65,12 @@ public:
     // - the polynomial order + 1.
     using traj_span_t
         = heyoka::mdspan<const double, heyoka::extents<std::size_t, std::dynamic_extent, 7, std::dynamic_extent>>;
-    // Span representing the sequence of step end times for a trajectory.
+
+    // Span representing time data for a trajectory. If the trajectory has no steps,
+    // then the span will be empty. Otherwise, the first value in the span
+    // will represent the start time of the trajectory (relative to the polyjectory
+    // epoch), while the remaining values will repesent the step end times (relative to
+    // the polyjectory epoch).
     using time_span_t = heyoka::mdspan<const double, heyoka::dextents<std::size_t, 1>>;
 
     // Datatype representing:
@@ -73,6 +78,7 @@ public:
     // - the offset (in number of floating-point values) at which data for a
     //   specific trajectory begins in a datafile,
     // - the total number of steps in the trajectory.
+    //
     // This is used for locating trajectories into a data file.
     struct traj_offset {
         std::size_t offset;
