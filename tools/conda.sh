@@ -11,7 +11,7 @@ wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge
 export deps_dir=$HOME/local
 export PATH="$HOME/miniconda/bin:$PATH"
 bash miniconda.sh -b -p $HOME/miniconda
-conda create -y -p $deps_dir c-compiler cxx-compiler cmake ninja \
+conda create -y -p $deps_dir cmake ninja \
     tbb-devel tbb libboost-devel heyoka fmt spdlog 'python=3.12' numpy \
     pybind11 pandas astropy heyoka.py requests polars
 source activate $deps_dir
