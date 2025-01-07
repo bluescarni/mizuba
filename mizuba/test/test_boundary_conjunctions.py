@@ -38,13 +38,28 @@ class boundary_conjunctions_test_case(_ut.TestCase):
         cthresh = 0.25
 
         # Time data for the first trajectory.
-        tm_data_0 = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+        tm_data_0 = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
         # Time data for the second trajectory.
-        tm_data_1 = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3]
+        tm_data_1 = [
+            0.0,
+            0.1,
+            0.2,
+            0.3,
+            0.4,
+            0.5,
+            0.6,
+            0.7,
+            0.8,
+            0.9,
+            1.0,
+            1.1,
+            1.2,
+            1.3,
+        ]
 
         # Construct the trajectory data for both objects.
         traj_data = [[], []]
-        for tm in tm_data_1:
+        for tm in tm_data_1[1:]:
             tdata_0 = np.zeros((7, 4))
             tdata_0[0, 0] = 1.0 - (tm - 0.1)
             tdata_0[0, 1] = -1.0
@@ -92,11 +107,11 @@ class boundary_conjunctions_test_case(_ut.TestCase):
         cthresh = 0.25
 
         # Time data for both trajectories.
-        tm_data = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+        tm_data = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
         # Construct the trajectory data for both objects.
         traj_data = [[], []]
-        for tm in tm_data:
+        for tm in tm_data[1:]:
             tdata_0 = np.zeros((7, 4))
             tdata_0[0, 0] = 0.1 + (tm - 0.1)
             tdata_0[0, 1] = 1.0

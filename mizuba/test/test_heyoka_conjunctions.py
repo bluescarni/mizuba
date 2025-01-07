@@ -175,7 +175,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         trajs = []
         for i in range(N):
             trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
-        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+        pj = polyjectory(trajs, [c_out.times] * N, [0] * N)
 
         # Run first a conjunction detection with stupidly large conjunction threshold,
         # so that we detect all conjunctions.
@@ -393,7 +393,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         trajs = []
         for i in range(N):
             trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
-        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+        pj = polyjectory(trajs, [c_out.times] * N, [0] * N)
 
         cj = conj(pj, 1e-4, 0.1)
 
@@ -473,7 +473,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         trajs = []
         for i in range(N):
             trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
-        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+        pj = polyjectory(trajs, [c_out.times] * N, [0] * N)
 
         cj = conj(pj, 1e-4, 0.1)
 
@@ -523,7 +523,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         trajs = []
         for i in range(N):
             trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
-        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+        pj = polyjectory(trajs, [c_out.times] * N, [0] * N)
 
         cj = conj(pj, 1e4, 0.1)
 
@@ -575,7 +575,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         trajs = []
         for i in range(N):
             trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
-        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+        pj = polyjectory(trajs, [c_out.times] * N, [0] * N)
 
         # Run conjunction detection with a very large threshold.
         cj = conj(pj, 10000.0, 0.1)

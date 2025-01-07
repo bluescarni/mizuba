@@ -58,13 +58,6 @@ namespace
 auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_begin, double cd_end, double conj_thresh,
                          const detail::conj_jit_data &cjd)
 {
-    // Fetch the compiled function for the computation of the aabb.
-    auto *aabb_cs_cfunc = cjd.aabb_cs_cfunc;
-
-    // Prepare the output and the parameters array for the compiled function.
-    std::array<double, 8> xyzr_int{};
-    std::array<double, 3> cs_pars{};
-
     // Init the return values.
     const auto finf = std::numeric_limits<float>::infinity();
     std::array<float, 4> lb{{finf, finf, finf, finf}};
@@ -74,14 +67,29 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
     const auto [traj_span, time_span, _] = pj[obj_idx];
 
     // Fetch the number of trajectory steps.
-    const auto nsteps = time_span.extent(0);
+    const auto nsteps = traj_span.extent(0);
+    assert((nsteps == 0u && time_span.extent(0) == 0u) || nsteps + 1u == time_span.extent(0));
 
-    // Make sure that nsteps is representable as std::ptrdiff_t. This ensures
-    // that we can safely calculate pointer subtractions in the time span data,
+    // Exit early if there are no trajectory steps. The AABB will be filled with infinities.
+    // NOTE: we special case early so that we do not have to bother with complex logic in the
+    // rest of the function.
+    if (nsteps == 0u) {
+        return std::make_pair(lb, ub);
+    }
+
+    // Fetch the compiled function for the computation of the aabb.
+    auto *aabb_cs_cfunc = cjd.aabb_cs_cfunc;
+
+    // Prepare the output and the parameters array for the compiled function.
+    std::array<double, 8> xyzr_int{};
+    std::array<double, 3> cs_pars{};
+
+    // Make sure that nsteps + 1 (i.e., the number of time datapoints) is representable as std::ptrdiff_t.
+    // This ensures that we can safely calculate pointer subtractions in the time span data,
     // which allows us to determine the index of a trajectory timestep (see the code
     // below computing ss_idx).
     try {
-        static_cast<void>(boost::numeric_cast<std::ptrdiff_t>(nsteps));
+        static_cast<void>(boost::numeric_cast<std::ptrdiff_t>(nsteps + 1u));
         // LCOV_EXCL_START
     } catch (...) {
         throw std::overflow_error("Overflow detected in the trajectory data: the number of steps is too large");
@@ -93,20 +101,24 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
 
     // Fetch begin/end iterators to the time span.
     const auto t_begin = time_span.data_handle();
-    const auto t_end = t_begin + nsteps;
+    const auto t_end = t_begin + (nsteps + 1u);
 
     // We need to locate the range in the trajectory data
-    // that fully includes the current conjunction step.
+    // that includes the current conjunction step.
+
     // First we locate the first trajectory step whose end is strictly
-    // *greater* than the begin of the conjunction step.
-    const auto ts_begin = std::upper_bound(t_begin, t_end, cd_begin);
+    // *greater* than the begin of the conjunction step. This will be
+    // the chronologically first trajectory step that spans over the
+    // conjunction step.
+    const auto ts_begin = std::upper_bound(t_begin + 1, t_end, cd_begin);
     // Then, we locate the first trajectory step whose end is *greater than or
-    // equal to* the end of the conjunction step.
-    // NOTE: instead of this, perhaps we can just iterate below until
-    // t_end or until the first trajectory step whose end is *greater than or
-    // equal to* the end of the conjunction step, whichever comes first.
+    // equal to* the end of the conjunction step. This will be
+    // the chronologically last trajectory step that spans over the
+    // conjunction step.
+    // NOTE: instead of doing another binary search here, we could alternatively
+    // start iterating from ts_begin and decide as-we-iterate when to stop.
     auto ts_end = std::lower_bound(ts_begin, t_end, cd_end);
-    // Bump it up by one to define a half-open range.
+    // Bump ts_end up by one in order to define a half-open range.
     // NOTE: don't bump it if it is already at the end.
     // This could happen for instance if an object does not
     // have trajectory data for the current conjunction step,
@@ -127,9 +139,10 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
         // the conjunction step.
 
         // Determine the initial time coordinate of the trajectory step.
-        // If it is t_begin, ss_start will be zero, otherwise
-        // ss_start is given by the end time of the previous step.
-        const auto ss_start = (it == t_begin) ? 0. : *(it - 1);
+        // This will be either the end of the previous step, or, if it is
+        // t_begin + 1, the initial time of the (entire) trajectory.
+        assert(it != t_begin);
+        const auto ss_start = *(it - 1);
 
         // Determine absolute lower/upper bounds of the evaluation interval.
         // NOTE: min/max is fine here: values in time_span are always checked
@@ -144,9 +157,9 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
         const auto h_int_ub = ev_ub - ss_start;
 
         // Determine the index of the trajectory step.
-        // NOTE: we checked earlier in this function that it - t_begin
+        // NOTE: we checked earlier in this function that it - (t_begin + 1)
         // can be computed safely.
-        const auto ss_idx = static_cast<std::size_t>(it - t_begin);
+        const auto ss_idx = static_cast<std::size_t>(it - (t_begin + 1));
 
         // Fetch a pointer to the polynomial coefficients for the
         // trajectory step.
@@ -293,7 +306,8 @@ void conjunctions::detect_conjunctions_aabbs(std::size_t cd_idx, std::vector<flo
                                       // Update the local AABB and write to cd_aabbs_span the aabb of the
                                       // current object.
                                       // NOTE: min/max usage is safe, because compute_object_aabb()
-                                      // ensures that the bounding boxes are finite.
+                                      // either ensures that the bounding boxes are finite, or it leaves
+                                      // them inited with infinities.
                                       for (auto i = 0u; i < 4u; ++i) {
                                           cur_local_lb[i] = std::min(cur_local_lb[i], lb[i]);
                                           cur_local_ub[i] = std::max(cur_local_ub[i], ub[i]);
@@ -303,8 +317,9 @@ void conjunctions::detect_conjunctions_aabbs(std::size_t cd_idx, std::vector<flo
                                   }
 
                                   // Atomically update the global AABB for the current conjunction step.
-                                  // NOTE: atomic_min/max() usage here is safe because we checked that
-                                  // all lb/ub values are finite.
+                                  // NOTE: atomic_min/max() usage here is safe because we either checked that
+                                  // all lb/ub values are finite, or we left all lb/ub values in their default
+                                  // infinity state.
                                   for (auto i = 0u; i < 4u; ++i) {
                                       detail::atomic_min(cur_global_lb[i], cur_local_lb[i]);
                                       detail::atomic_max(cur_global_ub[i], cur_local_ub[i]);
@@ -316,19 +331,22 @@ void conjunctions::detect_conjunctions_aabbs(std::size_t cd_idx, std::vector<flo
         const auto cur_lb = cur_global_lb[i].load();
         const auto cur_ub = cur_global_ub[i].load();
 
-        // NOTE: this is ensured by the safety margins we added when converting
-        // the double-precision AABB to single-precision. That is, even if the original
-        // double-precision AABB has a size of zero in any dimension, the conversion
-        // to single precision resulted in a small but nonzero size in every dimension.
-        assert(cur_ub > cur_lb);
+        // NOTE: run these checks only on finite global AABBs.
+        if (std::isfinite(cur_lb)) {
+            // NOTE: this is ensured by the safety margins we added when converting
+            // the double-precision AABB to single-precision. That is, even if the original
+            // double-precision AABB has a size of zero in any dimension, the conversion
+            // to single precision resulted in a small but nonzero size in every dimension.
+            assert(cur_ub > cur_lb);
 
-        // Check that we can safely compute the difference between ub and lb. This is
-        // needed when computing morton codes.
-        // LCOV_EXCL_START
-        if (!std::isfinite(cur_ub - cur_lb)) [[unlikely]] {
-            throw std::invalid_argument("A global bounding box with non-finite size was generated");
+            // Check that we can safely compute the difference between ub and lb. This is
+            // needed when computing morton codes.
+            // LCOV_EXCL_START
+            if (!std::isfinite(cur_ub - cur_lb)) [[unlikely]] {
+                throw std::invalid_argument("A global bounding box with non-finite size was generated");
+            }
+            // LCOV_EXCL_STOP
         }
-        // LCOV_EXCL_STOP
 
         cd_aabbs_span(nobjs, 0, i) = cur_lb;
         cd_aabbs_span(nobjs, 1, i) = cur_ub;

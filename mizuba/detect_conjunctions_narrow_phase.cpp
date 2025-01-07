@@ -178,13 +178,18 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                 const auto [traj_i, time_i, status_i] = pj[i];
                 const auto [traj_j, time_j, status_j] = pj[j];
 
+                // Fetch the total number of trajectory steps.
+                const auto nsteps_i = traj_i.extent(0);
+                const auto nsteps_j = traj_j.extent(0);
+                assert(nsteps_i > 0u && nsteps_j > 0u);
+
                 // Overflow checks: we must be sure we can represent the total number
-                // of trajectory steps with std::ptrdiff_t, so that we can safely
+                // of trajectory steps + 1 with std::ptrdiff_t, so that we can safely
                 // perform subtractions between pointers to the time data (see code
                 // below).
                 try {
-                    static_cast<void>(boost::numeric_cast<std::ptrdiff_t>(time_i.extent(0)));
-                    static_cast<void>(boost::numeric_cast<std::ptrdiff_t>(time_j.extent(0)));
+                    static_cast<void>(boost::numeric_cast<std::ptrdiff_t>(nsteps_i + 1u));
+                    static_cast<void>(boost::numeric_cast<std::ptrdiff_t>(nsteps_j + 1u));
                     // LCOV_EXCL_START
                 } catch (...) {
                     throw std::overflow_error(
@@ -192,24 +197,20 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                 }
                 // LCOV_EXCL_STOP
 
-                // Fetch the total number of trajectory steps.
-                const auto nsteps_i = time_i.extent(0);
-                const auto nsteps_j = time_j.extent(0);
-
                 // Fetch begin/end iterators to the time spans.
                 const auto t_begin_i = time_i.data_handle();
-                const auto t_end_i = t_begin_i + nsteps_i;
+                const auto t_end_i = t_begin_i + (nsteps_i + 1u);
                 const auto t_begin_j = time_j.data_handle();
-                const auto t_end_j = t_begin_j + nsteps_j;
+                const auto t_end_j = t_begin_j + (nsteps_j + 1u);
 
                 // Determine, for both objects, the range of trajectory steps
-                // that fully includes the current conjunction step.
+                // that includes the current conjunction step.
                 // NOTE: same code as in compute_object_aabb().
-                const auto ts_begin_i = std::upper_bound(t_begin_i, t_end_i, cd_begin);
+                const auto ts_begin_i = std::upper_bound(t_begin_i + 1, t_end_i, cd_begin);
                 auto ts_end_i = std::lower_bound(ts_begin_i, t_end_i, cd_end);
                 ts_end_i += (ts_end_i != t_end_i);
 
-                const auto ts_begin_j = std::upper_bound(t_begin_j, t_end_j, cd_begin);
+                const auto ts_begin_j = std::upper_bound(t_begin_j + 1, t_end_j, cd_begin);
                 auto ts_end_j = std::lower_bound(ts_begin_j, t_end_j, cd_end);
                 ts_end_j += (ts_end_j != t_end_j);
 
@@ -228,8 +229,10 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                     ++n_tot_conj_candidates;
 
                     // Initial time coordinates of the trajectory steps of i and j.
-                    const auto ts_start_i = (it_i == t_begin_i) ? 0. : *(it_i - 1);
-                    const auto ts_start_j = (it_j == t_begin_j) ? 0. : *(it_j - 1);
+                    assert(it_i != t_begin_i);
+                    assert(it_j != t_begin_j);
+                    const auto ts_start_i = *(it_i - 1);
+                    const auto ts_start_j = *(it_j - 1);
 
                     // Determine the intersections of the two trajectory steps
                     // with the current conjunction step.
@@ -276,8 +279,8 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                     // Fetch pointers to the trajectory polynomials for the two objects.
                     // NOTE: we verified earlier we can safely compute differences between
                     // pointers to the time data.
-                    const auto ts_idx_i = static_cast<std::size_t>(it_i - t_begin_i);
-                    const auto ts_idx_j = static_cast<std::size_t>(it_j - t_begin_j);
+                    const auto ts_idx_i = static_cast<std::size_t>(it_i - (t_begin_i + 1));
+                    const auto ts_idx_j = static_cast<std::size_t>(it_j - (t_begin_j + 1));
 
                     const auto *poly_xi = &traj_i(ts_idx_i, 0, 0);
                     const auto *poly_yi = &traj_i(ts_idx_i, 1, 0);
@@ -523,12 +526,12 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                         // We now handle the case in which we are at the beginning of trajectory data
                         // for at least one object. The logic is similar to the previous case.
                         //
-                        // The it_i == t_begin_i checks that we are at the first trajectory step,
+                        // The it_i == t_begin_i + 1 checks that we are at the first trajectory step,
                         // while lb_rf == 0 checks that the root finding interval begins when the
                         // first trajectory step begins. The second check is needed because being in the
                         // first trajectory step does not necessarily mean that we are considering the
                         // entire trajectory step in the root finding.
-                        if ((it_i == t_begin_i && lb_rf == 0) || (it_j == t_begin_j && lb_rf == 0)) {
+                        if ((it_i == t_begin_i + 1 && lb_rf == 0) || (it_j == t_begin_j + 1 && lb_rf == 0)) {
                             // Calculate the value of the derivative of the distance square at the beginning
                             // of the first trajectory step.
                             const auto min_cand_dval = detail::horner_eval(ts_diff_der_ptr, order, 0.);

@@ -632,7 +632,10 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                     }
 
                     // Build a time span and check the data.
-                    const time_span_t cur_time{time_file_base_ptr + time_offset, n_steps};
+                    const time_span_t cur_time{time_file_base_ptr + time_offset,
+                                               // NOTE: as usual, the total number of time data points is
+                                               // n_steps + 1 if n_steps > 0, zero otherwise.
+                                               n_steps + static_cast<unsigned>(n_steps != 0u)};
 
                     for (std::size_t j = 0; j < cur_time.extent(0); ++j) {
                         if (!std::isfinite(cur_time(j))) [[unlikely]] {

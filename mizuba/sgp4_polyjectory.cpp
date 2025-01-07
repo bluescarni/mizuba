@@ -489,6 +489,7 @@ auto perform_ode_integration(const TA &tmpl_ta, const Path &tmp_dir_path, SatDat
                         for (std::uint32_t i = 0; i < e_batch_size; ++i) {
                             tmp_write_buffers[i].first.clear();
                             tmp_write_buffers[i].second.clear();
+                            tmp_write_buffers[i].second.push_back(0.);
                         }
 
                         // Set up:

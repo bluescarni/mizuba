@@ -154,6 +154,13 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
     // NOTE: this is used only in debug mode.
     [[maybe_unused]] const std::vector<float> &cd_aabbs)
 {
+    // If the tree is empty, it means that there are no objects
+    // with trajectory data for the current conjunction step. Exit early
+    // with an empty list of detect aabb collisions.
+    if (tree.empty()) {
+        return {};
+    }
+
     // Cache the total number of objects.
     const auto tot_nobjs = static_cast<std::size_t>(otypes.size());
     assert(cd_vidx.size() == tot_nobjs);

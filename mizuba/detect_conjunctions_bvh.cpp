@@ -304,6 +304,9 @@ void conjunctions::detect_conjunctions_bvh(std::vector<bvh_node> &tree, std::vec
     try {
         // Make sure the difference type of isinf_view can represent tot_nobjs.
         static_cast<void>(boost::numeric_cast<std::ranges::range_difference_t<decltype(isinf_view)>>(tot_nobjs));
+        // Make sure that std::ptrdiff_t can represent tot_nobjs. This is required when computing
+        // the nolc property in the bvh_level_data struct during tree contruction.
+        static_cast<void>(boost::numeric_cast<std::ptrdiff_t>(tot_nobjs));
         // LCOV_EXCL_START
     } catch (...) {
         throw std::overflow_error("Overflow detected during the computation of the number of effective objects");
@@ -314,20 +317,25 @@ void conjunctions::detect_conjunctions_bvh(std::vector<bvh_node> &tree, std::vec
     const auto it_inf = std::ranges::lower_bound(isinf_view, true);
     // Compute the total number of objects with trajectory data.
     const auto nobjs = boost::numeric_cast<std::uint32_t>(it_inf - std::ranges::begin(isinf_view));
-    // NOTE: we cannot have conjunction steps without trajectory data.
-    assert(nobjs > 0u);
 
     // Clear out the tree.
     // NOTE: no need to clear out l_buffer as it is appropriately
     // resized and written to at every new level during tree construction.
     tree.clear();
-    aux_data.clear();
 
     // Insert the root node.
     // NOTE: this is inited as a leaf node without a parent.
     tree.emplace_back(0, nobjs, -1, -1, detail::default_lb, detail::default_ub);
+
+    // Nothing to do if we do not have any object with trajectory data.
+    if (nobjs == 0u) {
+        return;
+    }
+
+    // Init the aux data for the root node.
     // NOTE: nn_level is inited to zero, even if we already know it will be set
     // to 1 eventually. split_idx is inited to zero (though it may increase later).
+    aux_data.clear();
     aux_data.emplace_back(0, 0, -1);
 
     // The number of nodes at the current level.
