@@ -325,14 +325,15 @@ void conjunctions::detect_conjunctions_bvh(std::vector<bvh_node> &tree, std::vec
     // resized and written to at every new level during tree construction.
     tree.clear();
 
-    // Insert the root node.
-    // NOTE: this is inited as a leaf node without a parent.
-    tree.emplace_back(0, nobjs, -1, -1, detail::default_lb, detail::default_ub);
-
-    // Nothing to do if we do not have any object with trajectory data.
+    // Nothing to do if we do not have any object with trajectory data. The tree will be empty
+    // and broad-phase (and then narrow-phase) conjunction detection will be skipped altogether.
     if (nobjs == 0u) {
         return;
     }
+
+    // Insert the root node.
+    // NOTE: this is inited as a leaf node without a parent.
+    tree.emplace_back(0, nobjs, -1, -1, detail::default_lb, detail::default_ub);
 
     // Init the aux data for the root node.
     // NOTE: nn_level is inited to zero, even if we already know it will be set
