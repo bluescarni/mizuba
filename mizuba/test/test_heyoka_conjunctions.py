@@ -545,8 +545,8 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
 
         # Setup a fixed-centre problem with two non-interacting
         # objects following Keplerian orbits. The first orbit
-        # is circular, the second elliptic. The two objects will collide
-        # at the pericentre of the elliptic orbit.
+        # is circular, the second elliptic. The two objects will experience
+        # conjunctions at the peri/apo centre of the elliptic orbit.
         N = 2
         ta, hy_conj_list = self._make_kep_ta(1.0, 1.0, N)
 
@@ -564,11 +564,10 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         ic_rs[1, 5] = -1.0 * sqrt((1 - ecc) / (1 + ecc))
         ic_rs[1, 6] = 1.0 + ecc
 
-        # Propagate until a short time before the collision.
+        # Propagate until a short time before the second conjunction.
         c_out = ta.propagate_for(pi - 1e-6, c_output=True)[4]
 
-        # NOTE: heyoka must detect only the initial conjunction
-        # at t == 0.
+        # NOTE: heyoka must detect only the initial conjunction at t == 0.
         self.assertEqual(len(hy_conj_list), 1)
 
         # Build the polyjectory.
@@ -585,5 +584,6 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         # of the mutual distance.
         self.assertEqual(len(cj.conjunctions), 2)
         self.assertEqual(cj.conjunctions["tca"][0], 0.0)
+        self.assertAlmostEqual(cj.conjunctions["dca"][0], ecc, places=15)
         self.assertAlmostEqual(cj.conjunctions["tca"][1], pi - 1e-6, places=15)
         self.assertAlmostEqual(cj.conjunctions["dca"][0], ecc, places=15)
