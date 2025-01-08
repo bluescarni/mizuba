@@ -79,7 +79,7 @@ class conjunctions_test_case(_ut.TestCase):
             if not np.isfinite(global_lb[0]):
                 # Non-finite value detected in the global AABB.
 
-                # All values must be infinity.
+                # All global AABB values must be infinity.
                 self.assertTrue(np.all(np.isinf(global_lb)))
                 self.assertTrue(np.all(np.isinf(global_ub)))
 
@@ -111,6 +111,13 @@ class conjunctions_test_case(_ut.TestCase):
                 if begin_time >= traj_times[-1]:
                     # The trajectory data for the current object
                     # ends before the beginning of the current conjunction
+                    # step. Skip the current object and assert that its
+                    # aabb is infinite.
+                    self.assertTrue(np.all(np.isinf(aabb)))
+                    continue
+                elif traj_times[0] >= end_time:
+                    # The trajectory data for the current object
+                    # begins at or after the end time of the conjunction
                     # step. Skip the current object and assert that its
                     # aabb is infinite.
                     self.assertTrue(np.all(np.isinf(aabb)))
@@ -931,3 +938,58 @@ class conjunctions_test_case(_ut.TestCase):
         )
         c = conj(pj, conj_thresh=1.0, conj_det_interval=0.1)
         self.assertEqual(len(c.conjunctions), 0)
+
+    def test_nonzero_tbegin(self):
+        # Simple test for a single object
+        # whose trajectory begins at t > 0.
+        from .. import conjunctions as conj, polyjectory
+        from ._planar_circ import _planar_circ_tcs, _planar_circ_times
+        import numpy as np
+
+        # Deterministic seeding.
+        rng = np.random.default_rng(420)
+
+        # Shift up the times.
+        _planar_circ_times = _planar_circ_times + 1.0
+
+        # Single planar circular orbit case.
+        pj = polyjectory([_planar_circ_tcs], [_planar_circ_times], [0])
+
+        # Run the test for several conjunction detection intervals.
+        for conj_det_interval in [0.01, 0.1, 0.5, 2.0, 5.0, 7.0, 10.0]:
+            c = conj(pj, conj_thresh=0.1, conj_det_interval=conj_det_interval)
+
+            # Shape checks.
+            self.assertEqual(c.aabbs.shape[0], c.cd_end_times.shape[0])
+            self.assertEqual(c.srt_aabbs.shape[0], c.cd_end_times.shape[0])
+            self.assertEqual(c.srt_aabbs.shape, c.aabbs.shape)
+            self.assertEqual(c.mcodes.shape[0], c.cd_end_times.shape[0])
+            self.assertEqual(c.srt_mcodes.shape[0], c.cd_end_times.shape[0])
+            self.assertEqual(c.srt_idx.shape[0], c.cd_end_times.shape[0])
+
+            # The conjunction detection end time must coincide
+            # with the trajectory end time.
+            self.assertEqual(c.cd_end_times[-1], pj[0][1][-1])
+
+            # The global aabbs must all coincide
+            # exactly with the only object's aabbs.
+            self.assertTrue(np.all(c.aabbs[:, 0] == c.aabbs[:, 1]))
+            # With only one object, aabbs and srt_aabbs must be identical.
+            self.assertTrue(np.all(c.aabbs == c.srt_aabbs))
+
+            # In the z and r coordinates, all aabbs
+            # should be of size circa 0.1 accounting for the
+            # conjunction threshold.
+            self.assertTrue(np.all(c.aabbs[:, 0, 0, 2] >= -0.05001))
+            self.assertTrue(np.all(c.aabbs[:, 0, 1, 2] <= 0.05001))
+
+            self.assertTrue(np.all(c.aabbs[:, 0, 0, 3] >= 1 - 0.05001))
+            self.assertTrue(np.all(c.aabbs[:, 0, 1, 3] <= 1 + 0.05001))
+
+            # Verify the aabbs.
+            self._verify_conj_aabbs(c, rng)
+
+            # No aabb collisions or conjunctions expected.
+            for i in range(c.n_cd_steps):
+                self.assertEqual(len(c.get_aabb_collisions(i)), 0)
+            self.assertEqual(len(c.conjunctions), 0)
