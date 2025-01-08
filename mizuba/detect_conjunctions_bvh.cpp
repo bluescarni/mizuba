@@ -302,10 +302,12 @@ void conjunctions::detect_conjunctions_bvh(std::vector<bvh_node> &tree, std::vec
 
     // Overflow check.
     try {
-        // Make sure the difference type of isinf_view can represent tot_nobjs.
+        // Make sure the difference type of isinf_view can represent tot_nobjs. We need this in order to be able
+        // to safely subtract isinf_view iterators.
         static_cast<void>(boost::numeric_cast<std::ranges::range_difference_t<decltype(isinf_view)>>(tot_nobjs));
         // Make sure that std::ptrdiff_t can represent tot_nobjs. This is required when computing
-        // the nolc property in the bvh_level_data struct during tree contruction.
+        // the nolc property in the bvh_level_data struct during tree contruction (which involves a pointer
+        // subtraction).
         static_cast<void>(boost::numeric_cast<std::ptrdiff_t>(tot_nobjs));
         // LCOV_EXCL_START
     } catch (...) {
