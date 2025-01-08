@@ -220,6 +220,11 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
         }
     }
 
+    // NOTE: lb/ub must all be finite as we made sure early on that there is an overlap between the
+    // trajectory and the conjunction step, and in the loop we checked for finiteness.
+    assert(std::ranges::all_of(lb, [](auto x) { return std::isfinite(x); }));
+    assert(std::ranges::all_of(ub, [](auto x) { return std::isfinite(x); }));
+
     return std::make_pair(lb, ub);
 }
 
