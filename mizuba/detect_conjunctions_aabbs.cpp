@@ -77,6 +77,14 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
         return std::make_pair(lb, ub);
     }
 
+    // Also exit early if the trajectory does not begin strictly *before*
+    // the end of the conjunction step, or does not end strictly *after*
+    // the begin of the conjunction step. This means there is no overlap at all
+    // between the trajectory and the conjunction step.
+    if (!(time_span[0] < cd_end) || !(time_span[nsteps] > cd_begin)) {
+        return std::make_pair(lb, ub);
+    }
+
     // Fetch the compiled function for the computation of the aabb.
     auto *aabb_cs_cfunc = cjd.aabb_cs_cfunc;
 
@@ -104,7 +112,7 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
     const auto t_end = t_begin + (nsteps + 1u);
 
     // We need to locate the range in the trajectory data
-    // that includes the current conjunction step.
+    // that temporally overlaps with the current conjunction step.
 
     // First we locate the first trajectory step whose end is strictly
     // *greater* than the begin of the conjunction step. This will be
@@ -118,20 +126,14 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
     // NOTE: instead of doing another binary search here, we could alternatively
     // start iterating from ts_begin and decide as-we-iterate when to stop.
     auto ts_end = std::lower_bound(ts_begin, t_end, cd_end);
-    // Bump ts_end up by one in order to define a half-open range.
+    // Bump ts_end up by one in order to define a half-open iterator range.
     // NOTE: don't bump it if it is already at the end.
-    // This could happen for instance if an object does not
-    // have trajectory data for the current conjunction step,
-    // or if the trajectory data ends before the end of the
+    // This happens if the trajectory data ends before the end of the
     // conjunction step.
     ts_end += (ts_end != t_end);
 
-    // Iterate over all trajectory steps and update the bounding box
-    // for the current object.
-    // NOTE: if the object has no steps covering the current conjunction step,
-    // then this loop will never be entered, and the AABB for the object
-    // in the current conjunction step will remain inited with infinities. This is
-    // fine as we will deal with infinite AABBs later on.
+    // Iterate over all trajectory steps which overlap with the conjunction
+    // step and update the bounding box for the current object.
     for (auto it = ts_begin; it != ts_end; ++it) {
         // it points to the end time of a trajectory step which overlaps
         // with the current conjunction step. The polynomial evaluation

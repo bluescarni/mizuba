@@ -197,6 +197,13 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                 }
                 // LCOV_EXCL_STOP
 
+                // Both trajectories must begin before the end of the conjunction step, and they
+                // must end after the begin of the conjunction step.
+                assert(time_i[0] < cd_end);
+                assert(time_j[0] < cd_end);
+                assert(time_i[nsteps_i] > cd_begin);
+                assert(time_j[nsteps_j] > cd_begin);
+
                 // Fetch begin/end iterators to the time spans.
                 const auto t_begin_i = time_i.data_handle();
                 const auto t_end_i = t_begin_i + (nsteps_i + 1u);
@@ -204,7 +211,7 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                 const auto t_end_j = t_begin_j + (nsteps_j + 1u);
 
                 // Determine, for both objects, the range of trajectory steps
-                // that includes the current conjunction step.
+                // that temporally overlaps with the current conjunction step.
                 // NOTE: same code as in compute_object_aabb().
                 const auto ts_begin_i = std::upper_bound(t_begin_i + 1, t_end_i, cd_begin);
                 auto ts_end_i = std::lower_bound(ts_begin_i, t_end_i, cd_end);
@@ -248,7 +255,7 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                     // within which we need to do polynomial root finding.
                     // NOTE: at this stage lb_rf/ub_rf are still absolute time coordinates
                     // within the entire polyjectory time range.
-                    // NOTE: min/max fine here, all quantities are safe.
+                    // NOTE: min/max is fine here, all quantities are safe.
                     const auto lb_rf = std::max(lb_i, lb_j);
                     const auto ub_rf = std::min(ub_i, ub_j);
 
