@@ -483,7 +483,7 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                         // while *it_i == ub_rf checks that the root finding interval ends when the
                         // last trajectory step ends. The second check is needed because being in the
                         // last trajectory step does not necessarily mean that we are considering the
-                        // entire trajectory step in the root finding.
+                        // *entire* step for root finding.
                         if ((it_i + 1 == t_end_i && *it_i == ub_rf) || (it_j + 1 == t_end_j && *it_j == ub_rf)) {
                             // We need to evaluate the derivative of the distance function at the
                             // end of the time range. If it is negative, it is a minimum and
@@ -534,13 +534,14 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                         // for at least one object. The logic is similar to the previous case.
                         //
                         // The it_i == t_begin_i + 1 checks that we are at the first trajectory step,
-                        // while lb_rf == 0 checks that the root finding interval begins when the
+                        // while lb_rf == *t_begin_i checks that the root finding interval begins when the
                         // first trajectory step begins. The second check is needed because being in the
                         // first trajectory step does not necessarily mean that we are considering the
-                        // entire trajectory step in the root finding.
-                        if ((it_i == t_begin_i + 1 && lb_rf == 0) || (it_j == t_begin_j + 1 && lb_rf == 0)) {
+                        // *entire* step in the root finding.
+                        if ((it_i == t_begin_i + 1 && lb_rf == *t_begin_i)
+                            || (it_j == t_begin_j + 1 && lb_rf == *t_begin_j)) {
                             // Calculate the value of the derivative of the distance square at the beginning
-                            // of the first trajectory step.
+                            // of the root finding interval (which is always zero by definition).
                             const auto min_cand_dval = detail::horner_eval(ts_diff_der_ptr, order, 0.);
                             if (!std::isfinite(min_cand_dval)) [[unlikely]] {
                                 // LCOV_EXCL_START
