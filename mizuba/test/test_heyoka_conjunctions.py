@@ -557,11 +557,11 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         ecc = 0.3
 
         ic_rs[0, 0] = 1.0
-        ic_rs[0, 5] = 1.0
+        ic_rs[0, 4] = 1.0
         ic_rs[0, 6] = 1.0
 
         ic_rs[1, 0] = 1.0 + ecc
-        ic_rs[1, 5] = -1.0 * sqrt((1 - ecc) / (1 + ecc))
+        ic_rs[1, 4] = -1.0 * sqrt((1 - ecc) / (1 + ecc))
         ic_rs[1, 6] = 1.0 + ecc
 
         # Propagate until a short time before the second conjunction.
@@ -584,6 +584,53 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         # of the mutual distance.
         self.assertEqual(len(cj.conjunctions), 2)
         self.assertEqual(cj.conjunctions["tca"][0], 0.0)
-        self.assertAlmostEqual(cj.conjunctions["dca"][0], ecc, places=15)
         self.assertAlmostEqual(cj.conjunctions["tca"][1], pi - 1e-6, places=15)
         self.assertAlmostEqual(cj.conjunctions["dca"][0], ecc, places=15)
+
+        # A second test in which we repeat the integration of the circular
+        # orbit, but starting from (0, 1) rather than (1, 0), and we stop
+        # again the integration right before the second conjunction. The objective
+        # is to generate trajectory data for the circular orbit that begins
+        # later than the other orbit.
+        ta.reset_cooldowns()
+        ta.time = pi / 2
+        ic_rs[:] = 0.0
+
+        ic_rs[0, 1] = 1.0
+        ic_rs[0, 3] = -1.0
+        ic_rs[0, 6] = 1.0
+        ic_rs[1, 0] = 1.0 + ecc
+        ic_rs[1, 4] = -1.0 * sqrt((1 - ecc) / (1 + ecc))
+        ic_rs[1, 6] = 1.0 + ecc
+
+        new_c_out = ta.propagate_for(pi / 2 - 1e-6, c_output=True)[4]
+
+        # NOTE: no conjunctions must have been detected by heyoka in this
+        # second integration.
+        self.assertEqual(len(hy_conj_list), 1)
+
+        # Build the trajectory data.
+        trajs = []
+        # Circular orbit.
+        trajs.append(np.ascontiguousarray(new_c_out.tcs[:, :7, :]))
+        # Elliptic orbit.
+        trajs.append(np.ascontiguousarray(c_out.tcs[:, 7:14, :]))
+
+        # Build the time data.
+        times = []
+        # Circular orbit.
+        times.append(new_c_out.times)
+        # Elliptic orbit.
+        times.append(c_out.times)
+
+        pj = polyjectory(trajs, times, [0] * N)
+
+        # Run conjunction detection with a very large threshold.
+        cj = conj(pj, 10000.0, 0.1)
+
+        # NOTE: in addition to the conjunction at the end, we also have a conjunction
+        # at the beginning of the circular trajectory (as apparently the distance square
+        # between the two objects at t = pi/2 is still increasing).
+        self.assertEqual(len(cj.conjunctions), 2)
+        self.assertAlmostEqual(cj.conjunctions["tca"][0], pi / 2, places=15)
+        self.assertAlmostEqual(cj.conjunctions["tca"][1], pi - 1e-6, places=15)
