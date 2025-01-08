@@ -41,8 +41,8 @@ class conjunctions_test_case(_ut.TestCase):
 
         # A sparse list of satellites.
         # NOTE: we manually include an object for which the
-        # trajectory data terminates early (but only if the exit_radius
-        # is set to 12000).
+        # trajectory data terminates early if the exit_radius
+        # is set to 12000.
         cls.sparse_sat_list = sat_list[::2000] + [sat_list[220]]
 
         # List of 9000 satellites.
@@ -123,6 +123,8 @@ class conjunctions_test_case(_ut.TestCase):
                     self.assertTrue(np.all(np.isinf(aabb)))
                     continue
                 else:
+                    # The time data for the current object overlaps
+                    # with the conjunction step. The aabb must be finite.
                     self.assertTrue(np.all(np.isfinite(aabb)))
 
                 # The aabb must be included in the global one.
