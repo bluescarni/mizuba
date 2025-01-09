@@ -44,6 +44,7 @@
 #include "detail/dfloat_utils.hpp"
 #include "detail/file_utils.hpp"
 #include "logging.hpp"
+#include "mdspan.hpp"
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -759,11 +760,11 @@ std::uint32_t polyjectory::get_poly_order() const noexcept
     return m_impl->m_poly_op1 - 1u;
 }
 
-polyjectory::status_span_t polyjectory::get_status() const noexcept
+dspan_1d<const std::int32_t> polyjectory::get_status() const noexcept
 {
     // NOTE: static_cast is ok, we know that we can represent the total number of objects
     // in the polyjectory as a std::size_t.
-    return status_span_t{m_impl->m_status.data(), static_cast<std::size_t>(m_impl->m_status.size())};
+    return dspan_1d<const std::int32_t>{m_impl->m_status.data(), static_cast<std::size_t>(m_impl->m_status.size())};
 }
 
 } // namespace mizuba

@@ -34,6 +34,7 @@
 #include <heyoka/mdspan.hpp>
 
 #include "detail/conjunctions_jit.hpp"
+#include "mdspan.hpp"
 #include "polyjectory.hpp"
 
 namespace mizuba
@@ -218,23 +219,16 @@ public:
     using aabbs_span_t
         = heyoka::mdspan<const float, heyoka::extents<std::size_t, std::dynamic_extent, std::dynamic_extent, 2, 4>>;
     [[nodiscard]] aabbs_span_t get_aabbs() const noexcept;
-    using cd_end_times_span_t = heyoka::mdspan<const double, heyoka::dextents<std::size_t, 1>>;
-    [[nodiscard]] cd_end_times_span_t get_cd_end_times() const noexcept;
+    [[nodiscard]] dspan_1d<const double> get_cd_end_times() const noexcept;
     [[nodiscard]] const polyjectory &get_polyjectory() const noexcept;
     [[nodiscard]] aabbs_span_t get_srt_aabbs() const noexcept;
-    using mcodes_span_t = heyoka::mdspan<const std::uint64_t, heyoka::dextents<std::size_t, 2>>;
-    [[nodiscard]] mcodes_span_t get_mcodes() const noexcept;
-    [[nodiscard]] mcodes_span_t get_srt_mcodes() const noexcept;
-    using srt_idx_span_t = heyoka::mdspan<const std::uint32_t, heyoka::dextents<std::size_t, 2>>;
-    [[nodiscard]] srt_idx_span_t get_srt_idx() const noexcept;
-    using tree_span_t = heyoka::mdspan<const bvh_node, heyoka::dextents<std::size_t, 1>>;
-    [[nodiscard]] tree_span_t get_bvh_tree(std::size_t) const;
-    using aabb_collision_span_t = heyoka::mdspan<const aabb_collision, heyoka::dextents<std::size_t, 1>>;
-    [[nodiscard]] aabb_collision_span_t get_aabb_collisions(std::size_t) const;
-    using conj_span_t = heyoka::mdspan<const conj, heyoka::dextents<std::size_t, 1>>;
-    [[nodiscard]] conj_span_t get_conjunctions() const noexcept;
-    using otype_span_t = heyoka::mdspan<const std::int32_t, heyoka::dextents<std::size_t, 1>>;
-    [[nodiscard]] otype_span_t get_otypes() const noexcept;
+    [[nodiscard]] dspan_2d<const std::uint64_t> get_mcodes() const noexcept;
+    [[nodiscard]] dspan_2d<const std::uint64_t> get_srt_mcodes() const noexcept;
+    [[nodiscard]] dspan_2d<const std::uint32_t> get_srt_idx() const noexcept;
+    [[nodiscard]] dspan_1d<const bvh_node> get_bvh_tree(std::size_t) const;
+    [[nodiscard]] dspan_1d<const aabb_collision> get_aabb_collisions(std::size_t) const;
+    [[nodiscard]] dspan_1d<const conj> get_conjunctions() const noexcept;
+    [[nodiscard]] dspan_1d<const std::int32_t> get_otypes() const noexcept;
     [[nodiscard]] double get_conj_thresh() const noexcept;
     [[nodiscard]] double get_conj_det_interval() const noexcept;
 };
