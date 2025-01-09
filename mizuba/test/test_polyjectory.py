@@ -316,7 +316,7 @@ class polyjectory_test_case(_ut.TestCase):
 
         self.assertEqual(pj.nobjs, 2)
         self.assertEqual(pj.maxT, 3)
-        self.assertEqual(pj.epoch, (42.0, 1.0))
+        self.assertEqual(pj.epoch, (43.0, 0.0))
         self.assertEqual(pj.poly_order, 7)
 
         rc = sys.getrefcount(pj)

@@ -41,6 +41,7 @@
 #include <oneapi/tbb/parallel_for.h>
 
 #include "detail/atomic_minmax.hpp"
+#include "detail/dfloat_utils.hpp"
 #include "detail/file_utils.hpp"
 #include "logging.hpp"
 #include "polyjectory.hpp"
@@ -179,17 +180,17 @@ polyjectory::polyjectory(ptag,
             n_objs, status.size()));
     }
 
-    // Check epoch and epoch2.
+    // Check epoch and epoch2, and compute the normalised double-length epoch.
     if (!std::isfinite(epoch)) [[unlikely]] {
         throw std::invalid_argument(fmt::format(
             "The initial epoch of a polyjectory must be finite, but instead a value of {} was provided", epoch));
     }
-
     if (!std::isfinite(epoch2)) [[unlikely]] {
         throw std::invalid_argument(fmt::format("The second component of the initial epoch of a polyjectory must be "
                                                 "finite, but instead a value of {} was provided",
                                                 epoch2));
     }
+    const auto dl_epoch = detail::hilo_to_dfloat(epoch, epoch2);
 
     // Assemble a "unique" dir path into the system temp dir.
     auto tmp_dir_path = detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
@@ -417,7 +418,7 @@ polyjectory::polyjectory(ptag,
         // performed in the catch block below.
         m_impl = std::make_shared<detail::polyjectory_impl>(std::move(tmp_dir_path), std::move(traj_offset_vec),
                                                             std::move(time_offset_vec), poly_op1, maxT,
-                                                            std::move(status), epoch, epoch2);
+                                                            std::move(status), dl_epoch.hi, dl_epoch.lo);
     } catch (...) {
         boost::filesystem::remove_all(tmp_dir_path);
         throw;
@@ -457,17 +458,17 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                                                 traj_offsets.size(), status.size()));
     }
 
-    // Check epoch and epoch2.
+    // Check epoch and epoch2, and compute the normalised double-length epoch.
     if (!std::isfinite(epoch)) [[unlikely]] {
         throw std::invalid_argument(fmt::format(
             "The initial epoch of a polyjectory must be finite, but instead a value of {} was provided", epoch));
     }
-
     if (!std::isfinite(epoch2)) [[unlikely]] {
         throw std::invalid_argument(fmt::format("The second component of the initial epoch of a polyjectory must be "
                                                 "finite, but instead a value of {} was provided",
                                                 epoch2));
     }
+    const auto dl_epoch = detail::hilo_to_dfloat(epoch, epoch2);
 
     // Canonicalise the file paths and turn them into Boost fs paths.
     boost::filesystem::path traj_file_path, time_file_path;
@@ -682,7 +683,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         // Construct the implementation.
         m_impl = std::make_shared<detail::polyjectory_impl>(std::move(tmp_dir_path), std::move(traj_offsets),
                                                             std::move(time_offsets), op1, maxT.load(),
-                                                            std::move(status), epoch, epoch2);
+                                                            std::move(status), dl_epoch.hi, dl_epoch.lo);
 
         // LCOV_EXCL_START
     } catch (...) {
