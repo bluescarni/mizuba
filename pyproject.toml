@@ -7,7 +7,7 @@ name = 'mizuba'
 version = '0.0.6'
 description = "Python library for fast conjunction detection in orbital environments"
 readme = 'README.md'
-requires-python = '>=3.7'
+requires-python = '>=3.9'
 dependencies = ['numpy', 'polars', 'requests', 'astropy']
 authors = [{ name = 'Francesco Biscarni', email = 'bluescarni@gmail.com' }]
 license = { text = 'AGPL-3.0-or-later' }
@@ -32,7 +32,7 @@ Repository = "https://github.com/bluescarni/mizuba"
 
 [project.optional-dependencies]
 sgp4 = ["sgp4", "skyfield", "pandas"]
-heyoka = ["heyoka >= 7.2.0, < 8"]
+heyoka = ["heyoka >= 7.2.1, < 8"]
 
 [tool.scikit-build]
 # Avoid copying the C++ source files when building

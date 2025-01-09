@@ -38,13 +38,30 @@ class boundary_conjunctions_test_case(_ut.TestCase):
         cthresh = 0.25
 
         # Time data for the first trajectory.
-        tm_data_0 = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+        tm_data_0 = np.array([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
         # Time data for the second trajectory.
-        tm_data_1 = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3]
+        tm_data_1 = np.array(
+            [
+                0.0,
+                0.1,
+                0.2,
+                0.3,
+                0.4,
+                0.5,
+                0.6,
+                0.7,
+                0.8,
+                0.9,
+                1.0,
+                1.1,
+                1.2,
+                1.3,
+            ]
+        )
 
         # Construct the trajectory data for both objects.
         traj_data = [[], []]
-        for tm in tm_data_1:
+        for tm in tm_data_1[1:]:
             tdata_0 = np.zeros((7, 4))
             tdata_0[0, 0] = 1.0 - (tm - 0.1)
             tdata_0[0, 1] = -1.0
@@ -80,6 +97,31 @@ class boundary_conjunctions_test_case(_ut.TestCase):
             np.allclose(cj.conjunctions["vj"][0], [1, 0, 0], rtol=1e-15, atol=0.0)
         )
 
+        # Repeat the computation with a non-zero begin time for the trajectories.
+        tm_data_0 += 1.1
+        tm_data_1 += 1.1
+
+        pj = polyjectory(traj_data, [tm_data_0, tm_data_1], [0, 0])
+        cj = conjunctions(pj=pj, conj_thresh=cthresh, conj_det_interval=0.03)
+
+        self.assertEqual(len(cj.conjunctions), 1)
+        self.assertAlmostEqual(cj.conjunctions["tca"][0], 0.9 + 1.1, places=15)
+        self.assertAlmostEqual(cj.conjunctions["dca"][0], 0.2, places=15)
+        self.assertEqual(cj.conjunctions["i"][0], 0)
+        self.assertEqual(cj.conjunctions["j"][0], 1)
+        self.assertTrue(
+            np.allclose(cj.conjunctions["ri"][0], [0.1, 0, 0], rtol=1e-15, atol=0.0)
+        )
+        self.assertTrue(
+            np.allclose(cj.conjunctions["rj"][0], [-0.1, 0, 0], rtol=1e-15, atol=0.0)
+        )
+        self.assertTrue(
+            np.allclose(cj.conjunctions["vi"][0], [-1, 0, 0], rtol=1e-15, atol=0.0)
+        )
+        self.assertTrue(
+            np.allclose(cj.conjunctions["vj"][0], [1, 0, 0], rtol=1e-15, atol=0.0)
+        )
+
     def test_outgoing(self):
         # Similar to the previous test, but this
         # time the objects start close and then
@@ -92,11 +134,11 @@ class boundary_conjunctions_test_case(_ut.TestCase):
         cthresh = 0.25
 
         # Time data for both trajectories.
-        tm_data = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+        tm_data = np.array([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
 
         # Construct the trajectory data for both objects.
         traj_data = [[], []]
-        for tm in tm_data:
+        for tm in tm_data[1:]:
             tdata_0 = np.zeros((7, 4))
             tdata_0[0, 0] = 0.1 + (tm - 0.1)
             tdata_0[0, 1] = 1.0
@@ -115,6 +157,30 @@ class boundary_conjunctions_test_case(_ut.TestCase):
 
         self.assertEqual(len(cj.conjunctions), 1)
         self.assertAlmostEqual(cj.conjunctions["tca"][0], 0.0, places=15)
+        self.assertAlmostEqual(cj.conjunctions["dca"][0], 0.2, places=15)
+        self.assertEqual(cj.conjunctions["i"][0], 0)
+        self.assertEqual(cj.conjunctions["j"][0], 1)
+        self.assertTrue(
+            np.allclose(cj.conjunctions["ri"][0], [0.1, 0, 0], rtol=1e-15, atol=0.0)
+        )
+        self.assertTrue(
+            np.allclose(cj.conjunctions["rj"][0], [-0.1, 0, 0], rtol=1e-15, atol=0.0)
+        )
+        self.assertTrue(
+            np.allclose(cj.conjunctions["vi"][0], [1, 0, 0], rtol=1e-15, atol=0.0)
+        )
+        self.assertTrue(
+            np.allclose(cj.conjunctions["vj"][0], [-1, 0, 0], rtol=1e-15, atol=0.0)
+        )
+
+        # Repeat the computation with a non-zero begin time for the trajectories.
+        tm_data += 1.1
+
+        pj = polyjectory(traj_data, [tm_data, tm_data], [0, 0])
+        cj = conjunctions(pj=pj, conj_thresh=cthresh, conj_det_interval=0.03)
+
+        self.assertEqual(len(cj.conjunctions), 1)
+        self.assertAlmostEqual(cj.conjunctions["tca"][0], 1.1, places=15)
         self.assertAlmostEqual(cj.conjunctions["dca"][0], 0.2, places=15)
         self.assertEqual(cj.conjunctions["i"][0], 0)
         self.assertEqual(cj.conjunctions["j"][0], 1)

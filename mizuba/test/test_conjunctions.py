@@ -41,8 +41,8 @@ class conjunctions_test_case(_ut.TestCase):
 
         # A sparse list of satellites.
         # NOTE: we manually include an object for which the
-        # trajectory data terminates early (but only if the exit_radius
-        # is set to 12000).
+        # trajectory data terminates early if the exit_radius
+        # is set to 12000.
         cls.sparse_sat_list = sat_list[::2000] + [sat_list[220]]
 
         # List of 9000 satellites.
@@ -76,6 +76,24 @@ class conjunctions_test_case(_ut.TestCase):
             global_lb = c.aabbs[cd_idx, pj.nobjs, 0]
             global_ub = c.aabbs[cd_idx, pj.nobjs, 1]
 
+            if not np.isfinite(global_lb[0]):
+                # Non-finite value detected in the global AABB.
+
+                # All global AABB values must be infinity.
+                self.assertTrue(np.all(np.isinf(global_lb)))
+                self.assertTrue(np.all(np.isinf(global_ub)))
+
+                # The AABBs of all objects must be infinities.
+                self.assertTrue(
+                    all(
+                        np.all(np.isinf(c.aabbs[cd_idx, obj_idx]))
+                        for obj_idx in range(pj.nobjs)
+                    )
+                )
+
+                # Continue to the next conjunction step.
+                continue
+
             # Iterate over all objects.
             for obj_idx in range(pj.nobjs):
                 # Fetch the polyjectory data for the current object.
@@ -84,6 +102,12 @@ class conjunctions_test_case(_ut.TestCase):
                 # Fetch the AABB of the object.
                 aabb = c.aabbs[cd_idx, obj_idx]
 
+                # If there is no trajectory data for the current
+                # object, just check that its aabb is infinite.
+                if traj.shape[0] == 0:
+                    self.assertTrue(np.all(np.isinf(aabb)))
+                    continue
+
                 if begin_time >= traj_times[-1]:
                     # The trajectory data for the current object
                     # ends before the beginning of the current conjunction
@@ -91,7 +115,16 @@ class conjunctions_test_case(_ut.TestCase):
                     # aabb is infinite.
                     self.assertTrue(np.all(np.isinf(aabb)))
                     continue
+                elif traj_times[0] >= end_time:
+                    # The trajectory data for the current object
+                    # begins at or after the end time of the conjunction
+                    # step. Skip the current object and assert that its
+                    # aabb is infinite.
+                    self.assertTrue(np.all(np.isinf(aabb)))
+                    continue
                 else:
+                    # The time data for the current object overlaps
+                    # with the conjunction step. The aabb must be finite.
                     self.assertTrue(np.all(np.isfinite(aabb)))
 
                 # The aabb must be included in the global one.
@@ -100,23 +133,29 @@ class conjunctions_test_case(_ut.TestCase):
 
                 # Iterate over the random times.
                 for time in random_times:
-                    # Look for the trajectory step which ends at
-                    # or after 'time'.
-                    step_idx = np.searchsorted(traj_times, time)
+                    # Look for the first trajectory time data point *after* 'time'.
+                    step_idx = np.searchsorted(traj_times, time, side="right")
 
-                    # Skip the current time if there's no corresponding
+                    # Skip the current 'time' if it is past the end of
                     # trajectory data.
                     if step_idx == len(traj_times):
                         continue
 
+                    # Skip the current 'time' if it is before the beginning
+                    # of trajectory data.
+                    if step_idx == 0:
+                        continue
+
                     # Fetch the polynomials for all state variables
                     # in the trajectory step.
-                    traj_polys = traj[step_idx]
+                    # NOTE: step_idx - 1 because we need the
+                    # trajectory step that ends at traj_times[step_idx].
+                    traj_polys = traj[step_idx - 1]
 
                     # Compute the poly evaluation interval.
                     # This is the time elapsed since the beginning
                     # of the trajectory step.
-                    h = time - (0.0 if step_idx == 0 else traj_times[step_idx - 1])
+                    h = time - traj_times[step_idx - 1]
 
                     # Evaluate the polynomials and check that
                     # the results fit in the aabb.
@@ -510,7 +549,7 @@ class conjunctions_test_case(_ut.TestCase):
         # Set the radius.
         tdata[6, 0] = np.sqrt(3.0)
 
-        pj = polyjectory([[tdata, tdata, tdata]], [[1.0, 2.0, 3.0]], [0])
+        pj = polyjectory([[tdata, tdata, tdata]], [[0.0, 1.0, 2.0, 3.0]], [0])
 
         # Use epsilon as conj thresh so that it does not influence
         # the computation of the aabb.
@@ -590,7 +629,7 @@ class conjunctions_test_case(_ut.TestCase):
                 [tdata6] * 2,
                 [tdata7] * 2,
             ],
-            [[1.0]] * 10 + [[1.0, 2.0]] * 8,
+            [[0.0, 1.0]] * 10 + [[0.0, 1.0, 2.0]] * 8,
             [0] * 18,
         )
 
@@ -617,7 +656,7 @@ class conjunctions_test_case(_ut.TestCase):
         tdata = np.zeros((7, 6))
         tdata[:, 1] = 0.1
 
-        pj = polyjectory([[tdata]], [[1.0]], [0])
+        pj = polyjectory([[tdata]], [[0.0, 1.0]], [0])
         conjs = conjunctions(pj, 1e-16, 1.0)
 
         with self.assertRaises(IndexError) as cm:
@@ -633,7 +672,7 @@ class conjunctions_test_case(_ut.TestCase):
         # Polyjectory with two identical objects.
         # This will result in exhausting all bits
         # in the morton codes for splitting.
-        pj = polyjectory([[tdata], [tdata]], [[1.0], [1.0]], [0, 0])
+        pj = polyjectory([[tdata], [tdata]], [[0.0, 1.0], [0.0, 1.0]], [0, 0])
         conjs = conjunctions(pj, 1e-16, 1.0)
         t = conjs.get_bvh_tree(0)
         self.assertEqual(len(t), 1)
@@ -686,7 +725,7 @@ class conjunctions_test_case(_ut.TestCase):
                 [tdata7],
                 [tdata8],
             ],
-            [[1.0]] * 9,
+            [[0.0, 1.0]] * 9,
             [0] * 9,
         )
 
@@ -901,3 +940,298 @@ class conjunctions_test_case(_ut.TestCase):
         )
         c = conj(pj, conj_thresh=1.0, conj_det_interval=0.1)
         self.assertEqual(len(c.conjunctions), 0)
+
+    def test_nonzero_tbegin(self):
+        # Simple test for a single object
+        # whose trajectory begins at t > 0.
+        from .. import conjunctions as conj, polyjectory
+        from ._planar_circ import _planar_circ_tcs, _planar_circ_times
+        import numpy as np
+
+        # Deterministic seeding.
+        rng = np.random.default_rng(420)
+
+        # Shift up the times.
+        _planar_circ_times = _planar_circ_times + 1.0
+
+        # Single planar circular orbit case.
+        pj = polyjectory([_planar_circ_tcs], [_planar_circ_times], [0])
+
+        # Run the test for several conjunction detection intervals.
+        for conj_det_interval in [0.01, 0.1, 0.5, 2.0, 5.0, 7.0, 10.0]:
+            c = conj(pj, conj_thresh=0.1, conj_det_interval=conj_det_interval)
+
+            # Shape checks.
+            self.assertEqual(c.aabbs.shape[0], c.cd_end_times.shape[0])
+            self.assertEqual(c.srt_aabbs.shape[0], c.cd_end_times.shape[0])
+            self.assertEqual(c.srt_aabbs.shape, c.aabbs.shape)
+            self.assertEqual(c.mcodes.shape[0], c.cd_end_times.shape[0])
+            self.assertEqual(c.srt_mcodes.shape[0], c.cd_end_times.shape[0])
+            self.assertEqual(c.srt_idx.shape[0], c.cd_end_times.shape[0])
+
+            # The conjunction detection end time must coincide
+            # with the trajectory end time.
+            self.assertEqual(c.cd_end_times[-1], pj[0][1][-1])
+
+            # The global aabbs must all coincide
+            # exactly with the only object's aabbs.
+            self.assertTrue(np.all(c.aabbs[:, 0] == c.aabbs[:, 1]))
+            # With only one object, aabbs and srt_aabbs must be identical.
+            self.assertTrue(np.all(c.aabbs == c.srt_aabbs))
+
+            # In the z and r coordinates, all aabbs
+            # should be of size circa 0.1 accounting for the
+            # conjunction threshold.
+            self.assertTrue(np.all(c.aabbs[:, 0, 0, 2] >= -0.05001))
+            self.assertTrue(np.all(c.aabbs[:, 0, 1, 2] <= 0.05001))
+
+            self.assertTrue(np.all(c.aabbs[:, 0, 0, 3] >= 1 - 0.05001))
+            self.assertTrue(np.all(c.aabbs[:, 0, 1, 3] <= 1 + 0.05001))
+
+            # Verify the aabbs.
+            self._verify_conj_aabbs(c, rng)
+
+            # No aabb collisions or conjunctions expected.
+            for i in range(c.n_cd_steps):
+                self.assertEqual(len(c.get_aabb_collisions(i)), 0)
+            self.assertEqual(len(c.conjunctions), 0)
+
+    def test_cd_begin_end(self):
+        # Test to check for correctness with trajectories
+        # beginning and ending within a conjunction step.
+        from .. import conjunctions, polyjectory
+        import numpy as np
+
+        # NOTE: in these tests, we have 2 objects initially
+        # placed on the x axis at +-1. The two objects
+        # move with uniform unitary speed towards the origin,
+        # where they will meet at t = 1.
+
+        # The overall time data runs at regular 0.1 intervals from 0 to 2.
+        tm_data = np.array(
+            [
+                0.0,
+                0.1,
+                0.2,
+                0.3,
+                0.4,
+                0.5,
+                0.6,
+                0.7,
+                0.8,
+                0.9,
+                1.0,
+                1.1,
+                1.2,
+                1.3,
+                1.4,
+                1.5,
+                1.6,
+                1.7,
+                1.8,
+                1.9,
+                2.0,
+            ]
+        )
+
+        # First case: no overlap between the two trajectories.
+
+        # The time data for object 1 goes up to 0.9
+        tm_data_0 = tm_data[:10]
+        # The time data for object 2 goes from 1.1 to the end.
+        tm_data_1 = tm_data[11:]
+
+        # Construct the trajectory data for the first object, moving
+        # right to left.
+        traj_data_0 = []
+        for tm in tm_data_0[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = 1.0 - (tm - 0.1)
+            tdata[0, 1] = -1.0
+            tdata[3, 0] = -1.0
+
+            traj_data_0.append(tdata)
+
+        # Construct the trajectory data for the second object, moving
+        # left to right.
+        traj_data_1 = []
+        for tm in tm_data_1[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = -(1.0 - (tm - 0.1))
+            tdata[0, 1] = 1.0
+            tdata[3, 0] = 1.0
+
+            traj_data_1.append(tdata)
+
+        # Construct the polyjectory.
+        pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
+
+        # Run conjunction detection.
+        cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
+
+        # We must not detect any conjunction because the conjunection happens
+        # when there is no data for both trajectories.
+        self.assertEqual(len(cj.conjunctions), 0)
+
+        # Second case: overlap between the two trajectories. The overlap occurs
+        # in the second conjunction step.
+        tm_data_0 = tm_data[:12]
+        tm_data_1 = tm_data[9:]
+
+        traj_data_0 = []
+        for tm in tm_data_0[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = 1.0 - (tm - 0.1)
+            tdata[0, 1] = -1.0
+            tdata[3, 0] = -1.0
+
+            traj_data_0.append(tdata)
+
+        traj_data_1 = []
+        for tm in tm_data_1[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = -(1.0 - (tm - 0.1))
+            tdata[0, 1] = 1.0
+            tdata[3, 0] = 1.0
+
+            traj_data_1.append(tdata)
+
+        pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
+        cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
+        # Here we must detect the conjunction.
+        conjs = cj.conjunctions
+        self.assertEqual(len(conjs), 1)
+        self.assertTrue(np.all(conjs["i"] == 0))
+        self.assertTrue(np.all(conjs["j"] == 1))
+        self.assertAlmostEqual(conjs["tca"][0], 1.0, places=15)
+        self.assertAlmostEqual(conjs["dca"][0], 0.0, delta=1e-15)
+        self.assertTrue(np.allclose(conjs["ri"][0], [0, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["rj"][0], [0, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["vi"][0], [-1, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["vj"][0], [1, 0, 0], atol=1e-15, rtol=0.0))
+
+        # Third case: both trajectories beginning staggered within the
+        # conjunction step, no conjunction.
+        tm_data_0 = tm_data[11:]
+        tm_data_1 = tm_data[12:]
+
+        traj_data_0 = []
+        for tm in tm_data_0[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = 1.0 - (tm - 0.1)
+            tdata[0, 1] = -1.0
+            tdata[3, 0] = -1.0
+
+            traj_data_0.append(tdata)
+
+        traj_data_1 = []
+        for tm in tm_data_1[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = -(1.0 - (tm - 0.1))
+            tdata[0, 1] = 1.0
+            tdata[3, 0] = 1.0
+
+            traj_data_1.append(tdata)
+
+        pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
+        cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
+        self.assertEqual(len(cj.conjunctions), 0)
+
+        # Fourth case: both trajectories beginning staggered within the
+        # conjunction step, with conjunction.
+        tm_data_0 = tm_data[9:]
+        tm_data_1 = tm_data[8:]
+
+        traj_data_0 = []
+        for tm in tm_data_0[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = 1.0 - (tm - 0.1)
+            tdata[0, 1] = -1.0
+            tdata[3, 0] = -1.0
+
+            traj_data_0.append(tdata)
+
+        traj_data_1 = []
+        for tm in tm_data_1[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = -(1.0 - (tm - 0.1))
+            tdata[0, 1] = 1.0
+            tdata[3, 0] = 1.0
+
+            traj_data_1.append(tdata)
+
+        pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
+        cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
+        conjs = cj.conjunctions
+        self.assertEqual(len(conjs), 1)
+        self.assertTrue(np.all(conjs["i"] == 0))
+        self.assertTrue(np.all(conjs["j"] == 1))
+        self.assertAlmostEqual(conjs["tca"][0], 1.0, places=15)
+        self.assertAlmostEqual(conjs["dca"][0], 0.0, delta=1e-15)
+        self.assertTrue(np.allclose(conjs["ri"][0], [0, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["rj"][0], [0, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["vi"][0], [-1, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["vj"][0], [1, 0, 0], atol=1e-15, rtol=0.0))
+
+        # Fifth case: both trajectories ending staggered within the conjunction step,
+        # no conjunction.
+        tm_data_0 = tm_data[:9]
+        tm_data_1 = tm_data[:8]
+
+        traj_data_0 = []
+        for tm in tm_data_0[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = 1.0 - (tm - 0.1)
+            tdata[0, 1] = -1.0
+            tdata[3, 0] = -1.0
+
+            traj_data_0.append(tdata)
+
+        traj_data_1 = []
+        for tm in tm_data_1[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = -(1.0 - (tm - 0.1))
+            tdata[0, 1] = 1.0
+            tdata[3, 0] = 1.0
+
+            traj_data_1.append(tdata)
+
+        pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
+        cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
+        self.assertEqual(len(cj.conjunctions), 0)
+
+        # Sixth case: both trajectories ending staggered within the conjunction step,
+        # with conjunction.
+        tm_data_0 = tm_data[:11]
+        tm_data_1 = tm_data[:12]
+
+        traj_data_0 = []
+        for tm in tm_data_0[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = 1.0 - (tm - 0.1)
+            tdata[0, 1] = -1.0
+            tdata[3, 0] = -1.0
+
+            traj_data_0.append(tdata)
+
+        traj_data_1 = []
+        for tm in tm_data_1[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = -(1.0 - (tm - 0.1))
+            tdata[0, 1] = 1.0
+            tdata[3, 0] = 1.0
+
+            traj_data_1.append(tdata)
+
+        pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
+        cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
+        conjs = cj.conjunctions
+        self.assertEqual(len(conjs), 1)
+        self.assertTrue(np.all(conjs["i"] == 0))
+        self.assertTrue(np.all(conjs["j"] == 1))
+        self.assertAlmostEqual(conjs["tca"][0], 1.0, places=15)
+        self.assertAlmostEqual(conjs["dca"][0], 0.0, delta=1e-15)
+        self.assertTrue(np.allclose(conjs["ri"][0], [0, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["rj"][0], [0, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["vi"][0], [-1, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["vj"][0], [1, 0, 0], atol=1e-15, rtol=0.0))

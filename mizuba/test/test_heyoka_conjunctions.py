@@ -175,7 +175,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         trajs = []
         for i in range(N):
             trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
-        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+        pj = polyjectory(trajs, [c_out.times] * N, [0] * N)
 
         # Run first a conjunction detection with stupidly large conjunction threshold,
         # so that we detect all conjunctions.
@@ -374,161 +374,175 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
 
         N = 2
 
-        ta, hy_conj_list = self._make_kep_ta(1.0, 1.0, N)
+        # NOTE: run the same test with different
+        # initial times for the trajectories.
+        for init_time in [0.0, 0.2, 0.31]:
+            ta, hy_conj_list = self._make_kep_ta(1.0, 1.0, N)
+            ta.time = init_time
 
-        # Setup the initial conditions.
-        ic_rs = ta.state.reshape((-1, 7))
+            # Setup the initial conditions.
+            ic_rs = ta.state.reshape((-1, 7))
 
-        ic_rs[0, 0] = 1.0
-        ic_rs[0, 5] = 1.0
-        ic_rs[0, 6] = 1.0
+            ic_rs[0, 0] = 1.0
+            ic_rs[0, 4] = 1.0
+            ic_rs[0, 6] = 1.0
 
-        ic_rs[1, 0] = -1.0
-        ic_rs[1, 5] = 1.0
-        ic_rs[1, 6] = 1.0
+            ic_rs[1, 0] = -1.0
+            ic_rs[1, 4] = 1.0
+            ic_rs[1, 6] = 1.0
 
-        c_out = ta.propagate_for(4.8, c_output=True)[4]
+            c_out = ta.propagate_for(4.8, c_output=True)[4]
 
-        # Build the polyjectory.
-        trajs = []
-        for i in range(N):
-            trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
-        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+            # Build the polyjectory.
+            trajs = []
+            for i in range(N):
+                trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
+            pj = polyjectory(trajs, [c_out.times] * N, [0] * N)
 
-        cj = conj(pj, 1e-4, 0.1)
+            cj = conj(pj, 1e-4, 0.1)
 
-        # Store the original conjunctions array for later use.
-        orig_conj = copy(cj.conjunctions)
+            # Store the original conjunctions array for later use.
+            orig_conj = copy(cj.conjunctions)
 
-        hy_conj_arr = np.sort(np.array(hy_conj_list, dtype=conj.conj), order="tca")
+            hy_conj_arr = np.sort(np.array(hy_conj_list, dtype=conj.conj), order="tca")
 
-        self.assertEqual(len(hy_conj_arr), 2)
+            self.assertEqual(len(hy_conj_arr), 2)
 
-        # Compare the results.
-        self.assertEqual(len(cj.conjunctions), len(hy_conj_arr))
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["tca"], hy_conj_arr["tca"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["dca"], hy_conj_arr["dca"], rtol=1e-12))
-        )
-        self.assertTrue(np.all(cj.conjunctions["i"] == hy_conj_arr["i"]))
-        self.assertTrue(np.all(cj.conjunctions["j"] == hy_conj_arr["j"]))
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["ri"], hy_conj_arr["ri"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["rj"], hy_conj_arr["rj"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["vi"], hy_conj_arr["vi"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["vj"], hy_conj_arr["vj"], rtol=1e-12))
-        )
+            # Compare the results.
+            self.assertEqual(len(cj.conjunctions), len(hy_conj_arr))
+            self.assertTrue(
+                np.all(
+                    np.isclose(cj.conjunctions["tca"], hy_conj_arr["tca"], rtol=1e-12)
+                )
+            )
+            self.assertTrue(
+                np.all(
+                    np.isclose(cj.conjunctions["dca"], hy_conj_arr["dca"], rtol=1e-12)
+                )
+            )
+            self.assertTrue(np.all(cj.conjunctions["i"] == hy_conj_arr["i"]))
+            self.assertTrue(np.all(cj.conjunctions["j"] == hy_conj_arr["j"]))
+            self.assertTrue(
+                np.all(np.isclose(cj.conjunctions["ri"], hy_conj_arr["ri"], rtol=1e-12))
+            )
+            self.assertTrue(
+                np.all(np.isclose(cj.conjunctions["rj"], hy_conj_arr["rj"], rtol=1e-12))
+            )
+            self.assertTrue(
+                np.all(np.isclose(cj.conjunctions["vi"], hy_conj_arr["vi"], rtol=1e-12))
+            )
+            self.assertTrue(
+                np.all(np.isclose(cj.conjunctions["vj"], hy_conj_arr["vj"], rtol=1e-12))
+            )
 
-        # Try primary-secondary as otypes.
-        cj = conj(pj, 1e-4, 0.1, otypes=[otype.PRIMARY, otype.SECONDARY])
-        self.assertTrue(np.all(orig_conj == cj.conjunctions))
+            # Try primary-secondary as otypes.
+            cj = conj(pj, 1e-4, 0.1, otypes=[otype.PRIMARY, otype.SECONDARY])
+            self.assertTrue(np.all(orig_conj == cj.conjunctions))
 
-        cj = conj(pj, 1e-4, 0.1, otypes=[otype.SECONDARY, otype.PRIMARY])
-        self.assertTrue(np.all(orig_conj == cj.conjunctions))
+            cj = conj(pj, 1e-4, 0.1, otypes=[otype.SECONDARY, otype.PRIMARY])
+            self.assertTrue(np.all(orig_conj == cj.conjunctions))
 
-        # Try with several otype combination that must result
-        # in no detected conjunctions.
-        cj = conj(pj, 1e-4, 0.1, otypes=[otype.MASKED, otype.MASKED])
-        self.assertEqual(len(cj.conjunctions), 0)
+            # Try with several otype combination that must result
+            # in no detected conjunctions.
+            cj = conj(pj, 1e-4, 0.1, otypes=[otype.MASKED, otype.MASKED])
+            self.assertEqual(len(cj.conjunctions), 0)
 
-        cj = conj(pj, 1e-4, 0.1, otypes=[otype.SECONDARY, otype.SECONDARY])
-        self.assertEqual(len(cj.conjunctions), 0)
+            cj = conj(pj, 1e-4, 0.1, otypes=[otype.SECONDARY, otype.SECONDARY])
+            self.assertEqual(len(cj.conjunctions), 0)
 
-        cj = conj(pj, 1e-4, 0.1, otypes=[otype.PRIMARY, otype.MASKED])
-        self.assertEqual(len(cj.conjunctions), 0)
+            cj = conj(pj, 1e-4, 0.1, otypes=[otype.PRIMARY, otype.MASKED])
+            self.assertEqual(len(cj.conjunctions), 0)
 
-        cj = conj(pj, 1e-4, 0.1, otypes=[otype.MASKED, otype.PRIMARY])
-        self.assertEqual(len(cj.conjunctions), 0)
+            cj = conj(pj, 1e-4, 0.1, otypes=[otype.MASKED, otype.PRIMARY])
+            self.assertEqual(len(cj.conjunctions), 0)
 
-        cj = conj(pj, 1e-4, 0.1, otypes=[otype.SECONDARY, otype.MASKED])
-        self.assertEqual(len(cj.conjunctions), 0)
+            cj = conj(pj, 1e-4, 0.1, otypes=[otype.SECONDARY, otype.MASKED])
+            self.assertEqual(len(cj.conjunctions), 0)
 
-        cj = conj(pj, 1e-4, 0.1, otypes=[otype.MASKED, otype.SECONDARY])
-        self.assertEqual(len(cj.conjunctions), 0)
+            cj = conj(pj, 1e-4, 0.1, otypes=[otype.MASKED, otype.SECONDARY])
+            self.assertEqual(len(cj.conjunctions), 0)
 
-        # Try an equatorial collision too.
-        ta.time = 0.0
-        ta.state[:] = 0.0
-        hy_conj_list.clear()
+            # Try an equatorial collision too.
+            ta.time = init_time
+            ta.state[:] = 0.0
+            ta.reset_cooldowns()
+            hy_conj_list.clear()
 
-        ic_rs[0, 0] = 1.0
-        ic_rs[0, 4] = 1.0
-        ic_rs[0, 6] = 1.0
+            ic_rs[0, 0] = 1.0
+            ic_rs[0, 4] = 1.0
+            ic_rs[0, 6] = 1.0
 
-        ic_rs[1, 0] = -1.0
-        ic_rs[1, 4] = 1.0
-        ic_rs[1, 6] = 1.0
+            ic_rs[1, 0] = -1.0
+            ic_rs[1, 4] = 1.0
+            ic_rs[1, 6] = 1.0
 
-        c_out = ta.propagate_for(4.8, c_output=True)[4]
+            c_out = ta.propagate_for(4.8, c_output=True)[4]
 
-        # Build the polyjectory.
-        trajs = []
-        for i in range(N):
-            trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
-        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+            # Build the polyjectory.
+            trajs = []
+            for i in range(N):
+                trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
+            pj = polyjectory(trajs, [c_out.times] * N, [0] * N)
 
-        cj = conj(pj, 1e-4, 0.1)
+            cj = conj(pj, 1e-4, 0.1)
 
-        hy_conj_arr = np.sort(np.array(hy_conj_list, dtype=conj.conj), order="tca")
+            hy_conj_arr = np.sort(np.array(hy_conj_list, dtype=conj.conj), order="tca")
 
-        self.assertEqual(len(hy_conj_arr), 2)
+            self.assertEqual(len(hy_conj_arr), 2)
 
-        # Compare the results.
-        self.assertEqual(len(cj.conjunctions), len(hy_conj_arr))
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["tca"], hy_conj_arr["tca"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["dca"], hy_conj_arr["dca"], rtol=1e-12))
-        )
-        self.assertTrue(np.all(cj.conjunctions["i"] == hy_conj_arr["i"]))
-        self.assertTrue(np.all(cj.conjunctions["j"] == hy_conj_arr["j"]))
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["ri"], hy_conj_arr["ri"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["rj"], hy_conj_arr["rj"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["vi"], hy_conj_arr["vi"], rtol=1e-12))
-        )
-        self.assertTrue(
-            np.all(np.isclose(cj.conjunctions["vj"], hy_conj_arr["vj"], rtol=1e-12))
-        )
+            # Compare the results.
+            self.assertEqual(len(cj.conjunctions), len(hy_conj_arr))
+            self.assertTrue(
+                np.all(
+                    np.isclose(cj.conjunctions["tca"], hy_conj_arr["tca"], rtol=1e-12)
+                )
+            )
+            self.assertTrue(
+                np.all(
+                    np.isclose(cj.conjunctions["dca"], hy_conj_arr["dca"], rtol=1e-12)
+                )
+            )
+            self.assertTrue(np.all(cj.conjunctions["i"] == hy_conj_arr["i"]))
+            self.assertTrue(np.all(cj.conjunctions["j"] == hy_conj_arr["j"]))
+            self.assertTrue(
+                np.all(np.isclose(cj.conjunctions["ri"], hy_conj_arr["ri"], rtol=1e-12))
+            )
+            self.assertTrue(
+                np.all(np.isclose(cj.conjunctions["rj"], hy_conj_arr["rj"], rtol=1e-12))
+            )
+            self.assertTrue(
+                np.all(np.isclose(cj.conjunctions["vi"], hy_conj_arr["vi"], rtol=1e-12))
+            )
+            self.assertTrue(
+                np.all(np.isclose(cj.conjunctions["vj"], hy_conj_arr["vj"], rtol=1e-12))
+            )
 
-        # Try two identical trajectories. This should produce no conjunctions.
-        ta.time = 0.0
-        ta.state[:] = 0.0
-        hy_conj_list.clear()
+            # Try two identical trajectories. This should produce no conjunctions.
+            ta.time = init_time
+            ta.state[:] = 0.0
+            ta.reset_cooldowns()
+            hy_conj_list.clear()
 
-        ic_rs[0, 0] = 1.0
-        ic_rs[0, 4] = 1.0
-        ic_rs[0, 6] = 1.0
+            ic_rs[0, 0] = 1.0
+            ic_rs[0, 4] = 1.0
+            ic_rs[0, 6] = 1.0
 
-        ic_rs[1, 0] = 1.0
-        ic_rs[1, 4] = 1.0
-        ic_rs[1, 6] = 1.0
+            ic_rs[1, 0] = 1.0
+            ic_rs[1, 4] = 1.0
+            ic_rs[1, 6] = 1.0
 
-        c_out = ta.propagate_for(4.8, c_output=True)[4]
+            c_out = ta.propagate_for(4.8, c_output=True)[4]
 
-        # Build the polyjectory.
-        trajs = []
-        for i in range(N):
-            trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
-        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+            # Build the polyjectory.
+            trajs = []
+            for i in range(N):
+                trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
+            pj = polyjectory(trajs, [c_out.times] * N, [0] * N)
 
-        cj = conj(pj, 1e4, 0.1)
+            cj = conj(pj, 1e4, 0.1)
 
-        self.assertEqual(len(cj.conjunctions), 0)
-        self.assertEqual(len(hy_conj_list), 0)
+            self.assertEqual(len(cj.conjunctions), 0)
+            self.assertEqual(len(hy_conj_list), 0)
 
     def test_boundary(self):
         # A test similar to the first test in test_boundary_conjunctions, but using Keplerian
@@ -545,8 +559,8 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
 
         # Setup a fixed-centre problem with two non-interacting
         # objects following Keplerian orbits. The first orbit
-        # is circular, the second elliptic. The two objects will collide
-        # at the pericentre of the elliptic orbit.
+        # is circular, the second elliptic. The two objects will experience
+        # conjunctions at the peri/apo centre of the elliptic orbit.
         N = 2
         ta, hy_conj_list = self._make_kep_ta(1.0, 1.0, N)
 
@@ -557,25 +571,24 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         ecc = 0.3
 
         ic_rs[0, 0] = 1.0
-        ic_rs[0, 5] = 1.0
+        ic_rs[0, 4] = 1.0
         ic_rs[0, 6] = 1.0
 
         ic_rs[1, 0] = 1.0 + ecc
-        ic_rs[1, 5] = -1.0 * sqrt((1 - ecc) / (1 + ecc))
+        ic_rs[1, 4] = -1.0 * sqrt((1 - ecc) / (1 + ecc))
         ic_rs[1, 6] = 1.0 + ecc
 
-        # Propagate until a short time before the collision.
+        # Propagate until a short time before the second conjunction.
         c_out = ta.propagate_for(pi - 1e-6, c_output=True)[4]
 
-        # NOTE: heyoka must detect only the initial conjunction
-        # at t == 0.
+        # NOTE: heyoka must detect only the initial conjunction at t == 0.
         self.assertEqual(len(hy_conj_list), 1)
 
         # Build the polyjectory.
         trajs = []
         for i in range(N):
             trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
-        pj = polyjectory(trajs, [c_out.times[1:]] * N, [0] * N)
+        pj = polyjectory(trajs, [c_out.times] * N, [0] * N)
 
         # Run conjunction detection with a very large threshold.
         cj = conj(pj, 10000.0, 0.1)
@@ -587,3 +600,51 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         self.assertEqual(cj.conjunctions["tca"][0], 0.0)
         self.assertAlmostEqual(cj.conjunctions["tca"][1], pi - 1e-6, places=15)
         self.assertAlmostEqual(cj.conjunctions["dca"][0], ecc, places=15)
+
+        # A second test in which we repeat the integration of the circular
+        # orbit, but starting from (0, 1) rather than (1, 0), and we stop
+        # again the integration right before the second conjunction. The objective
+        # is to generate trajectory data for the circular orbit that begins
+        # later than the other orbit.
+        ta.reset_cooldowns()
+        ta.time = pi / 2
+        ic_rs[:] = 0.0
+
+        ic_rs[0, 1] = 1.0
+        ic_rs[0, 3] = -1.0
+        ic_rs[0, 6] = 1.0
+        ic_rs[1, 0] = 1.0 + ecc
+        ic_rs[1, 4] = -1.0 * sqrt((1 - ecc) / (1 + ecc))
+        ic_rs[1, 6] = 1.0 + ecc
+
+        new_c_out = ta.propagate_for(pi / 2 - 1e-6, c_output=True)[4]
+
+        # NOTE: no conjunctions must have been detected by heyoka in this
+        # second integration.
+        self.assertEqual(len(hy_conj_list), 1)
+
+        # Build the trajectory data.
+        trajs = []
+        # Circular orbit.
+        trajs.append(np.ascontiguousarray(new_c_out.tcs[:, :7, :]))
+        # Elliptic orbit.
+        trajs.append(np.ascontiguousarray(c_out.tcs[:, 7:14, :]))
+
+        # Build the time data.
+        times = []
+        # Circular orbit.
+        times.append(new_c_out.times)
+        # Elliptic orbit.
+        times.append(c_out.times)
+
+        pj = polyjectory(trajs, times, [0] * N)
+
+        # Run conjunction detection with a very large threshold.
+        cj = conj(pj, 10000.0, 0.1)
+
+        # NOTE: in addition to the conjunction at the end, we also have a conjunction
+        # at the beginning of the circular trajectory (as the distance square
+        # between the two objects at t = pi/2 is still increasing).
+        self.assertEqual(len(cj.conjunctions), 2)
+        self.assertAlmostEqual(cj.conjunctions["tca"][0], pi / 2, places=15)
+        self.assertAlmostEqual(cj.conjunctions["tca"][1], pi - 1e-6, places=15)
