@@ -997,8 +997,8 @@ class conjunctions_test_case(_ut.TestCase):
             self.assertEqual(len(c.conjunctions), 0)
 
     def test_cd_begin_end(self):
-        # Test to check for correctness when two trajectories
-        # begin and end within a conjunction step.
+        # Test to check for correctness with trajectories
+        # beginning and ending within a conjunction step.
         from .. import conjunctions, polyjectory
         import numpy as np
 
@@ -1099,6 +1099,132 @@ class conjunctions_test_case(_ut.TestCase):
         pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
         cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
         # Here we must detect the conjunction.
+        conjs = cj.conjunctions
+        self.assertEqual(len(conjs), 1)
+        self.assertTrue(np.all(conjs["i"] == 0))
+        self.assertTrue(np.all(conjs["j"] == 1))
+        self.assertAlmostEqual(conjs["tca"][0], 1.0, places=15)
+        self.assertAlmostEqual(conjs["dca"][0], 0.0, delta=1e-15)
+        self.assertTrue(np.allclose(conjs["ri"][0], [0, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["rj"][0], [0, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["vi"][0], [-1, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["vj"][0], [1, 0, 0], atol=1e-15, rtol=0.0))
+
+        # Third case: both trajectories beginning staggered within the
+        # conjunction step, no conjunction.
+        tm_data_0 = tm_data[11:]
+        tm_data_1 = tm_data[12:]
+
+        traj_data_0 = []
+        for tm in tm_data_0[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = 1.0 - (tm - 0.1)
+            tdata[0, 1] = -1.0
+            tdata[3, 0] = -1.0
+
+            traj_data_0.append(tdata)
+
+        traj_data_1 = []
+        for tm in tm_data_1[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = -(1.0 - (tm - 0.1))
+            tdata[0, 1] = 1.0
+            tdata[3, 0] = 1.0
+
+            traj_data_1.append(tdata)
+
+        pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
+        cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
+        self.assertEqual(len(cj.conjunctions), 0)
+
+        # Fourth case: both trajectories beginning staggered within the
+        # conjunction step, with conjunction.
+        tm_data_0 = tm_data[9:]
+        tm_data_1 = tm_data[8:]
+
+        traj_data_0 = []
+        for tm in tm_data_0[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = 1.0 - (tm - 0.1)
+            tdata[0, 1] = -1.0
+            tdata[3, 0] = -1.0
+
+            traj_data_0.append(tdata)
+
+        traj_data_1 = []
+        for tm in tm_data_1[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = -(1.0 - (tm - 0.1))
+            tdata[0, 1] = 1.0
+            tdata[3, 0] = 1.0
+
+            traj_data_1.append(tdata)
+
+        pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
+        cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
+        conjs = cj.conjunctions
+        self.assertEqual(len(conjs), 1)
+        self.assertTrue(np.all(conjs["i"] == 0))
+        self.assertTrue(np.all(conjs["j"] == 1))
+        self.assertAlmostEqual(conjs["tca"][0], 1.0, places=15)
+        self.assertAlmostEqual(conjs["dca"][0], 0.0, delta=1e-15)
+        self.assertTrue(np.allclose(conjs["ri"][0], [0, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["rj"][0], [0, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["vi"][0], [-1, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["vj"][0], [1, 0, 0], atol=1e-15, rtol=0.0))
+
+        # Fifth case: both trajectories ending staggered within the conjunction step,
+        # no conjunction.
+        tm_data_0 = tm_data[:9]
+        tm_data_1 = tm_data[:8]
+
+        traj_data_0 = []
+        for tm in tm_data_0[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = 1.0 - (tm - 0.1)
+            tdata[0, 1] = -1.0
+            tdata[3, 0] = -1.0
+
+            traj_data_0.append(tdata)
+
+        traj_data_1 = []
+        for tm in tm_data_1[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = -(1.0 - (tm - 0.1))
+            tdata[0, 1] = 1.0
+            tdata[3, 0] = 1.0
+
+            traj_data_1.append(tdata)
+
+        pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
+        cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
+        self.assertEqual(len(cj.conjunctions), 0)
+
+        # Sixth case: both trajectories ending staggered within the conjunction step,
+        # with conjunction.
+        tm_data_0 = tm_data[:11]
+        tm_data_1 = tm_data[:12]
+
+        traj_data_0 = []
+        for tm in tm_data_0[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = 1.0 - (tm - 0.1)
+            tdata[0, 1] = -1.0
+            tdata[3, 0] = -1.0
+
+            traj_data_0.append(tdata)
+
+        traj_data_1 = []
+        for tm in tm_data_1[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = -(1.0 - (tm - 0.1))
+            tdata[0, 1] = 1.0
+            tdata[3, 0] = 1.0
+
+            traj_data_1.append(tdata)
+
+        pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
+        cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
         conjs = cj.conjunctions
         self.assertEqual(len(conjs), 1)
         self.assertTrue(np.all(conjs["i"] == 0))
