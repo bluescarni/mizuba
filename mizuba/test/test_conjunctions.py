@@ -995,3 +995,117 @@ class conjunctions_test_case(_ut.TestCase):
             for i in range(c.n_cd_steps):
                 self.assertEqual(len(c.get_aabb_collisions(i)), 0)
             self.assertEqual(len(c.conjunctions), 0)
+
+    def test_cd_begin_end(self):
+        # Test to check for correctness when two trajectories
+        # begin and end within a conjunction step.
+        from .. import conjunctions, polyjectory
+        import numpy as np
+
+        # NOTE: in these tests, we have 2 objects initially
+        # placed on the x axis at +-1. The two objects
+        # move with uniform unitary speed towards the origin,
+        # where they will meet at t = 1.
+
+        # The overall time data runs at regular 0.1 intervals from 0 to 2.
+        tm_data = np.array(
+            [
+                0.0,
+                0.1,
+                0.2,
+                0.3,
+                0.4,
+                0.5,
+                0.6,
+                0.7,
+                0.8,
+                0.9,
+                1.0,
+                1.1,
+                1.2,
+                1.3,
+                1.4,
+                1.5,
+                1.6,
+                1.7,
+                1.8,
+                1.9,
+                2.0,
+            ]
+        )
+
+        # First case: no overlap between the two trajectories.
+
+        # The time data for object 1 goes up to 0.9
+        tm_data_0 = tm_data[:10]
+        # The time data for object 2 goes from 1.1 to the end.
+        tm_data_1 = tm_data[11:]
+
+        # Construct the trajectory data for the first object, moving
+        # right to left.
+        traj_data_0 = []
+        for tm in tm_data_0[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = 1.0 - (tm - 0.1)
+            tdata[0, 1] = -1.0
+            tdata[3, 0] = -1.0
+
+            traj_data_0.append(tdata)
+
+        # Construct the trajectory data for the second object, moving
+        # left to right.
+        traj_data_1 = []
+        for tm in tm_data_1[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = -(1.0 - (tm - 0.1))
+            tdata[0, 1] = 1.0
+            tdata[3, 0] = 1.0
+
+            traj_data_1.append(tdata)
+
+        # Construct the polyjectory.
+        pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
+
+        # Run conjunction detection.
+        cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
+
+        # We must not detect any conjunction because the conjunection happens
+        # when there is no data for both trajectories.
+        self.assertEqual(len(cj.conjunctions), 0)
+
+        # Second case: overlap between the two trajectories. The overlap occurs
+        # in the second conjunction step.
+        tm_data_0 = tm_data[:12]
+        tm_data_1 = tm_data[9:]
+
+        traj_data_0 = []
+        for tm in tm_data_0[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = 1.0 - (tm - 0.1)
+            tdata[0, 1] = -1.0
+            tdata[3, 0] = -1.0
+
+            traj_data_0.append(tdata)
+
+        traj_data_1 = []
+        for tm in tm_data_1[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = -(1.0 - (tm - 0.1))
+            tdata[0, 1] = 1.0
+            tdata[3, 0] = 1.0
+
+            traj_data_1.append(tdata)
+
+        pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
+        cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
+        # Here we must detect the conjunction.
+        conjs = cj.conjunctions
+        self.assertEqual(len(conjs), 1)
+        self.assertTrue(np.all(conjs["i"] == 0))
+        self.assertTrue(np.all(conjs["j"] == 1))
+        self.assertAlmostEqual(conjs["tca"][0], 1.0, places=15)
+        self.assertAlmostEqual(conjs["dca"][0], 0.0, delta=1e-15)
+        self.assertTrue(np.allclose(conjs["ri"][0], [0, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["rj"][0], [0, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["vi"][0], [-1, 0, 0], atol=1e-15, rtol=0.0))
+        self.assertTrue(np.allclose(conjs["vj"][0], [1, 0, 0], atol=1e-15, rtol=0.0))

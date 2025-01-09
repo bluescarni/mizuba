@@ -232,8 +232,32 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                     loop_entered = true;
 #endif
 
-                    // Update n_tot_conj_candidates.
-                    ++n_tot_conj_candidates;
+                    // A small helper to update it_i and it_j for the next iteration of the for-loop.
+                    // Normally this is invoked at the end of the loop, however it will be invoked earlier
+                    // if the current i and j trajectory steps do not overlap.
+                    const auto update_iterators = [&it_i, &it_j]() {
+                        // NOTE: explanation on how we compute the iterator increments:
+                        //
+                        // 1) if *it_i == *it_j, then the trajectory steps end at the same time,
+                        //    and we need to move to the next step for both objects (i.e., in the
+                        //    current iteration of the for loop we processed the timeline up to
+                        //    the same time for both objects). This can happen at the very end
+                        //    of a polyjectory, or if both steps end exactly at the same time;
+                        //
+                        // 2) if *it_i < *it_j, then the trajectory step for object i ends before
+                        //    the trajectory step for object j. We must move to the next step for
+                        //    object i while remaining on the current step for object j;
+                        //
+                        // 3) if *it_j < *it_i, we have the specular case of 2.
+
+                        // Compute the increments.
+                        const auto inc_i = (*it_i <= *it_j);
+                        const auto inc_j = (*it_j <= *it_i);
+
+                        // Apply them.
+                        it_i += inc_i;
+                        it_j += inc_j;
+                    };
 
                     // Initial time coordinates of the trajectory steps of i and j.
                     assert(it_i != t_begin_i);
@@ -249,6 +273,24 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                     const auto ub_i = std::min(cd_end, *it_i);
                     const auto lb_j = std::max(cd_begin, ts_start_j);
                     const auto ub_j = std::min(cd_end, *it_j);
+                    // NOTE: these must hold because there must be some overlap between
+                    // the trajectory steps and the conjunction step, otherwise a candidate
+                    // conjunction wouldn't have been flagged.
+                    assert(lb_i < ub_i);
+                    assert(lb_j < ub_j);
+
+                    // NOTE: if the intersection of [lb_i, ub_i) and [lb_j, ub_j) is empty,
+                    // no conjunction is possible because there is no temporal overlap between
+                    // the current trajectory steps of i and j. Just move to the next loop
+                    // iteration.
+                    if (!(ub_i > lb_j && lb_i < ub_j)) {
+                        update_iterators();
+                        continue;
+                    }
+
+                    // Update n_tot_conj_candidates. Do it here, after we have determined
+                    // that there is an overlap between the trajectory steps of i and j.
+                    ++n_tot_conj_candidates;
 
                     // Determine the intersection between the two intervals
                     // we just computed. This will be the time range
@@ -258,6 +300,7 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                     // NOTE: min/max is fine here, all quantities are safe.
                     const auto lb_rf = std::max(lb_i, lb_j);
                     const auto ub_rf = std::min(ub_i, ub_j);
+                    assert(lb_rf < ub_rf);
 
                     // The trajectory polynomials for the two objects are time polynomials
                     // in which time is counted from the beginning of the trajectory step. In order to
@@ -576,21 +619,7 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                     }
 
                     // Update it_i and it_j.
-                    if (*it_i < *it_j) {
-                        // The trajectory step for object i ends
-                        // before the trajectory step for object j.
-                        ++it_i;
-                    } else if (*it_j < *it_i) {
-                        // The trajectory step for object j ends
-                        // before the trajectory step for object i.
-                        ++it_j;
-                    } else {
-                        // Both trajectory steps end at the same time.
-                        // This can happen at the very end of a polyjectory,
-                        // or if both steps end exactly at the same time.
-                        ++it_i;
-                        ++it_j;
-                    }
+                    update_iterators();
                 }
 
                 assert(loop_entered);
