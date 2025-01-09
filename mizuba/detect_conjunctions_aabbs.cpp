@@ -55,6 +55,11 @@ namespace
 // obj_idx is the object index in the polyjectory pj, cd_begin/end the begin/end times
 // of the conjunction timestep, conj_thresh the conjunction threshold, cjd the data
 // structure containing the JIT-compiled function used to compute the aabb of the object.
+//
+// An infinite AABB is returned to signal that there is no time overlap between the
+// trajectory of the object and the conjunction step. The overlap does not need to
+// be complete - that is, the trajectory may begin or end somewhen inside the
+// conjunction step.
 auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_begin, double cd_end, double conj_thresh,
                          const detail::conj_jit_data &cjd)
 {
@@ -81,7 +86,7 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
     // the end of the conjunction step, or does not end strictly *after*
     // the begin of the conjunction step. This means there is no overlap at all
     // between the trajectory and the conjunction step.
-    if (!(time_span[0] < cd_end) || !(time_span[nsteps] > cd_begin)) {
+    if (!(time_span[0] < cd_end && time_span[nsteps] > cd_begin)) {
         return std::make_pair(lb, ub);
     }
 
@@ -271,6 +276,9 @@ void validate_global_aabbs(auto cd_aabbs_span)
 // conj_det_interval the conjunction detection interval, n_cd_steps the total number of
 // conjunction steps, cd_end_times the vector of end times for the conjunction steps, cjd the data
 // structure containing the JIT-compiled function used to compute the aabbs of the objects.
+//
+// If there is no trajectory data for an object within the conjunction step, the corresponding AABB
+// will be inited with infinities.
 void conjunctions::detect_conjunctions_aabbs(std::size_t cd_idx, std::vector<float> &cd_aabbs, const polyjectory &pj,
                                              double conj_thresh, double conj_det_interval, std::size_t n_cd_steps,
                                              std::vector<double> &cd_end_times, const detail::conj_jit_data &cjd)

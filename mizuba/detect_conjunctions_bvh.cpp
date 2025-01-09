@@ -300,7 +300,7 @@ void conjunctions::detect_conjunctions_bvh(std::vector<bvh_node> &tree, std::vec
     assert(std::ranges::is_sorted(isinf_view));
     static_assert(std::ranges::random_access_range<decltype(isinf_view)>);
 
-    // Overflow check.
+    // Overflow checks.
     try {
         // Make sure the difference type of isinf_view can represent tot_nobjs. We need this in order to be able
         // to safely subtract isinf_view iterators.
