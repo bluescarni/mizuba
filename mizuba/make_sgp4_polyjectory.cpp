@@ -703,7 +703,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
             std::vector<double> cheby_nodes;
             cheby_nodes.resize(c_nodes_unit.size());
 
-            // Init the evaluation/interpolation buffer. This may be used to both:
+            // Init the evaluation/interpolation buffer.
             std::vector<double> interp_buffer;
             interp_buffer.resize(boost::safe_numerics::safe<decltype(interp_buffer.size())>(op1) * 21);
             // NOTE: we need to construct std::size_t-sized spans on top of this buffer.
