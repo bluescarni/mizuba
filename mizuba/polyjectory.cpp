@@ -43,6 +43,7 @@
 #include "detail/atomic_minmax.hpp"
 #include "detail/dfloat_utils.hpp"
 #include "detail/file_utils.hpp"
+#include "detail/poly_utils.hpp"
 #include "logging.hpp"
 #include "mdspan.hpp"
 #include "polyjectory.hpp"
@@ -765,6 +766,147 @@ dspan_1d<const std::int32_t> polyjectory::get_status() const noexcept
     // NOTE: static_cast is ok, we know that we can represent the total number of objects
     // in the polyjectory as a std::size_t.
     return dspan_1d<const std::int32_t>{m_impl->m_status.data(), static_cast<std::size_t>(m_impl->m_status.size())};
+}
+
+namespace detail
+{
+
+namespace
+{
+
+// Evaluate the state of an object in a polyjectory at time tm.
+//
+// pj is the polyjectory, obj_idx the object's index in the polyjectory, tm the evaluation
+// time (measured from the polyjectory's epoch), out the span into which the result of
+// the evaluation will be written.
+//
+// NOTE: in principle this function could be implemented in a jitted vectorised fashion using scatter/gather
+// primitives and masked load/store/arithmetic operations. This would work best on AVX512 and later,
+// but it could possibly be advantageous also on AVX2 and less. Keep it in mind if we need to squeeze
+// out the best performance from this.
+void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, const auto &out)
+{
+    // Check the desired evaluation time.
+    if (!std::isfinite(tm)) [[unlikely]] {
+        throw std::invalid_argument(
+            fmt::format("An non-finite evaluation time of {} was detected during the evaluation of a polyjectory", tm));
+    }
+
+    // Fetch the traj and time spans for the current object.
+    const auto [traj_span, time_span, _] = pj[obj_idx];
+
+    // Fetch the total number of steps for the current object.
+    const auto nsteps = traj_span.extent(0);
+
+    // If either:
+    //
+    // - no trajectory data is available for this object, or
+    // - the evaluation time is *before* the begin time of the trajectory, or
+    // - the evaluation time is *at or after* the end time of the trajectory,
+    //
+    // then we cannot compute any evaluation for the current object, and we
+    // fill up the output with nans instead.
+    if (nsteps == 0u || tm < time_span(0) || tm >= time_span(nsteps)) {
+        std::ranges::fill(&out(obj_idx, 0), &out(obj_idx, 0) + 7, std::numeric_limits<double>::quiet_NaN());
+        return;
+    }
+
+    // Make sure that nsteps + 1 (i.e., the number of time datapoints) is representable as std::ptrdiff_t.
+    // This ensures that we can safely calculate pointer subtractions in the time span data,
+    // which allows us to determine the index of a trajectory timestep (see the code
+    // below computing step_idx).
+    try {
+        static_cast<void>(boost::numeric_cast<std::ptrdiff_t>(nsteps + 1u));
+        // LCOV_EXCL_START
+    } catch (...) {
+        throw std::overflow_error(
+            "Overflow detected in the trajectory data during evaluation: the number of steps is too large");
+    }
+    // LCOV_EXCL_STOP
+
+    // Fetch begin/end iterators to the time span.
+    const auto t_begin = time_span.data_handle();
+    const auto t_end = t_begin + (nsteps + 1u);
+
+    // Look for the first trajectory step that ends *after* the evaluation time.
+    const auto tm_it = std::ranges::upper_bound(t_begin + 1, t_end, tm);
+    assert(tm_it != t_end);
+
+    // Compute the time coordinate needed for polynomial evaluation.
+    const auto h = tm - *(tm_it - 1);
+
+    // Compute the step index.
+    const auto step_idx = static_cast<std::size_t>(tm_it - (t_begin + 1));
+
+    // Fetch the order of the polyjectory.
+    const auto order = pj.get_poly_order();
+
+    // Run the polynomial evaluations and write the results into the output span.
+    for (auto i = 0u; i < 7u; ++i) {
+        out(obj_idx, i) = detail::horner_eval(&traj_span(step_idx, i, 0), order, h);
+    }
+}
+
+} // namespace
+
+} // namespace detail
+
+void polyjectory::operator()(eval_span_t out, double tm) const
+{
+    // Cache the number of objects.
+    const auto nobjs = get_nobjs();
+
+    // Check the out span.
+    // NOTE: this currently cannot trigger because we do not allow the user
+    // to pass an output array. Remove the coverage exclusion tags once we
+    // allow that.
+    // LCOV_EXCL_START
+    if (out.extent(0) != nobjs) [[unlikely]] {
+        throw std::invalid_argument(
+            fmt::format("Invalid output array passed to the call operator of a polyjectory: the "
+                        "number of objects is {} but the size of the first dimension of the array is {} (the two "
+                        "numbers must be equal)",
+                        nobjs, out.extent(0)));
+    }
+    // LCOV_EXCL_STOP
+
+    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, nobjs), [this, tm, out](const auto &range) {
+        for (auto obj_idx = range.begin(); obj_idx != range.end(); ++obj_idx) {
+            detail::pj_eval_obj_state(*this, obj_idx, tm, out);
+        }
+    });
+}
+
+void polyjectory::operator()(eval_span_t out, dspan_1d<const double> in) const
+{
+    // Cache the number of objects.
+    const auto nobjs = get_nobjs();
+
+    // Check the spans.
+    // NOTE: this currently cannot trigger because we do not allow the user
+    // to pass an output array. Remove the coverage exclusion tags once we
+    // allow that.
+    // LCOV_EXCL_START
+    if (out.extent(0) != nobjs) [[unlikely]] {
+        throw std::invalid_argument(
+            fmt::format("Invalid output array passed to the call operator of a polyjectory: the "
+                        "number of objects is {} but the size of the first dimension of the array is {} (the two "
+                        "numbers must be equal)",
+                        nobjs, out.extent(0)));
+    }
+    // LCOV_EXCL_STOP
+    if (in.extent(0) != nobjs) [[unlikely]] {
+        throw std::invalid_argument(
+            fmt::format("Invalid input array passed to the call operator of a polyjectory: the "
+                        "number of objects is {} but the size of the array is {} (the two numbers must be equal)",
+                        nobjs, in.extent(0)));
+    }
+
+    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, nobjs), [this, in, out](const auto &range) {
+        for (auto obj_idx = range.begin(); obj_idx != range.end(); ++obj_idx) {
+            detail::pj_eval_obj_state(*this, obj_idx, in(obj_idx), out);
+        }
+    });
 }
 
 } // namespace mizuba

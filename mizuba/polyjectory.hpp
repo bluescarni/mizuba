@@ -139,6 +139,15 @@ public:
 
     [[nodiscard]] std::tuple<traj_span_t, time_span_t, std::int32_t> operator[](std::size_t) const;
     [[nodiscard]] dspan_1d<const std::int32_t> get_status() const noexcept;
+
+    // Span used to store the output of polyjectory evaluation. The two dimensions here are, respectively:
+    //
+    // - the total number of objects,
+    // - the total number of state variables (which is always 7, i.e.,
+    //   the Cartesian state vector + radius).
+    using eval_span_t = heyoka::mdspan<double, heyoka::extents<std::size_t, std::dynamic_extent, 7>>;
+    void operator()(eval_span_t, double) const;
+    void operator()(eval_span_t, dspan_1d<const double>) const;
 };
 
 } // namespace mizuba
