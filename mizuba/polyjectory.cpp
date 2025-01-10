@@ -41,8 +41,11 @@
 #include <oneapi/tbb/parallel_for.h>
 
 #include "detail/atomic_minmax.hpp"
+#include "detail/dfloat_utils.hpp"
 #include "detail/file_utils.hpp"
+#include "detail/poly_utils.hpp"
 #include "logging.hpp"
+#include "mdspan.hpp"
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -179,17 +182,17 @@ polyjectory::polyjectory(ptag,
             n_objs, status.size()));
     }
 
-    // Check epoch and epoch2.
+    // Check epoch and epoch2, and compute the normalised double-length epoch.
     if (!std::isfinite(epoch)) [[unlikely]] {
         throw std::invalid_argument(fmt::format(
             "The initial epoch of a polyjectory must be finite, but instead a value of {} was provided", epoch));
     }
-
     if (!std::isfinite(epoch2)) [[unlikely]] {
         throw std::invalid_argument(fmt::format("The second component of the initial epoch of a polyjectory must be "
                                                 "finite, but instead a value of {} was provided",
                                                 epoch2));
     }
+    const auto dl_epoch = detail::hilo_to_dfloat(epoch, epoch2);
 
     // Assemble a "unique" dir path into the system temp dir.
     auto tmp_dir_path = detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
@@ -230,13 +233,11 @@ polyjectory::polyjectory(ptag,
                 }
 
                 poly_op1 = boost::numeric_cast<std::uint32_t>(op1);
-            } else {
-                if (op1 != poly_op1) [[unlikely]] {
-                    throw std::invalid_argument(
-                        fmt::format("The trajectory polynomial order for the object at index "
-                                    "{} is inconsistent with the polynomial order deduced from the first object ({})",
-                                    i, poly_op1 - 1u));
-                }
+            } else if (op1 != poly_op1) [[unlikely]] {
+                throw std::invalid_argument(
+                    fmt::format("The trajectory polynomial order for the object at index " // LCOV_EXCL_LINE
+                                "{} is inconsistent with the polynomial order deduced from the first object ({})",
+                                i, poly_op1 - 1u));
             }
 
             // Compute the total data size (in number of floating-point values).
@@ -272,10 +273,17 @@ polyjectory::polyjectory(ptag,
             const auto cur_time = time_spans[i];
 
             // The number of times must be consistent with the number of steps.
-            if (cur_traj.extent(0) != cur_time.extent(0)) [[unlikely]] {
+            if (cur_time.extent(0) == 0u) {
+                // No time data, this must be an empty trajectory.
+                if (cur_traj.extent(0) != 0u) [[unlikely]] {
+                    throw std::invalid_argument(fmt::format("The trajectory of the object at index {} has a nonzero "
+                                                            "number of steps but no associated time data",
+                                                            i));
+                }
+            } else if (cur_time.extent(0) - 1u != cur_traj.extent(0)) [[unlikely]] {
                 throw std::invalid_argument(
                     fmt::format("The number of steps for the trajectory of the object at index {} is {}, but the "
-                                "number of times is {} - the two numbers must be equal",
+                                "number of times is {} (the number of times must be equal to the number of steps + 1)",
                                 i, cur_traj.extent(0), cur_time.extent(0)));
             }
 
@@ -370,9 +378,9 @@ polyjectory::polyjectory(ptag,
                                 fmt::format("A non-finite time coordinate was found for the object at index {}", i));
                         }
 
-                        if (cur_time(j) <= 0) [[unlikely]] {
+                        if (cur_time(j) < 0) [[unlikely]] {
                             throw std::invalid_argument(
-                                fmt::format("A non-positive time coordinate was found for the object at index {}", i));
+                                fmt::format("A negative time coordinate was found for the object at index {}", i));
                         }
 
                         if (j > 0u && !(cur_time(j) > cur_time(j - 1u))) [[unlikely]] {
@@ -412,7 +420,7 @@ polyjectory::polyjectory(ptag,
         // performed in the catch block below.
         m_impl = std::make_shared<detail::polyjectory_impl>(std::move(tmp_dir_path), std::move(traj_offset_vec),
                                                             std::move(time_offset_vec), poly_op1, maxT,
-                                                            std::move(status), epoch, epoch2);
+                                                            std::move(status), dl_epoch.hi, dl_epoch.lo);
     } catch (...) {
         boost::filesystem::remove_all(tmp_dir_path);
         throw;
@@ -452,17 +460,17 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                                                 traj_offsets.size(), status.size()));
     }
 
-    // Check epoch and epoch2.
+    // Check epoch and epoch2, and compute the normalised double-length epoch.
     if (!std::isfinite(epoch)) [[unlikely]] {
         throw std::invalid_argument(fmt::format(
             "The initial epoch of a polyjectory must be finite, but instead a value of {} was provided", epoch));
     }
-
     if (!std::isfinite(epoch2)) [[unlikely]] {
         throw std::invalid_argument(fmt::format("The second component of the initial epoch of a polyjectory must be "
                                                 "finite, but instead a value of {} was provided",
                                                 epoch2));
     }
+    const auto dl_epoch = detail::hilo_to_dfloat(epoch, epoch2);
 
     // Canonicalise the file paths and turn them into Boost fs paths.
     boost::filesystem::path traj_file_path, time_file_path;
@@ -480,6 +488,8 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
     // the total number of floating-point values expected in the files.
     safe_size_t tot_num_traj_values = 0, tot_num_time_values = 0;
 
+    // NOTE: this should be parallelisable with some effort, if needed. The only complication
+    // would be the handling of safe arithmetics.
     for (decltype(traj_offsets.size()) i = 0; i < traj_offsets.size(); ++i) {
         const auto [offset, n_steps] = traj_offsets[i];
 
@@ -496,13 +506,13 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
             // An offset at index i > 0 must be consistent with the previous offset and n_steps.
             const auto [prev_offset, prev_n_steps] = traj_offsets[i - 1u];
 
-            // TODO check about this, more testing needed.
-            // if (!(offset > prev_offset)) [[unlikely]] {
-            //     throw std::invalid_argument(fmt::format(
-            //         "Invalid trajectory offsets vector passed to the constructor of a polyjectory: "
-            //         "the offset of the object at index {} is not greater than the offset of the previous object",
-            //         i));
-            // }
+            // NOTE: the two offsets will be equal if the previous trajectory is empty, thus we check with '<'.
+            if (offset < prev_offset) [[unlikely]] {
+                throw std::invalid_argument(
+                    fmt::format("Invalid trajectory offsets vector passed to the constructor of a polyjectory: "
+                                "the offset of the object at index {} is less than the offset of the previous object",
+                                i));
+            }
 
             if (offset - prev_offset != safe_size_t(prev_n_steps) * 7u * op1) [[unlikely]] {
                 throw std::invalid_argument(fmt::format(
@@ -515,7 +525,10 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
 
         // Update tot_num_traj_values and tot_num_time_values.
         tot_num_traj_values += safe_size_t(n_steps) * 7u * op1;
-        tot_num_time_values += n_steps;
+        // NOTE: the total number of time values for the current trajectory is zero if n_steps == 0,
+        // otherwise it is n_steps + 1. n_steps + 1 is safe to compute as we computed n_steps * 7
+        // the line before.
+        tot_num_time_values += n_steps + static_cast<unsigned>(n_steps != 0u);
     }
 
     if (tot_num_traj_values == 0u) [[unlikely]] {
@@ -525,7 +538,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
 
     // Build the time offsets vector from the trajectory offsets.
     // NOTE: all computations here are safe because we managed to compute
-    // expected_tot_num_values without overflow.
+    // tot_num_time_values without overflow.
     std::vector<std::size_t> time_offsets;
     time_offsets.reserve(traj_offsets.size());
     for (decltype(traj_offsets.size()) i = 0; i < traj_offsets.size(); ++i) {
@@ -533,7 +546,8 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
             time_offsets.push_back(0);
         } else {
             const auto [_, prev_nsteps] = traj_offsets[i - 1u];
-            time_offsets.push_back(time_offsets.back() + prev_nsteps);
+            // NOTE: as usual, we need to add +1 to prev_nsteps if the previous trajectory is not empty.
+            time_offsets.push_back(time_offsets.back() + prev_nsteps + static_cast<unsigned>(prev_nsteps != 0u));
         }
     }
 
@@ -621,7 +635,10 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                     }
 
                     // Build a time span and check the data.
-                    const time_span_t cur_time{time_file_base_ptr + time_offset, n_steps};
+                    const time_span_t cur_time{time_file_base_ptr + time_offset,
+                                               // NOTE: as usual, the total number of time data points is
+                                               // n_steps + 1 if n_steps > 0, zero otherwise.
+                                               n_steps + static_cast<unsigned>(n_steps != 0u)};
 
                     for (std::size_t j = 0; j < cur_time.extent(0); ++j) {
                         if (!std::isfinite(cur_time(j))) [[unlikely]] {
@@ -629,9 +646,9 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                                 fmt::format("A non-finite time coordinate was found for the object at index {}", i));
                         }
 
-                        if (cur_time(j) <= 0) [[unlikely]] {
+                        if (cur_time(j) < 0) [[unlikely]] {
                             throw std::invalid_argument(
-                                fmt::format("A non-positive time coordinate was found for the object at index {}", i));
+                                fmt::format("A negative time coordinate was found for the object at index {}", i));
                         }
 
                         if (j > 0u && !(cur_time(j) > cur_time(j - 1u))) [[unlikely]] {
@@ -668,7 +685,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         // Construct the implementation.
         m_impl = std::make_shared<detail::polyjectory_impl>(std::move(tmp_dir_path), std::move(traj_offsets),
                                                             std::move(time_offsets), op1, maxT.load(),
-                                                            std::move(status), epoch, epoch2);
+                                                            std::move(status), dl_epoch.hi, dl_epoch.lo);
 
         // LCOV_EXCL_START
     } catch (...) {
@@ -717,7 +734,7 @@ polyjectory::operator[](std::size_t i) const
     return {traj_span_t{traj_ptr, nsteps,
                         // NOTE: static_cast is ok, m_poly_op1 was originally a std::size_t.
                         static_cast<std::size_t>(m_impl->m_poly_op1)},
-            time_span_t{time_ptr, nsteps}, m_impl->m_status[i]};
+            time_span_t{time_ptr, nsteps + static_cast<unsigned>(nsteps != 0u)}, m_impl->m_status[i]};
 }
 
 // NOTE: using std::size_t as a size type is ok because we used std::size_t-based
@@ -744,11 +761,152 @@ std::uint32_t polyjectory::get_poly_order() const noexcept
     return m_impl->m_poly_op1 - 1u;
 }
 
-polyjectory::status_span_t polyjectory::get_status() const noexcept
+dspan_1d<const std::int32_t> polyjectory::get_status() const noexcept
 {
     // NOTE: static_cast is ok, we know that we can represent the total number of objects
     // in the polyjectory as a std::size_t.
-    return status_span_t{m_impl->m_status.data(), static_cast<std::size_t>(m_impl->m_status.size())};
+    return dspan_1d<const std::int32_t>{m_impl->m_status.data(), static_cast<std::size_t>(m_impl->m_status.size())};
+}
+
+namespace detail
+{
+
+namespace
+{
+
+// Evaluate the state of an object in a polyjectory at time tm.
+//
+// pj is the polyjectory, obj_idx the object's index in the polyjectory, tm the evaluation
+// time (measured from the polyjectory's epoch), out the span into which the result of
+// the evaluation will be written.
+//
+// NOTE: in principle this function could be implemented in a jitted vectorised fashion using scatter/gather
+// primitives and masked load/store/arithmetic operations. This would work best on AVX512 and later,
+// but it could possibly be advantageous also on AVX2 and less. Keep it in mind if we need to squeeze
+// out the best performance from this.
+void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, const auto &out)
+{
+    // Check the desired evaluation time.
+    if (!std::isfinite(tm)) [[unlikely]] {
+        throw std::invalid_argument(
+            fmt::format("An non-finite evaluation time of {} was detected during the evaluation of a polyjectory", tm));
+    }
+
+    // Fetch the traj and time spans for the current object.
+    const auto [traj_span, time_span, _] = pj[obj_idx];
+
+    // Fetch the total number of steps for the current object.
+    const auto nsteps = traj_span.extent(0);
+
+    // If either:
+    //
+    // - no trajectory data is available for this object, or
+    // - the evaluation time is *before* the begin time of the trajectory, or
+    // - the evaluation time is *at or after* the end time of the trajectory,
+    //
+    // then we cannot compute any evaluation for the current object, and we
+    // fill up the output with nans instead.
+    if (nsteps == 0u || tm < time_span(0) || tm >= time_span(nsteps)) {
+        std::ranges::fill(&out(obj_idx, 0), &out(obj_idx, 0) + 7, std::numeric_limits<double>::quiet_NaN());
+        return;
+    }
+
+    // Make sure that nsteps + 1 (i.e., the number of time datapoints) is representable as std::ptrdiff_t.
+    // This ensures that we can safely calculate pointer subtractions in the time span data,
+    // which allows us to determine the index of a trajectory timestep (see the code
+    // below computing step_idx).
+    try {
+        static_cast<void>(boost::numeric_cast<std::ptrdiff_t>(nsteps + 1u));
+        // LCOV_EXCL_START
+    } catch (...) {
+        throw std::overflow_error(
+            "Overflow detected in the trajectory data during evaluation: the number of steps is too large");
+    }
+    // LCOV_EXCL_STOP
+
+    // Fetch begin/end iterators to the time span.
+    const auto t_begin = time_span.data_handle();
+    const auto t_end = t_begin + (nsteps + 1u);
+
+    // Look for the first trajectory step that ends *after* the evaluation time.
+    const auto tm_it = std::ranges::upper_bound(t_begin + 1, t_end, tm);
+    assert(tm_it != t_end);
+
+    // Compute the time coordinate needed for polynomial evaluation.
+    const auto h = tm - *(tm_it - 1);
+
+    // Compute the step index.
+    const auto step_idx = static_cast<std::size_t>(tm_it - (t_begin + 1));
+
+    // Fetch the order of the polyjectory.
+    const auto order = pj.get_poly_order();
+
+    // Run the polynomial evaluations and write the results into the output span.
+    for (auto i = 0u; i < 7u; ++i) {
+        out(obj_idx, i) = detail::horner_eval(&traj_span(step_idx, i, 0), order, h);
+    }
+}
+
+} // namespace
+
+} // namespace detail
+
+void polyjectory::operator()(eval_span_t out, double tm) const
+{
+    // Cache the number of objects.
+    const auto nobjs = get_nobjs();
+
+    // Check the out span.
+    // NOTE: this currently cannot trigger because we do not allow the user
+    // to pass an output array. Remove the coverage exclusion tags once we
+    // allow that.
+    // LCOV_EXCL_START
+    if (out.extent(0) != nobjs) [[unlikely]] {
+        throw std::invalid_argument(
+            fmt::format("Invalid output array passed to the call operator of a polyjectory: the "
+                        "number of objects is {} but the size of the first dimension of the array is {} (the two "
+                        "numbers must be equal)",
+                        nobjs, out.extent(0)));
+    }
+    // LCOV_EXCL_STOP
+
+    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, nobjs), [this, tm, out](const auto &range) {
+        for (auto obj_idx = range.begin(); obj_idx != range.end(); ++obj_idx) {
+            detail::pj_eval_obj_state(*this, obj_idx, tm, out);
+        }
+    });
+}
+
+void polyjectory::operator()(eval_span_t out, dspan_1d<const double> in) const
+{
+    // Cache the number of objects.
+    const auto nobjs = get_nobjs();
+
+    // Check the spans.
+    // NOTE: this currently cannot trigger because we do not allow the user
+    // to pass an output array. Remove the coverage exclusion tags once we
+    // allow that.
+    // LCOV_EXCL_START
+    if (out.extent(0) != nobjs) [[unlikely]] {
+        throw std::invalid_argument(
+            fmt::format("Invalid output array passed to the call operator of a polyjectory: the "
+                        "number of objects is {} but the size of the first dimension of the array is {} (the two "
+                        "numbers must be equal)",
+                        nobjs, out.extent(0)));
+    }
+    // LCOV_EXCL_STOP
+    if (in.extent(0) != nobjs) [[unlikely]] {
+        throw std::invalid_argument(
+            fmt::format("Invalid input array passed to the call operator of a polyjectory: the "
+                        "number of objects is {} but the size of the array is {} (the two numbers must be equal)",
+                        nobjs, in.extent(0)));
+    }
+
+    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, nobjs), [this, in, out](const auto &range) {
+        for (auto obj_idx = range.begin(); obj_idx != range.end(); ++obj_idx) {
+            detail::pj_eval_obj_state(*this, obj_idx, in(obj_idx), out);
+        }
+    });
 }
 
 } // namespace mizuba

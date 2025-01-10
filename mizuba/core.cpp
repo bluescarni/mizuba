@@ -16,6 +16,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -23,11 +24,13 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <random>
 #include <ranges>
 #include <span>
 #include <stdexcept>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <boost/numeric/conversion/cast.hpp>
@@ -48,6 +51,7 @@
 #include "conjunctions.hpp"
 #include "logging.hpp"
 #include "make_sgp4_polyjectory.hpp"
+#include "mdspan.hpp"
 #include "polyjectory.hpp"
 #include "sgp4_polyjectory.hpp"
 
@@ -92,11 +96,6 @@ namespace
 // results in a creation of a new Python-wrapped polyjectory without any weak pointer
 // registration. Probably we will need to enforce the registration at unpickling time?
 //
-// NOTE: this approach results in unbounded size for the vector of weak pointers.
-// If this ever becomes an issue, we can think about a more sophisticated implementation
-// (which for instance could periodically remove expired weak pointers from the
-// vector).
-//
 // NOTE: in jupyterlab the cleanup functions registered to run at exit sometimes
 // do not run to completion, thus leaving behind temporary files after shutdown.
 // I think we are seeing this issue:
@@ -106,11 +105,31 @@ namespace
 // Vector of weak pointers plus mutex for safe multithreaded access.
 constinit std::vector<std::weak_ptr<mizuba::detail::polyjectory_impl>> pj_weak_ptr_vector;
 constinit std::mutex pj_weak_ptr_mutex;
+// RNG for picking randomly into pj_weak_ptr_vector.
+std::mt19937 pj_weak_ptr_rng;
 
 // Add a weak pointer to a polyjectory implementation to pj_weak_ptr_vector.
 void add_pj_weak_ptr(const std::shared_ptr<mizuba::detail::polyjectory_impl> &ptr)
 {
     std::lock_guard lock(pj_weak_ptr_mutex);
+
+    // NOTE: if pj_weak_ptr_vector is not empty, we want to randomly poke into
+    // it and see if we find an expired pointer. If we do, we remove it by swapping it
+    // with the last pointer and then popping back. Like this, we avoid pj_weak_ptr_vector
+    // growing unbounded in size.
+    if (!pj_weak_ptr_vector.empty()) {
+        // Pick randomly an index into pj_weak_ptr_vector.
+        std::uniform_int_distribution<decltype(pj_weak_ptr_vector.size())> dist(0, pj_weak_ptr_vector.size() - 1u);
+        const auto idx = dist(pj_weak_ptr_rng);
+
+        if (pj_weak_ptr_vector[idx].expired()) {
+            // We picked an expired pointer: swap it to the end of the vector
+            // and pop back to erase it.
+            // NOTE: the self swap corner case should be ok here.
+            pj_weak_ptr_vector[idx].swap(pj_weak_ptr_vector.back());
+            pj_weak_ptr_vector.pop_back();
+        }
+    }
 
     pj_weak_ptr_vector.emplace_back(ptr);
 }
@@ -154,10 +173,21 @@ void cleanup_pj_weak_ptrs()
 // NOTE: same exact scheme for the conjunctions class.
 constinit std::vector<std::weak_ptr<mizuba::detail::conjunctions_impl>> cj_weak_ptr_vector;
 constinit std::mutex cj_weak_ptr_mutex;
+std::mt19937 cj_weak_ptr_rng;
 
 void add_cj_weak_ptr(const std::shared_ptr<mizuba::detail::conjunctions_impl> &ptr)
 {
     std::lock_guard lock(cj_weak_ptr_mutex);
+
+    if (!cj_weak_ptr_vector.empty()) {
+        std::uniform_int_distribution<decltype(cj_weak_ptr_vector.size())> dist(0, cj_weak_ptr_vector.size() - 1u);
+        const auto idx = dist(cj_weak_ptr_rng);
+
+        if (cj_weak_ptr_vector[idx].expired()) {
+            cj_weak_ptr_vector[idx].swap(cj_weak_ptr_vector.back());
+            cj_weak_ptr_vector.pop_back();
+        }
+    }
 
     cj_weak_ptr_vector.emplace_back(ptr);
 }
@@ -344,6 +374,55 @@ PYBIND11_MODULE(core, m)
             return py::make_tuple(std::move(traj_ret), std::move(time_ret), status);
         },
         "i"_a.noconvert());
+    pt_cl.def(
+        "__call__",
+        [](const mz::polyjectory &self, std::variant<double, py::array_t<double>> time) {
+            return std::visit(
+                [&self]<typename V>(const V &v) {
+                    if constexpr (std::same_as<V, py::array_t<double>>) {
+                        // Check contiguousness/alignment for the time array.
+                        mzpy::check_array_cc_aligned(v, "The time array passed to the call operator of a polyjectory "
+                                                        "must be C contiguous and properly aligned");
+
+                        // Check the number of dimensions for the time array.
+                        if (v.ndim() != 1) [[unlikely]] {
+                            throw std::invalid_argument(fmt::format(
+                                "The time array passed to the call operator of a polyjectory must have 1 dimension, "
+                                "but the number of dimensions is {} instead",
+                                v.ndim()));
+                        }
+                    }
+
+                    // Cache the total number of objects.
+                    const auto nobjs = self.get_nobjs();
+
+                    // Prepare the output array.
+                    py::array_t<double> out(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(nobjs),
+                                                                      static_cast<py::ssize_t>(7)});
+
+                    // Prepare the output span.
+                    const mz::polyjectory::eval_span_t out_span(out.mutable_data(), nobjs);
+
+                    // Prepare the input argument.
+                    const auto in = [&v]() {
+                        if constexpr (std::same_as<V, py::array_t<double>>) {
+                            return mz::dspan_1d<const double>(v.data(), boost::numeric_cast<std::size_t>(v.shape(0)));
+                        } else {
+                            return v;
+                        }
+                    }();
+
+                    // NOTE: release the GIL during evaluation.
+                    {
+                        py::gil_scoped_release release;
+                        self(out_span, in);
+                    }
+
+                    return out;
+                },
+                time);
+        },
+        "time"_a.noconvert());
 
     // Expose static getters for the structured types.
     pt_cl.def_property_readonly_static("traj_offset", [](const py::object &) { return py::dtype::of<traj_offset>(); });

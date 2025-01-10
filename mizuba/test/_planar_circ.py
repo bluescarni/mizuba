@@ -1168,6 +1168,7 @@ _planar_circ_tcs = _np.array(
 
 _planar_circ_times = _np.array(
     [
+        0.0,
         1.034251642578474,
         2.0767790787873364,
         3.118343898045924,

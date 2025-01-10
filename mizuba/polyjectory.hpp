@@ -34,6 +34,8 @@
 
 #include <heyoka/mdspan.hpp>
 
+#include "mdspan.hpp"
+
 namespace mizuba
 {
 
@@ -57,19 +59,28 @@ class polyjectory
     friend const std::shared_ptr<detail::polyjectory_impl> &detail::fetch_pj_impl(const polyjectory &) noexcept;
 
 public:
-    // NOTE: the three dimensions here are, respectively:
+    // Span representing a single trajectory. The three dimensions here are, respectively:
+    //
     // - the total number of steps,
     // - the total number of state variables (which is always 7, i.e.,
     //   the Cartesian state vector + radius),
     // - the polynomial order + 1.
     using traj_span_t
         = heyoka::mdspan<const double, heyoka::extents<std::size_t, std::dynamic_extent, 7, std::dynamic_extent>>;
-    using time_span_t = heyoka::mdspan<const double, heyoka::dextents<std::size_t, 1>>;
+
+    // Span representing time data for a trajectory. If the trajectory has no steps,
+    // then the span will be empty. Otherwise, the first value in the span
+    // will represent the start time of the trajectory (relative to the polyjectory
+    // epoch), while the remaining values will repesent the step end times (relative to
+    // the polyjectory epoch).
+    using time_span_t = dspan_1d<const double>;
 
     // Datatype representing:
+    //
     // - the offset (in number of floating-point values) at which data for a
     //   specific trajectory begins in a datafile,
     // - the total number of steps in the trajectory.
+    //
     // This is used for locating trajectories into a data file.
     struct traj_offset {
         std::size_t offset;
@@ -127,8 +138,16 @@ public:
     [[nodiscard]] std::uint32_t get_poly_order() const noexcept;
 
     [[nodiscard]] std::tuple<traj_span_t, time_span_t, std::int32_t> operator[](std::size_t) const;
-    using status_span_t = heyoka::mdspan<const std::int32_t, heyoka::extents<std::size_t, std::dynamic_extent>>;
-    [[nodiscard]] status_span_t get_status() const noexcept;
+    [[nodiscard]] dspan_1d<const std::int32_t> get_status() const noexcept;
+
+    // Span used to store the output of polyjectory evaluation. The two dimensions here are, respectively:
+    //
+    // - the total number of objects,
+    // - the total number of state variables (which is always 7, i.e.,
+    //   the Cartesian state vector + radius).
+    using eval_span_t = heyoka::mdspan<double, heyoka::extents<std::size_t, std::dynamic_extent, 7>>;
+    void operator()(eval_span_t, double) const;
+    void operator()(eval_span_t, dspan_1d<const double>) const;
 };
 
 } // namespace mizuba

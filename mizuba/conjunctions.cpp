@@ -40,6 +40,7 @@
 
 #include "conjunctions.hpp"
 #include "detail/file_utils.hpp"
+#include "mdspan.hpp"
 #include "polyjectory.hpp"
 
 #if defined(__GNUC__)
@@ -359,9 +360,9 @@ conjunctions::aabbs_span_t conjunctions::get_aabbs() const noexcept
     return aabbs_span_t{m_impl->m_aabbs_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs() + 1u};
 }
 
-conjunctions::cd_end_times_span_t conjunctions::get_cd_end_times() const noexcept
+dspan_1d<const double> conjunctions::get_cd_end_times() const noexcept
 {
-    return cd_end_times_span_t{m_impl->m_cd_end_times.data(), m_impl->m_n_cd_steps};
+    return dspan_1d<const double>{m_impl->m_cd_end_times.data(), m_impl->m_n_cd_steps};
 }
 
 const polyjectory &conjunctions::get_polyjectory() const noexcept
@@ -374,22 +375,22 @@ conjunctions::aabbs_span_t conjunctions::get_srt_aabbs() const noexcept
     return aabbs_span_t{m_impl->m_srt_aabbs_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs() + 1u};
 }
 
-conjunctions::mcodes_span_t conjunctions::get_mcodes() const noexcept
+dspan_2d<const std::uint64_t> conjunctions::get_mcodes() const noexcept
 {
-    return mcodes_span_t{m_impl->m_mcodes_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs()};
+    return dspan_2d<const std::uint64_t>{m_impl->m_mcodes_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs()};
 }
 
-conjunctions::mcodes_span_t conjunctions::get_srt_mcodes() const noexcept
+dspan_2d<const std::uint64_t> conjunctions::get_srt_mcodes() const noexcept
 {
-    return mcodes_span_t{m_impl->m_srt_mcodes_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs()};
+    return dspan_2d<const std::uint64_t>{m_impl->m_srt_mcodes_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs()};
 }
 
-conjunctions::srt_idx_span_t conjunctions::get_srt_idx() const noexcept
+dspan_2d<const std::uint32_t> conjunctions::get_srt_idx() const noexcept
 {
-    return srt_idx_span_t{m_impl->m_srt_idx_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs()};
+    return dspan_2d<const std::uint32_t>{m_impl->m_srt_idx_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs()};
 }
 
-conjunctions::tree_span_t conjunctions::get_bvh_tree(std::size_t i) const
+dspan_1d<const conjunctions::bvh_node> conjunctions::get_bvh_tree(std::size_t i) const
 {
     if (i >= m_impl->m_tree_offsets.size()) [[unlikely]] {
         throw std::out_of_range(fmt::format("Cannot fetch the BVH tree for the conjunction timestep at index {}: the "
@@ -404,10 +405,10 @@ conjunctions::tree_span_t conjunctions::get_bvh_tree(std::size_t i) const
     const auto *tree_ptr = m_impl->m_bvh_trees_ptr + tree_offset;
 
     // Return the span.
-    return tree_span_t{tree_ptr, tree_size};
+    return dspan_1d<const bvh_node>{tree_ptr, tree_size};
 }
 
-conjunctions::aabb_collision_span_t conjunctions::get_aabb_collisions(std::size_t i) const
+dspan_1d<const conjunctions::aabb_collision> conjunctions::get_aabb_collisions(std::size_t i) const
 {
     if (i >= m_impl->m_bp_offsets.size()) [[unlikely]] {
         throw std::out_of_range(
@@ -423,7 +424,7 @@ conjunctions::aabb_collision_span_t conjunctions::get_aabb_collisions(std::size_
     const auto *bp_ptr = m_impl->m_bp_ptr + bp_offset;
 
     // Return the span.
-    return aabb_collision_span_t{bp_ptr, bp_size};
+    return dspan_1d<const aabb_collision>{bp_ptr, bp_size};
 }
 
 std::size_t conjunctions::get_n_cd_steps() const noexcept
@@ -431,26 +432,27 @@ std::size_t conjunctions::get_n_cd_steps() const noexcept
     return m_impl->m_n_cd_steps;
 }
 
-conjunctions::conj_span_t conjunctions::get_conjunctions() const noexcept
+dspan_1d<const conjunctions::conj> conjunctions::get_conjunctions() const noexcept
 {
     if (m_impl->m_conjs_ptr == nullptr) {
         // No conjunctions detected.
-        return conj_span_t{nullptr, 0};
+        return dspan_1d<const conj>{nullptr, 0};
     } else {
         assert(m_impl->m_file_conjs.size() % sizeof(conj) == 0u);
         // NOTE: the static cast is ok because we made sure that
         // the total size of m_file_conjs can be represented by
         // std::size_t.
-        return conj_span_t{m_impl->m_conjs_ptr, static_cast<std::size_t>(m_impl->m_file_conjs.size() / sizeof(conj))};
+        return dspan_1d<const conj>{m_impl->m_conjs_ptr,
+                                    static_cast<std::size_t>(m_impl->m_file_conjs.size() / sizeof(conj))};
     }
 }
 
-conjunctions::otype_span_t conjunctions::get_otypes() const noexcept
+dspan_1d<const std::int32_t> conjunctions::get_otypes() const noexcept
 {
     // NOTE: the static cast is ok because we ensured on construction
     // that the size of m_impl->m_otypes is equal to nobjs, which is
     // represented as a std::size_t.
-    return otype_span_t{m_impl->m_otypes.data(), static_cast<std::size_t>(m_impl->m_otypes.size())};
+    return dspan_1d<const std::int32_t>{m_impl->m_otypes.data(), static_cast<std::size_t>(m_impl->m_otypes.size())};
 }
 
 double conjunctions::get_conj_thresh() const noexcept
