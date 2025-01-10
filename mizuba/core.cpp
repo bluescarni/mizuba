@@ -449,8 +449,8 @@ PYBIND11_MODULE(core, m)
                 gpes, "The array of gpes passed to make_sgp4_polyjectory() must be C contiguous and properly aligned");
 
             // Construct the span over the gpes.
-            const auto gpes_span = heyoka::mdspan<const gpe, heyoka::extents<std::size_t, std::dynamic_extent>>{
-                gpes.data(), boost::numeric_cast<std::size_t>(gpes.shape(0))};
+            const auto gpes_span
+                = mz::dspan_1d<const gpe>{gpes.data(), boost::numeric_cast<std::size_t>(gpes.shape(0))};
 
             // NOTE: release the GIL during the creation of the polyjectory.
             py::gil_scoped_release release;

@@ -31,17 +31,17 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         import numpy as np
 
         # Pick 5 random times.
-        step_begin = 0.0 if i == 0 else end_times[i - 1]
+        step_begin = end_times[i - 1]
         step_end = end_times[i]
         random_times = rng.uniform(0, step_end - step_begin, (5,))
 
-        xvals = np.polyval(cfs[i, 0, ::-1], random_times)
-        yvals = np.polyval(cfs[i, 1, ::-1], random_times)
-        zvals = np.polyval(cfs[i, 2, ::-1], random_times)
-        vxvals = np.polyval(cfs[i, 3, ::-1], random_times)
-        vyvals = np.polyval(cfs[i, 4, ::-1], random_times)
-        vzvals = np.polyval(cfs[i, 5, ::-1], random_times)
-        rvals = np.polyval(cfs[i, 6, ::-1], random_times)
+        xvals = np.polyval(cfs[i - 1, 0, ::-1], random_times)
+        yvals = np.polyval(cfs[i - 1, 1, ::-1], random_times)
+        zvals = np.polyval(cfs[i - 1, 2, ::-1], random_times)
+        vxvals = np.polyval(cfs[i - 1, 3, ::-1], random_times)
+        vyvals = np.polyval(cfs[i - 1, 4, ::-1], random_times)
+        vzvals = np.polyval(cfs[i - 1, 5, ::-1], random_times)
+        rvals = np.polyval(cfs[i - 1, 6, ::-1], random_times)
 
         e, r, v = sat.sgp4_array(np.array([jd_begin] * 5), step_begin + random_times)
 
@@ -92,7 +92,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         # evaluating the polynomials and comparing with the
         # sgp4 python module.
         cfs, end_times, _ = pj[0]
-        for i in range(len(end_times)):
+        for i in range(1, len(end_times)):
             self._compare_sgp4(jd_begin, i, sat, rng, cfs, end_times)
 
     def test_single_gpe_ds(self):
@@ -130,7 +130,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         # evaluating the polynomials and comparing with the
         # sgp4 python module.
         cfs, end_times, _ = pj[0]
-        for i in range(len(end_times)):
+        for i in range(1, len(end_times)):
             self._compare_sgp4(jd_begin, i, sat, rng, cfs, end_times, 1e-7, 1e-10)
 
     def test_multi_gpes(self):
@@ -166,7 +166,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             sat = Satrec.twoline2rv(s, t)
 
             cfs, end_times, _ = pj[sat_idx]
-            for i in range(len(end_times)):
+            for i in range(1, len(end_times)):
                 self._compare_sgp4(jd_begin, i, sat, rng, cfs, end_times)
 
     def test_iss_gpes(self):
@@ -314,19 +314,19 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         # Deterministic seeding.
         rng = np.random.default_rng(420)
 
-        for i in range(len(end_times)):
+        for i in range(1, len(end_times)):
             # Pick 5 random times.
-            step_begin = 0.0 if i == 0 else end_times[i - 1]
+            step_begin = end_times[i - 1]
             step_end = end_times[i]
             random_times = rng.uniform(0, step_end - step_begin, (5,))
 
-            xvals = np.polyval(cfs[i, 0, ::-1], random_times)
-            yvals = np.polyval(cfs[i, 1, ::-1], random_times)
-            zvals = np.polyval(cfs[i, 2, ::-1], random_times)
-            vxvals = np.polyval(cfs[i, 3, ::-1], random_times)
-            vyvals = np.polyval(cfs[i, 4, ::-1], random_times)
-            vzvals = np.polyval(cfs[i, 5, ::-1], random_times)
-            rvals = np.polyval(cfs[i, 6, ::-1], random_times)
+            xvals = np.polyval(cfs[i - 1, 0, ::-1], random_times)
+            yvals = np.polyval(cfs[i - 1, 1, ::-1], random_times)
+            zvals = np.polyval(cfs[i - 1, 2, ::-1], random_times)
+            vxvals = np.polyval(cfs[i - 1, 3, ::-1], random_times)
+            vyvals = np.polyval(cfs[i - 1, 4, ::-1], random_times)
+            vzvals = np.polyval(cfs[i - 1, 5, ::-1], random_times)
+            rvals = np.polyval(cfs[i - 1, 6, ::-1], random_times)
 
             # Convert the times to UTC Julian dates.
             utc_jds = Time(

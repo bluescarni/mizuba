@@ -44,7 +44,6 @@
 #include <oneapi/tbb/parallel_for.h>
 #include <oneapi/tbb/parallel_invoke.h>
 
-#include <heyoka/detail/dfloat.hpp>
 #include <heyoka/expression.hpp>
 #include <heyoka/kw.hpp>
 #include <heyoka/llvm_state.hpp>
@@ -56,6 +55,7 @@
 #include <heyoka/model/sgp4.hpp>
 #include <heyoka/taylor.hpp>
 
+#include "detail/dfloat_utils.hpp"
 #include "detail/file_utils.hpp"
 #include "detail/poly_utils.hpp"
 #include "detail/sgp4/SGP4.h"
@@ -71,26 +71,6 @@ namespace detail
 
 namespace
 {
-
-// Helper to normalise a two-parts floating-point value into a proper
-// double-length float (regardless of the magnitudes of the two parts).
-// If a non-finite value is detected, an error will be thrown.
-auto hilo_to_dfloat(double hi, double lo)
-{
-    // Normalise the two components. By using Knuth's EFT we ensure that the result is correct
-    // regardless of the magnitudes of the two components.
-    const auto [hi_norm, lo_norm] = heyoka::detail::eft_add_knuth(hi, lo);
-
-    // Check the result.
-    if (!std::isfinite(hi_norm) || !std::isfinite(lo_norm)) [[unlikely]] {
-        throw std::invalid_argument(fmt::format(
-            "The normalisation of the double-length number with components ({}, {}) produced a non-finite result", hi,
-            lo));
-    }
-
-    // Return the double-length float.
-    return heyoka::detail::dfloat<double>{hi_norm, lo_norm};
-}
 
 // Helper to construct a double-double representation of the epoch of a gpe.
 auto fetch_gpe_epoch(const gpe &g)
@@ -159,8 +139,10 @@ void check_gpe_order(const auto &gpes)
         }
 
         // Cannot have multiple identical epochs for the same satellite.
-        throw std::invalid_argument("Two GPEs with identical NORAD IDs and epochs were identified by "
-                                    "make_sgp4_polyjectory() - this is not allowed");
+        throw std::invalid_argument(
+            fmt::format("Two GPEs with identical NORAD ID {} and epoch ({}, {}) were identified by "
+                        "make_sgp4_polyjectory() - this is not allowed",
+                        g1.norad_id, g1.epoch_jd1, g1.epoch_jd2));
     };
 
     if (!std::ranges::is_sorted(gpes.data_handle(), gpes.data_handle() + gpes.extent(0), cmp)) [[unlikely]] {
@@ -169,7 +151,8 @@ void check_gpe_order(const auto &gpes)
     }
 }
 
-// Helper to build the template integrator, propagator and llvm state, which are passed in as
+// Helper to build the template integrator, propagator and llvm state which will be used to copy-init
+// the corresponding thread locals during parallel operations. The return values are passed in as
 // empty optionals.
 void build_tplts(auto &ta_kepler_tplt, auto &sgp4_prop_tplt, auto &jit_state_tplt)
 {
@@ -227,12 +210,12 @@ void build_tplts(auto &ta_kepler_tplt, auto &sgp4_prop_tplt, auto &jit_state_tpl
 // Evaluate a single gpe via the official sgp4 C++ code at multiple time points.
 //
 // cheby_nodes is the list of time points used for evaluation, and its size is op1.
-// satrec is the already-initialised satellite object to be passed to the propagation function.
-// interp_buffer is a memory buffer of size op1 * 21. The result of the evaluation
-// is supposed to be stored in the middle chunk of interp_buffer, that is, in the
-// [op1 * 7, op1 * 14) range in row-major format, i.e., op1 rows and 7 columns. Each row
-// will contain the evaluation of [x, y, z, vx, vy, vz, r] for the corresponding time point
-// in cheby_nodes.
+// satrec is the already-initialised satellite object to be passed to the propagation
+// function of the official sgp4 C++ code. interp_buffer is a memory buffer of size
+// op1 * 21. The result of the evaluation is supposed to be stored in the middle chunk
+// of interp_buffer, that is, in the [op1 * 7, op1 * 14) range in row-major format,
+// i.e., op1 rows and 7 columns. Each row will contain the evaluation of
+// [x, y, z, vx, vy, vz, r] for the corresponding time point in cheby_nodes.
 //
 // The return value will be 0 if everything went ok, otherwise an sgp4 error code will be returned.
 int gpe_interp_eval(auto &interp_buffer, elsetrec &satrec, const auto &cheby_nodes)
@@ -385,7 +368,7 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
     const std::uint32_t op1 = order + 1u;
 
     // If we are not dealing with a deep-space gpe, we also need
-    // to set up our sgp4 propagator.
+    // to set up our sgp4 propagator with op1 copies of the gpe g.
     auto &sgp4_prop = ets.sgp4_prop;
     if (!is_deep_space) {
         // Fill in the data buffer containing the gpe data.
@@ -435,14 +418,17 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
     // Transform the satellite's epoch to TAI.
     const auto epoch_tai = dl_utc_to_tai(epoch);
 
+    // Transform jdate_begin to TAI.
+    const auto jdate_begin_tai = dl_utc_to_tai(jdate_begin);
+
     // Transform jdate_end to TAI.
     const auto jdate_end_tai = dl_utc_to_tai(jdate_end);
 
-    for (auto cur_jdate_tai = dl_utc_to_tai(jdate_begin);;) {
+    for (auto cur_jdate_tai = jdate_begin_tai;;) {
         // Flag to signal if this is the last iteration.
         bool last_iteration = false;
 
-        // Transform cur_jdate_tai (i.e., the beginning of the current interpolation step) into
+        // Transform cur_jdate_tai (i.e., the beginning epoch of the current interpolation step) into
         // the time elapsed in minutes since the GPE epoch. This is the time coordinate used by the
         // sgp4 propagators (both Vallado's and our implementation). By using TAI, we ensure we
         // are computing a correct physical time duration even if leap second days are present
@@ -484,7 +470,8 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         auto step_end = step_begin + h / 60.;
 
         // Setup the interpolation points via an affine transformation.
-        // This transforms the Chebyshev nodes into the [step_begin, step_end] range.
+        // This transforms the Chebyshev nodes from the [-1, 1] range into the
+        // [step_begin, step_end] range.
         for (std::uint32_t i = 0; i < op1; ++i) {
             cheby_nodes[i] = (cheby_nodes_unit[i] + 1) / 2 * (step_end - step_begin) + step_begin;
         }
@@ -536,6 +523,13 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         }
 
         // Add the step end time to time_buf.
+        if (time_buf.empty()) {
+            // NOTE: if time_buf is empty, it means we are adding the very first
+            // trajectory step for the current satellite. Thus, we need to also add
+            // the starting time of the trajectory, measured in days since
+            // the polyjectory epoch.
+            time_buf.push_back(static_cast<double>(jdate_begin_tai - pj_epoch_tai));
+        }
         time_buf.push_back(step_end);
 
         // Break out if this is the last iteration.

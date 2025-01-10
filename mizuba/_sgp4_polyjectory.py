@@ -26,6 +26,8 @@ def make_sgp4_polyjectory(
     import polars as pl
     import numpy as np
 
+    # TODO allow gpes directly as a numpy array of gpe.
+
     # Fields (and their types) to extract from gpes.
     fields = {
         "norad_id": pl.UInt64,
