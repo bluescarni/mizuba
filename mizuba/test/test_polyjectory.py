@@ -550,3 +550,9 @@ class polyjectory_test_case(_ut.TestCase):
                 res[1], [0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
             ),
         )
+
+        # Also test with a trajectory without data.
+        pj = polyjectory([traj_data_0, np.empty((0, 7, 4))], [tm_data_0, []], [0, 0])
+        tm = np.array([0.1, 0.1])
+        res = pj(time=tm)
+        self.assertTrue(np.all(np.isnan(res[1])))
