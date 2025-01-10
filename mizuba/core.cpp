@@ -16,6 +16,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -29,6 +30,7 @@
 #include <stdexcept>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <boost/numeric/conversion/cast.hpp>
@@ -48,6 +50,7 @@
 #include "common_utils.hpp"
 #include "conjunctions.hpp"
 #include "logging.hpp"
+#include "mdspan.hpp"
 #include "polyjectory.hpp"
 #include "sgp4_polyjectory.hpp"
 
@@ -370,6 +373,55 @@ PYBIND11_MODULE(core, m)
             return py::make_tuple(std::move(traj_ret), std::move(time_ret), status);
         },
         "i"_a.noconvert());
+    pt_cl.def(
+        "__call__",
+        [](const mz::polyjectory &self, std::variant<double, py::array_t<double>> time) {
+            return std::visit(
+                [&self]<typename V>(const V &v) {
+                    if constexpr (std::same_as<V, py::array_t<double>>) {
+                        // Check contiguousness/alignment for the time array.
+                        mzpy::check_array_cc_aligned(v, "The time array passed to the call operator of a polyjectory "
+                                                        "must be C contiguous and properly aligned");
+
+                        // Check the number of dimensions for the time array.
+                        if (v.ndim() != 1) [[unlikely]] {
+                            throw std::invalid_argument(fmt::format(
+                                "The time array passed to the call operator of a polyjectory must have 1 dimension, "
+                                "but the number of dimensions is {} instead",
+                                v.ndim()));
+                        }
+                    }
+
+                    // Cache the total number of objects.
+                    const auto nobjs = self.get_nobjs();
+
+                    // Prepare the output array.
+                    py::array_t<double> out(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(nobjs),
+                                                                      static_cast<py::ssize_t>(7)});
+
+                    // Prepare the output span.
+                    const mz::polyjectory::eval_span_t out_span(out.mutable_data(), nobjs);
+
+                    // Prepare the input argument.
+                    const auto in = [&v]() {
+                        if constexpr (std::same_as<V, py::array_t<double>>) {
+                            return mz::dspan_1d<const double>(v.data(), boost::numeric_cast<std::size_t>(v.shape(0)));
+                        } else {
+                            return v;
+                        }
+                    }();
+
+                    // NOTE: release the GIL during evaluation.
+                    {
+                        py::gil_scoped_release release;
+                        self(out_span, in);
+                    }
+
+                    return out;
+                },
+                time);
+        },
+        "time"_a.noconvert());
 
     // Expose static getters for the structured types.
     pt_cl.def_property_readonly_static("traj_offset", [](const py::object &) { return py::dtype::of<traj_offset>(); });

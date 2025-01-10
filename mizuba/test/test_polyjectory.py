@@ -316,7 +316,7 @@ class polyjectory_test_case(_ut.TestCase):
 
         self.assertEqual(pj.nobjs, 2)
         self.assertEqual(pj.maxT, 3)
-        self.assertEqual(pj.epoch, (42.0, 1.0))
+        self.assertEqual(pj.epoch, (43.0, 0.0))
         self.assertEqual(pj.poly_order, 7)
 
         rc = sys.getrefcount(pj)
@@ -414,3 +414,145 @@ class polyjectory_test_case(_ut.TestCase):
 
         self.assertTrue(np.all(pj[7][0][0] == tdata7))
         self.assertTrue(np.all(pj[7][0][1] == tdata7))
+
+    def test_eval(self):
+        import numpy as np
+        from .. import polyjectory
+
+        # NOTE: we use the rectilinear trajectories from
+        # the conjunctions test for testing evaluations
+        # (see test_cd_begin_end()).
+        tm_data = np.array(
+            [
+                0.0,
+                0.1,
+                0.2,
+                0.3,
+                0.4,
+                0.5,
+                0.6,
+                0.7,
+                0.8,
+                0.9,
+                1.0,
+                1.1,
+                1.2,
+                1.3,
+                1.4,
+                1.5,
+                1.6,
+                1.7,
+                1.8,
+                1.9,
+                2.0,
+            ]
+        )
+
+        tm_data_0 = tm_data[:10]
+        tm_data_1 = tm_data[11:]
+
+        traj_data_0 = []
+        for tm in tm_data_0[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = 1.0 - (tm - 0.1)
+            tdata[0, 1] = -1.0
+            tdata[3, 0] = -1.0
+
+            traj_data_0.append(tdata)
+
+        traj_data_1 = []
+        for tm in tm_data_1[1:]:
+            tdata = np.zeros((7, 4))
+            tdata[0, 0] = -(1.0 - (tm - 0.1))
+            tdata[0, 1] = 1.0
+            tdata[3, 0] = 1.0
+
+            traj_data_1.append(tdata)
+
+        pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
+
+        # Error checking first.
+        with self.assertRaises(ValueError) as cm:
+            pj(np.zeros((5,))[::2])
+        self.assertTrue(
+            "The time array passed to the call operator of a polyjectory must be C contiguous and properly aligned"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj(np.zeros((5, 5)))
+        self.assertTrue(
+            "The time array passed to the call operator of a polyjectory must have 1 dimension, but the number of dimensions is 2 instead"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj(np.zeros((5,)))
+        self.assertTrue(
+            "Invalid input array passed to the call operator of a polyjectory: the number of objects is 2 but the size of the array is 5 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj(np.full((2,), float("inf")))
+        self.assertTrue("An non-finite evaluation time of " in str(cm.exception))
+
+        with self.assertRaises(ValueError) as cm:
+            pj(float("nan"))
+        self.assertTrue("An non-finite evaluation time of " in str(cm.exception))
+
+        # NOTE: the first trajectory ends at 0.9, the second trajectory
+        # begins at 1.1.
+        tm = np.array([0.1, 0.1])
+        res = pj(time=tm)
+        self.assertTrue(
+            np.allclose(
+                res[0], [0.9, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+            ),
+        )
+        self.assertTrue(np.all(np.isnan(res[1])))
+
+        tm = np.array([1.2, 1.2])
+        res = pj(time=tm)
+        self.assertTrue(np.all(np.isnan(res[0])))
+        self.assertTrue(
+            np.allclose(
+                res[1], [0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+            ),
+        )
+
+        tm = np.array([0.1, 1.2])
+        res = pj(time=tm)
+        self.assertTrue(
+            np.allclose(
+                res[0], [0.9, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+            ),
+        )
+        self.assertTrue(
+            np.allclose(
+                res[1], [0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+            ),
+        )
+
+        # Scalar overloads too.
+        res = pj(time=0.1)
+        self.assertTrue(
+            np.allclose(
+                res[0], [0.9, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+            ),
+        )
+        self.assertTrue(np.all(np.isnan(res[1])))
+
+        res = pj(time=1.2)
+        self.assertTrue(np.all(np.isnan(res[0])))
+        self.assertTrue(
+            np.allclose(
+                res[1], [0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+            ),
+        )
+
+        # Also test with a trajectory without data.
+        pj = polyjectory([traj_data_0, np.empty((0, 7, 4))], [tm_data_0, []], [0, 0])
+        tm = np.array([0.1, 0.1])
+        res = pj(time=tm)
+        self.assertTrue(np.all(np.isnan(res[1])))
