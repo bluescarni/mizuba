@@ -83,6 +83,9 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         jd_begin = 2460669.0
         pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1)
 
+        # Check that the initial time of the trajectory is exactly zero.
+        self.assertEqual(pj[0][1][0], 0.0)
+
         # Build the satrec.
         s = gpes["tle_line1"][0]
         t = gpes["tle_line2"][0]
@@ -120,6 +123,9 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         # Build the polyjectory.
         jd_begin = 2460669.0
         pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1)
+
+        # Check that the initial time of the trajectory is exactly zero.
+        self.assertEqual(pj[0][1][0], 0.0)
 
         # Build the satrec.
         s = gpes["tle_line1"][0]
@@ -159,6 +165,10 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         # Build the polyjectory.
         jd_begin = 2460669.0
         pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1)
+
+        # Check that the initial times of the trajectories are exactly zero.
+        for _, tm, _ in pj:
+            self.assertEqual(tm[0], 0.0)
 
         for sat_idx in range(len(gpes)):
             # Build the satrec.
@@ -233,6 +243,9 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         # Similarly, this is slightly after the epoch of the last GPE.
         jd_end = 2460684.0
         pj = make_sgp4_polyjectory(gpes, jd_begin, jd_end)
+
+        # Check that the initial time of the trajectory is exactly zero.
+        self.assertEqual(pj[0][1][0], 0.0)
 
         # Create the satellites list.
         # NOTE: we manually attach the epochs from the dataframe
@@ -332,6 +345,9 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         # well beyond year's end.
         jd_begin = sat.jdsatepoch + sat.jdsatepochF
         pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 10)
+
+        # Check that the initial time of the trajectory is exactly zero.
+        self.assertEqual(pj[0][1][0], 0.0)
 
         # Build the heyoka propagator.
         prop = sgp4_propagator([sat])
