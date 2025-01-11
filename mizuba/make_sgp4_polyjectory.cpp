@@ -929,7 +929,7 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
 
     // Need at least 1 gpe.
     if (n_gpes == 0u) [[unlikely]] {
-        throw std::invalid_argument("make_sgp4_polyjectory() requires a non-empty set of GPEs in input");
+        throw std::invalid_argument("make_sgp4_polyjectory() requires a non-empty array of GPEs in input");
     }
 
     // The view that will be used to group the GPEs by norad_id.
@@ -1013,7 +1013,8 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
         const boost::filesystem::path &path;
         ~tmp_cleaner()
         {
-            boost::filesystem::remove_all(path);
+            // NOTE: not sure why the code coverage tool does not pick this up.
+            boost::filesystem::remove_all(path); // LCOV_EXCL_LINE
         }
     };
     const tmp_cleaner tmp_clean{tmp_dir_path};

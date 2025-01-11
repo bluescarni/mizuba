@@ -400,3 +400,98 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
                     np.linalg.norm(res[:, :3, 0], axis=1), rvals, rtol=0.0, atol=1e-8
                 )
             )
+
+    def test_malformed_data(self):
+        from .. import make_sgp4_polyjectory, gpe_dtype
+        import numpy as np
+
+        # Wrong dimensionality for the array of gpes.
+        arr = np.zeros((1, 1), dtype=gpe_dtype)
+        with self.assertRaises(ValueError) as cm:
+            make_sgp4_polyjectory(arr, 0.0, 1.0)
+        self.assertTrue(
+            "The array of gpes passed to make_sgp4_polyjectory() must have 1 dimension, but the number of dimensions is 2 instead"
+            in str(cm.exception)
+        )
+
+        arr = np.zeros((), dtype=gpe_dtype)
+        with self.assertRaises(ValueError) as cm:
+            make_sgp4_polyjectory(arr, 0.0, 1.0)
+        self.assertTrue(
+            "The array of gpes passed to make_sgp4_polyjectory() must have 1 dimension, but the number of dimensions is 0 instead"
+            in str(cm.exception)
+        )
+
+        # Non-contiguous array.
+        arr = np.zeros((10,), dtype=gpe_dtype)
+        with self.assertRaises(ValueError) as cm:
+            make_sgp4_polyjectory(arr[::2], 0.0, 1.0)
+        self.assertTrue(
+            "The array of gpes passed to make_sgp4_polyjectory() must be C contiguous and properly aligned"
+            in str(cm.exception)
+        )
+
+        # Empty array.
+        arr = np.zeros((0,), dtype=gpe_dtype)
+        with self.assertRaises(ValueError) as cm:
+            make_sgp4_polyjectory(arr, 0.0, 1.0)
+        self.assertTrue(
+            "make_sgp4_polyjectory() requires a non-empty array of GPEs in input"
+            in str(cm.exception)
+        )
+
+        # Identical NORAD ids and epochs.
+        arr = np.zeros((2,), dtype=gpe_dtype)
+        arr["norad_id"][:] = 1
+        arr["epoch_jd1"][:] = 123
+        arr["epoch_jd2"][:] = 1
+        with self.assertRaises(ValueError) as cm:
+            make_sgp4_polyjectory(arr, 0.0, 1.0)
+        self.assertTrue(
+            "Two GPEs with identical NORAD ID 1 and epoch (123, 1) were identified by make_sgp4_polyjectory() - this is not allowed"
+            in str(cm.exception)
+        )
+
+        # Wrong ordering.
+        arr = np.zeros((2,), dtype=gpe_dtype)
+        arr["norad_id"][0] = 1
+        arr["epoch_jd1"][0] = 123
+        arr["epoch_jd2"][0] = 1
+        arr["norad_id"][1] = 0
+        arr["epoch_jd1"][1] = 123
+        arr["epoch_jd2"][1] = 1
+        with self.assertRaises(ValueError) as cm:
+            make_sgp4_polyjectory(arr, 0.0, 1.0)
+        self.assertTrue(
+            "The set of GPEs passed to make_sgp4_polyjectory() is not sorted correctly: it must be ordered first by NORAD ID and then by epoch"
+            in str(cm.exception)
+        )
+
+        arr = np.zeros((2,), dtype=gpe_dtype)
+        arr["norad_id"][0] = 1
+        arr["epoch_jd1"][0] = 123
+        arr["epoch_jd2"][0] = 1
+        arr["norad_id"][1] = 1
+        arr["epoch_jd1"][1] = 122
+        arr["epoch_jd2"][1] = 1
+        with self.assertRaises(ValueError) as cm:
+            make_sgp4_polyjectory(arr, 0.0, 1.0)
+        self.assertTrue(
+            "The set of GPEs passed to make_sgp4_polyjectory() is not sorted correctly: it must be ordered first by NORAD ID and then by epoch"
+            in str(cm.exception)
+        )
+
+        # Invalid polyjectory dates.
+        arr = np.zeros((2,), dtype=gpe_dtype)
+        with self.assertRaises(ValueError) as cm:
+            make_sgp4_polyjectory(arr, float("inf"), 1.0)
+        self.assertTrue("Invalid Julian date interval " in str(cm.exception))
+        with self.assertRaises(ValueError) as cm:
+            make_sgp4_polyjectory(arr, 1.0, float("nan"))
+        self.assertTrue("Invalid Julian date interval " in str(cm.exception))
+        with self.assertRaises(ValueError) as cm:
+            make_sgp4_polyjectory(arr, 1.0, 1.0)
+        self.assertTrue("Invalid Julian date interval " in str(cm.exception))
+        with self.assertRaises(ValueError) as cm:
+            make_sgp4_polyjectory(arr, 2.0, 1.0)
+        self.assertTrue("Invalid Julian date interval " in str(cm.exception))
