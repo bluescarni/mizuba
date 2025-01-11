@@ -235,13 +235,13 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         # Load the test data.
         gpes = pl.read_parquet(cur_dir / "iss_gpes.parquet")
 
-        # Build the polyjectory.
         # NOTE: we pick two sets of jd_begin/end dates,
         # so that we test both the case in which the date
         # range is a superset of the GPE epochs, and vice-versa.
         jd_ranges = [(2460667.0, 2460684.0), (2460672.0, 2460679.0)]
 
         for jd_begin, jd_end in jd_ranges:
+            # Build the polyjectory.
             pj = make_sgp4_polyjectory(gpes, jd_begin, jd_end)
 
             # Check that the initial time of the trajectory is exactly zero.
