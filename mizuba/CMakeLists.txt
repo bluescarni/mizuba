@@ -5,6 +5,7 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/_version.py.in" "${CMAKE_CURRENT_BIN
 set(MIZUBA_PYTHON_FILES
     __init__.py
     _sgp4_polyjectory.py
+    _dl_utils.py
     test/__init__.py
     test/_sgp4_test_data_20240705.py
     test/_sgp4_test_data_20240917.py

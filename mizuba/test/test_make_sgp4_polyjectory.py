@@ -185,50 +185,24 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             return
 
         from .. import make_sgp4_polyjectory
-        from ..data_sources._common import _eft_add_knuth
+        from .._dl_utils import _dl_add
         import pathlib
         from sgp4.api import Satrec, WGS72
         import polars as pl
         import numpy as np
         import bisect
 
-        # Double-length addition using error-free
-        # transformations.
-        def _dl_add(a_hi, a_lo, b_hi, b_lo):
-            def _eft_add_dekker(a, b):
-                x = a + b
-                y = (a - x) + b
-
-                return x, y
-
-            x_hi, y_hi = _eft_add_knuth(a_hi, b_hi)
-            x_lo, y_lo = _eft_add_knuth(a_lo, b_lo)
-
-            u, v = _eft_add_dekker(x_hi, y_hi + x_lo)
-            u, v = _eft_add_dekker(u, v + y_lo)
-
-            return u, v
-
         # Small helper to construct a Satrec from a row
         # in the gpe dataset.
         def make_satrec(row):
-            # NOTE: this is the baseline reference epoch
-            # used by the C++ SGP4 code.
-            jd_sub = 2433281.5
-
             sat = Satrec()
             sat.sgp4init(
                 WGS72,
                 "i",
                 row["norad_id"],
-                _dl_add(
-                    # NOTE: we are assuming here that the two
-                    # jd components are already normalised.
-                    row["epoch_jd1"],
-                    row["epoch_jd2"],
-                    -jd_sub,
-                    0.0,
-                )[0],
+                # NOTE: ignore the epoch, as we are in
+                # LEO and only the tsince matters.
+                0.0,
                 row["bstar"],
                 0.0,
                 0.0,

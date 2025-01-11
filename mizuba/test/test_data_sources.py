@@ -26,28 +26,10 @@ class data_sources_test_case(_ut.TestCase):
             return
 
         from ..data_sources import download_all_gpes, gpes_schema
+        from .._dl_utils import _dl_add
         from sgp4.api import Satrec, WGS72
         import numpy as np
         import polars as pl
-
-        # Double-length addition using error-free
-        # transformations.
-        def _dl_add(a_hi, a_lo, b_hi, b_lo):
-            from ..data_sources._common import _eft_add_knuth
-
-            def _eft_add_dekker(a, b):
-                x = a + b
-                y = (a - x) + b
-
-                return x, y
-
-            x_hi, y_hi = _eft_add_knuth(a_hi, b_hi)
-            x_lo, y_lo = _eft_add_knuth(a_lo, b_lo)
-
-            u, v = _eft_add_dekker(x_hi, y_hi + x_lo)
-            u, v = _eft_add_dekker(u, v + y_lo)
-
-            return u, v
 
         # Small helper to construct a Satrec from a row
         # in the datasets.

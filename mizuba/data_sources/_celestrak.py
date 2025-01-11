@@ -29,7 +29,7 @@ def _reformat_supgp_celestrak(gpes: pl.DataFrame) -> pl.DataFrame:
     import polars as pl
     from astropy.time import Time
     import numpy as np
-    from ._common import _eft_add_knuth
+    from .._dl_utils import _eft_add_knuth
 
     # Convert the epochs to astropy Time objects.
     apy_tm = Time(gpes["EPOCH"].cast(str), format="isot", scale="utc", precision=9)
