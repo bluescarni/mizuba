@@ -29,6 +29,30 @@ from ._sgp4_polyjectory import make_sgp4_polyjectory
 from enum import IntEnum
 
 
+def _astropy_trigger_utc_tai():
+    # NOTE: this is a workaround for an issue
+    # in erfa, which could in principle lead to
+    # crashes in case astropy UTC/TAI conversions
+    # are performed in a multithreaded context:
+    #
+    # https://github.com/liberfa/erfa/issues/103
+    #
+    # By triggering a UTC->TAI conversion at import
+    # time, we are at least ensuring that the builtin
+    # leap seconds table has been correctly initialised.
+    #
+    # Note that changing the leap seconds table at runtime
+    # is also not thread safe, but we are never doing that.
+    from astropy.time import Time
+
+    Time(2460669.0, format="jd", scale="utc").tai
+
+
+_astropy_trigger_utc_tai()
+
+del _astropy_trigger_utc_tai
+
+
 class sgp4_pj_status(IntEnum):
     # NOTE: the numbering here is set up to match the status
     # codes coming out of the sgp4 polyjectory ctor.
