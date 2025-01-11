@@ -236,63 +236,63 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         gpes = pl.read_parquet(cur_dir / "iss_gpes.parquet")
 
         # Build the polyjectory.
-        # NOTE: we pick as jd_begin an epoch slightly earlier
-        # than the epoch of the first GPE. Like this, we check
-        # also a time range before the first GPE epoch.
-        jd_begin = 2460667.0
-        # Similarly, this is slightly after the epoch of the last GPE.
-        jd_end = 2460684.0
-        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_end)
+        # NOTE: we pick two sets of jd_begin/end dates,
+        # so that we test both the case in which the date
+        # range is a superset of the GPE epochs, and vice-versa.
+        jd_ranges = [(2460667.0, 2460684.0), (2460672.0, 2460679.0)]
 
-        # Check that the initial time of the trajectory is exactly zero.
-        self.assertEqual(pj[0][1][0], 0.0)
+        for jd_begin, jd_end in jd_ranges:
+            pj = make_sgp4_polyjectory(gpes, jd_begin, jd_end)
 
-        # Create the satellites list.
-        # NOTE: we manually attach the epochs from the dataframe
-        # to each satellite because we cannot trust the sgp4 python module
-        # to reconstruct the double-length epoch to full accuracy.
-        sats = list(
-            (row["epoch_jd1"], row["epoch_jd2"], make_satrec(row))
-            for row in gpes.iter_rows(named=True)
-        )
+            # Check that the initial time of the trajectory is exactly zero.
+            self.assertEqual(pj[0][1][0], 0.0)
 
-        # Pick several time points randomly between jd_begin and jd_end.
-        # Time is measured in days since jd_begin.
-        random_times = rng.uniform(0, jd_end - jd_begin, (100,))
+            # Create the satellites list.
+            # NOTE: we manually attach the epochs from the dataframe
+            # to each satellite because we cannot trust the sgp4 python module
+            # to reconstruct the double-length epoch to full accuracy.
+            sats = list(
+                (row["epoch_jd1"], row["epoch_jd2"], make_satrec(row))
+                for row in gpes.iter_rows(named=True)
+            )
 
-        # The bisection key, this will extract the delta
-        # (in days) between a satellite epoch and the jd_begin
-        # of the polyjectory.
-        def bisect_key(tup):
-            # NOTE: we know that the double-length epochs from the
-            # GPEs dataframe are already normalised.
-            return _dl_add(tup[0], tup[1], -jd_begin, 0)[0]
+            # Pick several time points randomly between jd_begin and jd_end.
+            # Time is measured in days since jd_begin.
+            random_times = rng.uniform(0, jd_end - jd_begin, (100,))
 
-        for tm in random_times:
-            # Locate the first gpe in sats whose epoch
-            # (measured relative to jd_begin) is *greater than* tm.
-            idx = bisect.bisect_right(sats, tm, key=bisect_key)
-            # Move backwards, if possible, to pick the previous gpe.
-            idx -= int(idx != 0)
+            # The bisection key, this will extract the delta
+            # (in days) between a satellite epoch and the jd_begin
+            # of the polyjectory.
+            def bisect_key(tup):
+                # NOTE: we know that the double-length epochs from the
+                # GPEs dataframe are already normalised.
+                return _dl_add(tup[0], tup[1], -jd_begin, 0)[0]
 
-            # Accurately calculate the tsince by computing
-            # "jd_begin + tm - gpe_epoch" in double-length.
-            tsince = _dl_add(
-                *_dl_add(jd_begin, 0.0, tm, 0.0),
-                -sats[idx][0],
-                -sats[idx][1],
-            )[0]
+            for tm in random_times:
+                # Locate the first gpe in sats whose epoch
+                # (measured relative to jd_begin) is *greater than* tm.
+                idx = bisect.bisect_right(sats, tm, key=bisect_key)
+                # Move backwards, if possible, to pick the previous gpe.
+                idx -= int(idx != 0)
 
-            # Compute the state according to the sgp4 Python module.
-            e, r, v = sats[idx][2].sgp4_tsince(tsince * 1440)
-            self.assertEqual(e, 0)
+                # Accurately calculate the tsince by computing
+                # "jd_begin + tm - gpe_epoch" in double-length.
+                tsince = _dl_add(
+                    *_dl_add(jd_begin, 0.0, tm, 0.0),
+                    -sats[idx][0],
+                    -sats[idx][1],
+                )[0]
 
-            # Compute the state according to the polyjectory.
-            mz_state = pj(tm)
+                # Compute the state according to the sgp4 Python module.
+                e, r, v = sats[idx][2].sgp4_tsince(tsince * 1440)
+                self.assertEqual(e, 0)
 
-            # Compare.
-            self.assertTrue(np.allclose(r, mz_state[0, :3], rtol=0, atol=1e-8))
-            self.assertTrue(np.allclose(v, mz_state[0, 3:6], rtol=0, atol=1e-11))
+                # Compute the state according to the polyjectory.
+                mz_state = pj(tm)
+
+                # Compare.
+                self.assertTrue(np.allclose(r, mz_state[0, :3], rtol=0, atol=1e-8))
+                self.assertTrue(np.allclose(v, mz_state[0, 3:6], rtol=0, atol=1e-11))
 
     def test_leap_seconds(self):
         # Test creation of a polyjectory over
