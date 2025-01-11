@@ -503,34 +503,34 @@ class polyjectory_test_case(_ut.TestCase):
 
         # NOTE: the first trajectory ends at 0.9, the second trajectory
         # begins at 1.1.
-        tm = np.array([0.1, 0.1])
+        tm = np.array([0.11, 0.11])
         res = pj(time=tm)
         self.assertTrue(
             np.allclose(
-                res[0], [0.9, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+                res[0], [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
             ),
         )
         self.assertTrue(np.all(np.isnan(res[1])))
 
-        tm = np.array([1.2, 1.2])
+        tm = np.array([1.2, 1.21])
         res = pj(time=tm)
         self.assertTrue(np.all(np.isnan(res[0])))
         self.assertTrue(
             np.allclose(
-                res[1], [0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+                res[1], [0.21, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
             ),
         )
 
-        tm = np.array([0.1, 1.2])
+        tm = np.array([0.11, 1.21])
         res = pj(time=tm)
         self.assertTrue(
             np.allclose(
-                res[0], [0.9, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+                res[0], [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
             ),
         )
         self.assertTrue(
             np.allclose(
-                res[1], [0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+                res[1], [0.21, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
             ),
         )
 
