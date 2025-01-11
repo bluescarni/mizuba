@@ -793,24 +793,12 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
                             // policies for selecting the gpes to use for propagation.
 
                             // Locate the first gpe in the group whose epoch is
-                            // *greater than or equal to* jd_begin.
-                            auto it_gpe = std::ranges::lower_bound(gpe_group, dl_jd_begin, {},
+                            // *greater than* jd_begin. This is the gpe *right after*
+                            // the one we want to target.
+                            auto it_gpe = std::ranges::upper_bound(gpe_group, dl_jd_begin, {},
                                                                    [](const gpe &g) { return fetch_gpe_epoch(g); });
-
-                            if (it_gpe == group_end) {
-                                // There is no gpe in the group with epoch>=jd_begin.
-                                // Step back to the last gpe in the group.
-                                --it_gpe;
-                            } else if (fetch_gpe_epoch(*it_gpe) > dl_jd_begin) {
-                                // We found a gpe with epoch>jd_begin. If we can, we want
-                                // to move to the previous gpe (this won't be possible if
-                                // it_gpe points to the first gpe in the group).
-                                it_gpe -= (it_gpe != std::ranges::begin(gpe_group));
-                            } else {
-                                // We found a gpe with epoch==jd_begin. We do not need to do
-                                // anything.
-                                assert(fetch_gpe_epoch(*it_gpe) == dl_jd_begin);
-                            }
+                            // If possible, move to the previous GPE.
+                            it_gpe -= (it_gpe != std::ranges::begin(gpe_group));
 
                             // Init interpolation_begin.
                             auto interpolation_begin = dl_jd_begin;
@@ -825,7 +813,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
                                 bool last_iteration = false;
 
                                 // Compute the iterator to the next gpe.
-                                auto next_it_gpe = it_gpe + 1;
+                                const auto next_it_gpe = it_gpe + 1;
 
                                 // Compute the upper time limit for the interpolation with
                                 // the current gpe.
