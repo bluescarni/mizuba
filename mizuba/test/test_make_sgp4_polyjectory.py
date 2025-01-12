@@ -139,6 +139,52 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         for i in range(1, len(end_times)):
             self._compare_sgp4(jd_begin, i, sat, rng, cfs, end_times, 1e-7, 1e-10)
 
+    def test_single_gpe_syncom(self):
+        # This is a test with a deep-space satellite that, for some
+        # interpolation steps, exhibits a degraded interpolation accuracy
+        # with respect to what we normally expect. This is most likely
+        # due to the sgp4 algorithm exhibiting occasional spikes in the
+        # values of the time derivatives at orders 2 and higher which throw
+        # off the interpolation algorithm.
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
+            return
+
+        from .. import make_sgp4_polyjectory
+        import pathlib
+        from sgp4.api import Satrec
+        import polars as pl
+        import numpy as np
+
+        # Deterministic seeding.
+        rng = np.random.default_rng(24)
+
+        # Fetch the current directory.
+        cur_dir = pathlib.Path(__file__).parent.resolve()
+
+        # Load the test data.
+        gpes = pl.read_parquet(cur_dir / "syncom_gpe.parquet")
+
+        # Build the polyjectory.
+        jd_begin = 2460666.5
+        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 10)
+
+        # Check that the initial time of the trajectory is exactly zero.
+        self.assertEqual(pj[0][1][0], 0.0)
+
+        # Build the satrec.
+        s = gpes["tle_line1"][0]
+        t = gpes["tle_line2"][0]
+        sat = Satrec.twoline2rv(s, t)
+
+        # Iterate over the trajectory steps, sampling randomly,
+        # evaluating the polynomials and comparing with the
+        # sgp4 python module.
+        cfs, end_times, _ = pj[0]
+        for i in range(1, len(end_times)):
+            self._compare_sgp4(jd_begin, i, sat, rng, cfs, end_times, 1e-4, 1e-8)
+
     def test_multi_gpes(self):
         # Simple test with multiple satellites,
         # one GPE per satellite.
