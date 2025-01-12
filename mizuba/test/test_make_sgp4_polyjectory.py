@@ -541,3 +541,18 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             make_sgp4_polyjectory(arr, 2.0, 1.0)
         self.assertTrue("Invalid Julian date interval " in str(cm.exception))
+
+        # GPE data with infinities in the epochs.
+        arr = np.zeros((2,), dtype=gpe_dtype)
+        arr["norad_id"][0] = 1
+        arr["epoch_jd1"][0] = float("inf")
+        arr["epoch_jd2"][0] = 1
+        arr["norad_id"][1] = 1
+        arr["epoch_jd1"][1] = 122
+        arr["epoch_jd2"][1] = 1
+        with self.assertRaises(ValueError) as cm:
+            make_sgp4_polyjectory(arr, 0.0, 1.0)
+        self.assertTrue(
+            "The normalisation of the double-length number with components"
+            in str(cm.exception)
+        )
