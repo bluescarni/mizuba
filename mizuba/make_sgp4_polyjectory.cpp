@@ -313,9 +313,8 @@ int gpe_interp_eval(auto &interp_buffer, auto &sgp4_prop, const auto &cheby_node
 // dynamics and using the adaptive integration steps as interpolation steps.
 //
 // ets is a bag of thread-local data. poly_cf_buf and time_buf are buffers to which the interpolating
-// polynomial coefficients and the ends of the interpolation steps will be appended. pj_epoch_tai
-// is the polyjectory's epoch in the TAI scale of time (we need this in order to refer the ends of the
-// interpolation steps to the beginning of the polyjectory).
+// polynomial coefficients and the times of the interpolation steps will be appended. pj_epoch_tai
+// is the polyjectory's epoch in the TAI scale of time.
 //
 // The return value will be 0 if everything went ok, otherwise it will be either an sgp4 error code,
 // or error code 10 if non-finite values are detected.
@@ -331,7 +330,7 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
 
     // Initialise the satrec for computations with the official sgp4 code.
     elsetrec satrec;
-    const auto epoch = fetch_gpe_epoch(g);
+    const auto sat_epoch = fetch_gpe_epoch(g);
     // NOTE: this is the baseline reference epoch used by the C++ SGP4 code,
     // corresponding to "jan 0, 1950. 0 hr".
     constexpr auto jd_sub = 2433281.5;
@@ -351,7 +350,7 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
                         // indicates that indeed all calculations are being done with UTC Julian dates).
                         // Thus, at least for the time being, we ignore leap seconds for this
                         // calculation.
-                        static_cast<double>(epoch - jd_sub), g.bstar,
+                        static_cast<double>(sat_epoch - jd_sub), g.bstar,
                         // NOTE: xndot and xnddot are not used during propagation, thus
                         // we just set them to zero.
                         0., 0., g.e0, g.omega0, g.i0, g.m0, g.n0, g.node0, satrec);
@@ -389,9 +388,9 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         ptr += op1;
         std::ranges::fill(ptr, ptr + op1, g.bstar);
         ptr += op1;
-        std::ranges::fill(ptr, ptr + op1, epoch.hi);
+        std::ranges::fill(ptr, ptr + op1, sat_epoch.hi);
         ptr += op1;
-        std::ranges::fill(ptr, ptr + op1, epoch.lo);
+        std::ranges::fill(ptr, ptr + op1, sat_epoch.lo);
 
         // Setup sgp4_prop.
         // NOTE: we checked on construction that sgp4_sat_data_buffer.size()
@@ -417,7 +416,7 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
     // give an incorrect result in case of leap second days.
 
     // Transform the satellite's epoch to TAI.
-    const auto epoch_tai = dl_utc_to_tai(epoch);
+    const auto sat_epoch_tai = dl_utc_to_tai(sat_epoch);
 
     // Transform jdate_begin to TAI.
     const auto jdate_begin_tai = dl_utc_to_tai(jdate_begin);
@@ -426,19 +425,32 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
     const auto jdate_end_tai = dl_utc_to_tai(jdate_end);
 
     for (auto cur_jdate_tai = jdate_begin_tai;;) {
+        // NOTE: when computing with times and dates, we are careful to use
+        // double-length arithmetic as much as possible. We do not however have
+        // a double-length multiplication primitive though, thus for conversions
+        // of time durations we need to cast to single-length. If this ever becomes
+        // an issue and we need extra precision, double-length multiplication can be
+        // easily implemented on top of std::fma() and the TwoProductFMA() algorithm:
+        //
+        // https://www-pequan.lip6.fr/~graillat/papers/nolta07.pdf
+
         // Flag to signal if this is the last iteration.
         bool last_iteration = false;
 
-        // Transform cur_jdate_tai (i.e., the beginning epoch of the current interpolation step) into
-        // the time elapsed in minutes since the GPE epoch. This is the time coordinate used by the
-        // sgp4 propagators (both Vallado's and our implementation). By using TAI, we ensure we
-        // are computing a correct physical time duration even if leap second days are present
-        // within the time interval.
-        const auto step_begin = static_cast<double>(cur_jdate_tai - epoch_tai) * 1440.;
+        // Compute the beginning of the interpolation step in days since the epoch of
+        // the polyjectory.
+        const auto step_begin = cur_jdate_tai - pj_epoch_tai;
+
+        // Compute it also with respect to the epoch of the satellite. We need this
+        // in order to perform computations with the sgp4 propagators.
+        const auto step_begin_sat_epoch = cur_jdate_tai - sat_epoch_tai;
 
         // Evaluate the state of the satellite at the beginning of the interpolation step.
-        double sgp4_r[3], sgp4_v[3];
-        SGP4Funcs::sgp4(satrec, step_begin, sgp4_r, sgp4_v);
+        double sgp4_r[3]{}, sgp4_v[3]{};
+        SGP4Funcs::sgp4(satrec,
+                        // NOTE: we must pass the propagation time as the number of minutes
+                        // since the satellite's epoch.
+                        static_cast<double>(step_begin_sat_epoch) * 1440., sgp4_r, sgp4_v);
         // Check for errors.
         if (satrec.error != 0) [[unlikely]] {
             return satrec.error;
@@ -466,15 +478,23 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
             assert(oc == heyoka::taylor_outcome::success);
         }
 
-        // Compute the end of the current interpolation step (again, in minutes elapsed
-        // since the GPE epoch).
-        auto step_end = step_begin + h / 60.;
+        // Compute the end of the current interpolation step (again, in days since the epoch of
+        // the polyjectory).
+        const auto step_end = step_begin + h / 86400.;
 
-        // Setup the interpolation points via an affine transformation.
-        // This transforms the Chebyshev nodes from the [-1, 1] range into the
-        // [step_begin, step_end] range.
+        // Compute it also with respect to the epoch of the satellite.
+        const auto step_end_sat_epoch = step_begin_sat_epoch + h / 86400.;
+
+        // We now have to setup the interpolation points. Since we will be evaluating
+        // the interpolation points with sgp4 propagators, we need to transform the Chebyshev
+        // nodes from the [-1, 1] range into the [step_begin, step_end] range, expressed
+        // in *minutes elapsed from the satellite epoch* (which is the time coordinate
+        // used by the sgp4 propagators). We do this via an affine transformation.
         for (std::uint32_t i = 0; i < op1; ++i) {
-            cheby_nodes[i] = (cheby_nodes_unit[i] + 1) / 2 * (step_end - step_begin) + step_begin;
+            // The affine transformation.
+            cheby_nodes[i] = (cheby_nodes_unit[i] + 1) / 2
+                                 * (static_cast<double>(step_end_sat_epoch - step_begin_sat_epoch) * 1440.)
+                             + static_cast<double>(step_begin_sat_epoch) * 1440.;
         }
 
         // Evaluate at the interpolation points, using either our own SGP4 implementation
@@ -490,13 +510,10 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         const auto ipoints_span
             = hy::mdspan<double, hy::extents<std::size_t, std::dynamic_extent, 7>>(interp_buffer.data(), op1);
         for (std::size_t i = 0; i < op1; ++i) {
-            // NOTE: we need to transform the interpolation points by referring them to the beginning
-            // of the interpolation step (rather than the satellite epoch) and by changing the scale
-            // from minutes to days. The change in time origin is because in the polyjectory
-            // it is assumed that the polynomials are evaluated with the time counted from
-            // the beginning of the step. The change in scale is because we want to produce a
-            // polyjectory in which time is measured in days.
-            const auto ipoint = (cheby_nodes[i] - step_begin) / 1440.;
+            // NOTE: for the actual interpolation, we want the interpolation points in the [0, step_end - step_begin]
+            // range. We need this because because in the polyjectory the polynomials are to be evaluated with the
+            // time counted from the beginning of the step.
+            const auto ipoint = (cheby_nodes_unit[i] + 1) / 2 * static_cast<double>(step_end - step_begin);
 
             for (auto j = 0u; j < 7u; ++j) {
                 ipoints_span[i, j] = ipoint;
@@ -506,11 +523,6 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         // Interpolate.
         auto *cf_ptr = interp_buffer.data() + op1 * static_cast<std::size_t>(14);
         cfunc_interp(cf_ptr, interp_buffer.data(), nullptr, nullptr);
-
-        // Transform step_end to represent the end of the interpolation step measured in *days*
-        // since the start epoch of the polyjectory. This is the time coordinate we need to append
-        // to time_buf.
-        step_end = static_cast<double>(cur_jdate_tai - pj_epoch_tai + h / 86400.);
 
         // NOTE: if we end up with non-finite poly coefficients or end times,
         // these will be caught by the polyjectory constructor.
@@ -529,9 +541,10 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
             // trajectory step for the current satellite. Thus, we need to also add
             // the starting time of the trajectory, measured in days since
             // the polyjectory epoch.
-            time_buf.push_back(static_cast<double>(jdate_begin_tai - pj_epoch_tai));
+            assert(cur_jdate_tai == jdate_begin_tai);
+            time_buf.push_back(static_cast<double>(step_begin));
         }
-        time_buf.push_back(step_end);
+        time_buf.push_back(static_cast<double>(step_end));
 
         // Break out if this is the last iteration.
         if (last_iteration) {
