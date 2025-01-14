@@ -501,6 +501,20 @@ class polyjectory_test_case(_ut.TestCase):
             pj(float("nan"))
         self.assertTrue("An non-finite evaluation time of " in str(cm.exception))
 
+        with self.assertRaises(ValueError) as cm:
+            pj(time=np.array([0.11, 0.11]), obj_idx=1)
+        self.assertTrue(
+            "If an object index is specified when invoking the call operator of a polyjectory, then the evaluation time must be passed as a scalar and not as an array"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj(time=0.11, obj_idx=2)
+        self.assertTrue(
+            "Invalid object index 2 passed to the call operator of a polyjectory: the index is not less than the total number of objects (2)"
+            in str(cm.exception)
+        )
+
         # NOTE: the first trajectory ends at 0.9, the second trajectory
         # begins at 1.1.
         tm = np.array([0.11, 0.11])
@@ -549,6 +563,20 @@ class polyjectory_test_case(_ut.TestCase):
             np.allclose(
                 res[1], [0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
             ),
+        )
+
+        # Test single-object evaluations.
+        res = pj(time=0.1, obj_idx=0)
+        self.assertEqual(res.shape, (7,))
+        self.assertTrue(
+            np.allclose(
+                res, [0.9, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+            ),
+        )
+
+        res = pj(time=1.2, obj_idx=1)
+        self.assertTrue(
+            np.allclose(res, [0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15),
         )
 
         # Also test with a trajectory without data.
