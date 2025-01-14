@@ -512,7 +512,7 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         for (std::size_t i = 0; i < op1; ++i) {
             // NOTE: for the actual interpolation, we want the interpolation points in the [0, step_end - step_begin]
             // range. We need this because because in the polyjectory the polynomials are to be evaluated with the
-            // time counted from the beginning of the step.
+            // time counted from the beginning of the step (in days).
             const auto ipoint = (cheby_nodes_unit[i] + 1) / 2 * static_cast<double>(step_end - step_begin);
 
             for (auto j = 0u; j < 7u; ++j) {
