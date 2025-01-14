@@ -547,9 +547,9 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         arr["norad_id"][0] = 1
         arr["epoch_jd1"][0] = float("inf")
         arr["epoch_jd2"][0] = 1
-        arr["norad_id"][1] = 1
-        arr["epoch_jd1"][1] = 122
-        arr["epoch_jd2"][1] = 1
+        arr["norad_id"][1] = 2
+        arr["epoch_jd1"][1] = 1
+        arr["epoch_jd2"][1] = 2
         with self.assertRaises(ValueError) as cm:
             make_sgp4_polyjectory(arr, 0.0, 1.0)
         self.assertTrue(
