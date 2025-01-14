@@ -376,10 +376,17 @@ PYBIND11_MODULE(core, m)
         "i"_a.noconvert());
     pt_cl.def(
         "__call__",
-        [](const mz::polyjectory &self, std::variant<double, py::array_t<double>> time) {
+        [](const mz::polyjectory &self, std::variant<double, py::array_t<double>> time,
+           std::optional<std::size_t> obj_idx) {
             return std::visit(
-                [&self]<typename V>(const V &v) {
+                [&self, &obj_idx]<typename V>(const V &v) {
                     if constexpr (std::same_as<V, py::array_t<double>>) {
+                        if (obj_idx) [[unlikely]] {
+                            throw std::invalid_argument(
+                                "If an object index is specified when invoking the call operator of a polyjectory, "
+                                "then the evaluation time must be passed as a scalar and not as an array");
+                        }
+
                         // Check contiguousness/alignment for the time array.
                         mzpy::check_array_cc_aligned(v, "The time array passed to the call operator of a polyjectory "
                                                         "must be C contiguous and properly aligned");
@@ -397,11 +404,9 @@ PYBIND11_MODULE(core, m)
                     const auto nobjs = self.get_nobjs();
 
                     // Prepare the output array.
-                    py::array_t<double> out(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(nobjs),
-                                                                      static_cast<py::ssize_t>(7)});
-
-                    // Prepare the output span.
-                    const mz::polyjectory::eval_span_t out_span(out.mutable_data(), nobjs);
+                    auto out_arr = obj_idx ? py::array_t<double>(py::array::ShapeContainer{static_cast<py::ssize_t>(7)})
+                                           : py::array_t<double>(py::array::ShapeContainer{
+                                                 boost::numeric_cast<py::ssize_t>(nobjs), static_cast<py::ssize_t>(7)});
 
                     // Prepare the input argument.
                     const auto in = [&v]() {
@@ -412,17 +417,50 @@ PYBIND11_MODULE(core, m)
                         }
                     }();
 
-                    // NOTE: release the GIL during evaluation.
-                    {
+                    // Implementation of evaluation for *all* objects in a polyjectory. The evaluation time is passed
+                    // either as a one-dimensional array or as a scalar value.
+                    const auto all_eval_impl = [&out_arr, nobjs, &self](auto input) {
+                        // Prepare the output span.
+                        const auto out_span = mz::polyjectory::eval_span_t(out_arr.mutable_data(), nobjs);
+
+                        // NOTE: release the GIL during evaluation.
                         py::gil_scoped_release release;
-                        self(out_span, in);
+
+                        self(out_span, input);
+                    };
+
+                    // Implementation of evaluation for a single object in a polyjectory. The evaluation time is passed
+                    // as a scalar value. idx is the object's index in the polyjectory.
+                    const auto single_eval_impl = [&out_arr, &self](std::size_t idx, double input) {
+                        // Prepare the output span.
+                        const auto out_span = mz::sspan<double, 7>(out_arr.mutable_data());
+
+                        // NOTE: release the GIL during evaluation.
+                        py::gil_scoped_release release;
+
+                        self(out_span, idx, input);
+                    };
+
+                    // Perform the evaluation, writing the result in out_arr.
+                    if constexpr (std::same_as<V, py::array_t<double>>) {
+                        // The input time is an array, we are evaluating all objects.
+                        all_eval_impl(in);
+                    } else {
+                        // The input time is not an array.
+                        if (obj_idx) {
+                            // Single object evaluation.
+                            single_eval_impl(*obj_idx, in);
+                        } else {
+                            // All-objects evaluation with scalar time.
+                            all_eval_impl(in);
+                        }
                     }
 
-                    return out;
+                    return out_arr;
                 },
                 time);
         },
-        "time"_a.noconvert());
+        "time"_a.noconvert(), "obj_idx"_a.noconvert() = py::none{});
 
     // Expose static getters for the structured types.
     pt_cl.def_property_readonly_static("traj_offset", [](const py::object &) { return py::dtype::of<traj_offset>(); });

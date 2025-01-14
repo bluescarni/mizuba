@@ -148,6 +148,7 @@ public:
     using eval_span_t = heyoka::mdspan<double, heyoka::extents<std::size_t, std::dynamic_extent, 7>>;
     void operator()(eval_span_t, double) const;
     void operator()(eval_span_t, dspan_1d<const double>) const;
+    void operator()(sspan<double, 7>, std::size_t, double) const;
 };
 
 } // namespace mizuba

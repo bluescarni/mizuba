@@ -777,14 +777,14 @@ namespace
 // Evaluate the state of an object in a polyjectory at time tm.
 //
 // pj is the polyjectory, obj_idx the object's index in the polyjectory, tm the evaluation
-// time (measured from the polyjectory's epoch), out the span into which the result of
+// time (measured from the polyjectory's epoch), out_ptr the pointer into which the result of
 // the evaluation will be written.
 //
 // NOTE: in principle this function could be implemented in a jitted vectorised fashion using scatter/gather
 // primitives and masked load/store/arithmetic operations. This would work best on AVX512 and later,
 // but it could possibly be advantageous also on AVX2 and less. Keep it in mind if we need to squeeze
 // out the best performance from this.
-void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, const auto &out)
+void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, double *out_ptr)
 {
     // Check the desired evaluation time.
     if (!std::isfinite(tm)) [[unlikely]] {
@@ -807,7 +807,7 @@ void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, co
     // then we cannot compute any evaluation for the current object, and we
     // fill up the output with nans instead.
     if (nsteps == 0u || tm < time_span(0) || tm >= time_span(nsteps)) {
-        std::ranges::fill(&out(obj_idx, 0), &out(obj_idx, 0) + 7, std::numeric_limits<double>::quiet_NaN());
+        std::ranges::fill(out_ptr, out_ptr + 7, std::numeric_limits<double>::quiet_NaN());
         return;
     }
 
@@ -843,7 +843,7 @@ void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, co
 
     // Run the polynomial evaluations and write the results into the output span.
     for (auto i = 0u; i < 7u; ++i) {
-        out(obj_idx, i) = detail::horner_eval(&traj_span(step_idx, i, 0), order, h);
+        out_ptr[i] = detail::horner_eval(&traj_span(step_idx, i, 0), order, h);
     }
 }
 
@@ -872,7 +872,7 @@ void polyjectory::operator()(eval_span_t out, double tm) const
 
     oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, nobjs), [this, tm, out](const auto &range) {
         for (auto obj_idx = range.begin(); obj_idx != range.end(); ++obj_idx) {
-            detail::pj_eval_obj_state(*this, obj_idx, tm, out);
+            detail::pj_eval_obj_state(*this, obj_idx, tm, &out(obj_idx, 0));
         }
     });
 }
@@ -904,9 +904,20 @@ void polyjectory::operator()(eval_span_t out, dspan_1d<const double> in) const
 
     oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, nobjs), [this, in, out](const auto &range) {
         for (auto obj_idx = range.begin(); obj_idx != range.end(); ++obj_idx) {
-            detail::pj_eval_obj_state(*this, obj_idx, in(obj_idx), out);
+            detail::pj_eval_obj_state(*this, obj_idx, in(obj_idx), &out(obj_idx, 0));
         }
     });
+}
+
+void polyjectory::operator()(sspan<double, 7> out, std::size_t obj_idx, double tm) const
+{
+    if (obj_idx >= get_nobjs()) [[unlikely]] {
+        throw std::invalid_argument(fmt::format("Invalid object index {} passed to the call operator of a polyjectory: "
+                                                "the index is not less than the total number of objects ({})",
+                                                obj_idx, get_nobjs()));
+    }
+
+    detail::pj_eval_obj_state(*this, obj_idx, tm, out.data_handle());
 }
 
 } // namespace mizuba

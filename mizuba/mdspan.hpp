@@ -19,6 +19,7 @@
 #define MIZUBA_MDSPAN_HPP
 
 #include <cstddef>
+#include <span>
 
 #include <heyoka/mdspan.hpp>
 
@@ -35,6 +36,11 @@ using dspan_1d = heyoka::mdspan<T, heyoka::dextents<std::size_t, 1>>;
 // 2D span with dynamic sizes.
 template <typename T>
 using dspan_2d = heyoka::mdspan<T, heyoka::dextents<std::size_t, 2>>;
+
+// Multidimensional span with static sizes.
+template <typename T, std::size_t... Sizes>
+    requires(sizeof...(Sizes) > 0u) && ((Sizes != std::dynamic_extent) && ...)
+using sspan = heyoka::mdspan<T, heyoka::extents<std::size_t, Sizes...>>;
 
 } // namespace mizuba
 
