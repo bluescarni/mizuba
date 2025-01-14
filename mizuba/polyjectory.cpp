@@ -912,9 +912,10 @@ void polyjectory::operator()(eval_span_t out, dspan_1d<const double> in) const
 void polyjectory::operator()(sspan<double, 7> out, std::size_t obj_idx, double tm) const
 {
     if (obj_idx >= get_nobjs()) [[unlikely]] {
-        throw std::invalid_argument(fmt::format("Invalid object index {} passed to the call operator of a polyjectory: "
-                                                "the index is not less than the total number of objects ({})",
-                                                obj_idx, get_nobjs()));
+        throw std::invalid_argument(
+            fmt::format("Invalid object index {} passed to the call operator of a polyjectory: " // LCOV_EXCL_LINE
+                        "the index is not less than the total number of objects ({})",
+                        obj_idx, get_nobjs()));
     }
 
     detail::pj_eval_obj_state(*this, obj_idx, tm, out.data_handle());
