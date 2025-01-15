@@ -83,6 +83,8 @@ struct pwrap {
     ~pwrap();
 };
 
+void swap(pwrap &, pwrap &) noexcept;
+
 // The type used to store the list of isolating intervals.
 using isol_t = std::vector<std::tuple<double, double>>;
 
