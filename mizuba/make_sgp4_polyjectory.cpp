@@ -542,11 +542,11 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         // - the evaluation nodes,
         // - the evaluation values,
         // - the polynomial coefficients resulting from the interpolation.
-        auto *cf_ptr = interp_buffer.data() + op1 * static_cast<std::size_t>(14);
-        cfunc_interp(cf_ptr, interp_buffer.data(), nullptr, nullptr);
-
+        //
         // NOTE: if we end up with non-finite poly coefficients or end times,
         // these will be caught by the polyjectory constructor.
+        auto *cf_ptr = interp_buffer.data() + op1 * static_cast<std::size_t>(14);
+        cfunc_interp(cf_ptr, interp_buffer.data(), nullptr, nullptr);
 
         // Add the polynomial coefficients to poly_cf_buf.
         const auto out_span = hy::mdspan<const double, hy::extents<std::size_t, std::dynamic_extent, 7>>(cf_ptr, op1);
