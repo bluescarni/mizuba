@@ -18,6 +18,7 @@
 #ifndef MIZUBA_DETAIL_POLY_UTILS_HPP
 #define MIZUBA_DETAIL_POLY_UTILS_HPP
 
+#include <cassert>
 #include <cstdint>
 #include <tuple>
 #include <utility>
@@ -35,12 +36,16 @@ namespace mizuba::detail
 // evaluation value is 'x'. T is the type used to compute
 // the evaluation. The polynomial coefficients must be
 // convertible to T. 'it' must be a random-access iterator.
+// An optional 'stride' argument can be passed if the polynomial
+// coefficients are not stored consecutively.
 template <typename It, typename T>
-T horner_eval(It it, std::uint32_t order, const T &x)
+T horner_eval(It it, std::uint32_t order, const T &x, std::uint32_t stride = 1)
 {
-    auto res = static_cast<T>(it[order]);
+    assert(stride != 0u);
+
+    auto res = static_cast<T>(it[order * stride]);
     for (std::uint32_t o = 1; o <= order; ++o) {
-        res = static_cast<T>(it[order - o]) + res * x;
+        res = static_cast<T>(it[(order - o) * stride]) + res * x;
     }
 
     return res;
