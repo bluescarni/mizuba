@@ -210,31 +210,31 @@ void build_tplts(auto &ta_kepler_tplt, auto &sgp4_prop_tplt, auto &jit_state_tpl
 
 // Evaluate a single gpe via the official sgp4 C++ code at multiple time points.
 //
-// cheby_nodes is the list of time points used for evaluation, and its size is op1.
+// sample_points is the list of time points used for evaluation, and its size is op1.
 // satrec is the already-initialised satellite object to be passed to the propagation
 // function of the official sgp4 C++ code. interp_buffer is a memory buffer of size
 // op1 * 21. The result of the evaluation is supposed to be stored in the middle chunk
 // of interp_buffer, that is, in the [op1 * 7, op1 * 14) range in row-major format,
 // i.e., op1 rows and 7 columns. Each row will contain the evaluation of
-// [x, y, z, vx, vy, vz, r] for the corresponding time point in cheby_nodes.
+// [x, y, z, vx, vy, vz, r] for the corresponding time point in sample_points.
 //
 // The return value will be 0 if everything went ok, otherwise an sgp4 error code will be returned.
-int gpe_interp_eval(auto &interp_buffer, elsetrec &satrec, const auto &cheby_nodes)
+int gpe_interp_eval(auto &interp_buffer, elsetrec &satrec, const auto &sample_points)
 {
     namespace hy = heyoka;
 
     // Fetch the interpolation order + 1.
     // NOTE: we checked earlier that this conversion is ok: interp_buffer has a size > op1 and we checked
     // that we can build a std::size_t-sized span on top of it.
-    const auto op1 = static_cast<std::size_t>(cheby_nodes.size());
+    const auto op1 = static_cast<std::size_t>(sample_points.size());
     assert(interp_buffer.size() == op1 * 21u);
 
-    // Evaluate positions and velocities at the Chebyshev nodes, writing the result
+    // Evaluate positions and velocities at the sample points, writing the result
     // into the middle chunk of interp_buffer.
     const auto ibspan1 = hy::mdspan<double, heyoka::dextents<std::size_t, 2>>{interp_buffer.data() + op1 * 7u, op1, 7u};
     for (std::size_t i = 0; i < op1; ++i) {
         // NOTE: we can write directly into ibspan1.
-        SGP4Funcs::sgp4(satrec, cheby_nodes[i], &ibspan1[i, 0], &ibspan1[i, 3]);
+        SGP4Funcs::sgp4(satrec, sample_points[i], &ibspan1[i, 0], &ibspan1[i, 3]);
         // Check for errors.
         if (satrec.error != 0) [[unlikely]] {
             return satrec.error;
@@ -250,26 +250,26 @@ int gpe_interp_eval(auto &interp_buffer, elsetrec &satrec, const auto &cheby_nod
 
 // Evaluate a single gpe via our sgp4 propagator at multiple time points.
 //
-// cheby_nodes is the list of time points used for evaluation, and its size is op1. sgp4_prop is the sgp4
+// sample_points is the list of time points used for evaluation, and its size is op1. sgp4_prop is the sgp4
 // propagator, which has been initialised with op1 copies of the same gpe. cfunc_r is the compiled function to be
 // used to compute the radial coordinate from the propagated xyz coordinates. interp_buffer is a memory buffer of
 // size op1 * 21. The result of the evaluation is supposed to be stored in the middle chunk of interp_buffer, that
 // is, in the [op1 * 7, op1 * 14) range in row-major format, i.e., op1 rows and 7 columns. Each row will contain the
-// evaluation of [x, y, z, vx, vy, vz, r] for a time point in cheby_nodes.
+// evaluation of [x, y, z, vx, vy, vz, r] for a time point in sample_points.
 //
 // The return value will be 0 if everything went ok, otherwise an sgp4 error code will be returned.
-int gpe_interp_eval(auto &interp_buffer, auto &sgp4_prop, const auto &cheby_nodes, auto *cfunc_r)
+int gpe_interp_eval(auto &interp_buffer, auto &sgp4_prop, const auto &sample_points, auto *cfunc_r)
 {
     namespace hy = heyoka;
 
     // Fetch the interpolation order + 1.
     // NOTE: we checked earlier that this conversion is ok: interp_buffer has a size > op1 and we checked
     // that we can build a std::size_t-sized span on top of it.
-    const auto op1 = static_cast<std::size_t>(cheby_nodes.size());
+    const auto op1 = static_cast<std::size_t>(sample_points.size());
     assert(sgp4_prop.get_nsats() == op1);
     assert(interp_buffer.size() == op1 * 21u);
 
-    // Step 1: evaluate at the Chebyshev nodes. We will be writing the output at the *beginning* of interp_buffer,
+    // Step 1: evaluate at the sample points. We will be writing the output at the *beginning* of interp_buffer,
     // i.e., not in the correct final position in the middle. We do this because the output of the propagator will have
     // to be transposed, so we use the first chunk of interp_buffer as temporary storage.
     //
@@ -284,8 +284,8 @@ int gpe_interp_eval(auto &interp_buffer, auto &sgp4_prop, const auto &cheby_node
     // Hence, the need to transpose the result of the evaluation into the layout required
     // by interp_buffer.
     const auto ibspan0 = hy::mdspan<double, heyoka::dextents<std::size_t, 2>>{interp_buffer.data(), 7u, op1};
-    const auto cheby_span = hy::mdspan<const double, heyoka::dextents<std::size_t, 1>>{cheby_nodes.data(), op1};
-    sgp4_prop(ibspan0, cheby_span);
+    const auto sample_span = hy::mdspan<const double, heyoka::dextents<std::size_t, 1>>{sample_points.data(), op1};
+    sgp4_prop(ibspan0, sample_span);
 
     // Step 2: we check if any propagation resulted in an error code.
     for (std::size_t i = 0; i < op1; ++i) {
@@ -402,9 +402,11 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
             sgp4_sat_data_buffer.data(), op1});
     }
 
-    // Fetch the Chebyshev nodes buffers.
+    // Fetch the Chebyshev nodes buffer.
     const auto &cheby_nodes_unit = ets.cheby_nodes_unit;
-    auto &cheby_nodes = ets.cheby_nodes;
+
+    // Fetch the sample points buffer.
+    auto &sample_points = ets.sample_points;
 
     // Fetch the evaluation/interpolation buffer.
     auto &interp_buffer = ets.interp_buffer;
@@ -495,15 +497,15 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         // used by the sgp4 propagators). We do this via an affine transformation.
         for (std::uint32_t i = 0; i < op1; ++i) {
             // The affine transformation.
-            cheby_nodes[i] = (cheby_nodes_unit[i] + 1) / 2
-                                 * (static_cast<double>(step_end_sat_epoch - step_begin_sat_epoch) * 1440.)
-                             + static_cast<double>(step_begin_sat_epoch) * 1440.;
+            sample_points[i] = (cheby_nodes_unit[i] + 1) / 2
+                                   * (static_cast<double>(step_end_sat_epoch - step_begin_sat_epoch) * 1440.)
+                               + static_cast<double>(step_begin_sat_epoch) * 1440.;
         }
 
         // Evaluate at the interpolation points, using either our own SGP4 implementation
         // or the official SGP4 C++ code.
-        const auto res = is_deep_space ? gpe_interp_eval(interp_buffer, satrec, cheby_nodes)
-                                       : gpe_interp_eval(interp_buffer, sgp4_prop, cheby_nodes, cfunc_r);
+        const auto res = is_deep_space ? gpe_interp_eval(interp_buffer, satrec, sample_points)
+                                       : gpe_interp_eval(interp_buffer, sgp4_prop, sample_points, cfunc_r);
         if (res != 0) [[unlikely]] {
             // sgp4 error detected, no point in continuing further.
             return res;
@@ -713,8 +715,8 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
             std::vector<double> sgp4_sat_data_buffer;
             // The Chebyshev nodes in the [-1, 1] range.
             const std::vector<double> cheby_nodes_unit;
-            // The Chebyshev nodes in the actual interpolation interval.
-            std::vector<double> cheby_nodes;
+            // Sample points evaluation bufffer.
+            std::vector<double> sample_points;
             // The evaluation/interpolation buffer.
             std::vector<double> interp_buffer;
         };
@@ -734,9 +736,9 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
             // NOTE: we need to construct a std::size_t-sized span on top of this buffer.
             static_cast<void>(boost::numeric_cast<std::size_t>(sgp4_sat_data_buffer.size()));
 
-            // Init cheby_nodes.
-            std::vector<double> cheby_nodes;
-            cheby_nodes.resize(c_nodes_unit.size());
+            // Init sample_points.
+            std::vector<double> sample_points;
+            sample_points.resize(c_nodes_unit.size());
 
             // Init the evaluation/interpolation buffer.
             std::vector<double> interp_buffer;
@@ -751,7 +753,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
                             .cfunc_interp = cfunc_interp,
                             .sgp4_sat_data_buffer = std::move(sgp4_sat_data_buffer),
                             .cheby_nodes_unit = c_nodes_unit,
-                            .cheby_nodes = std::move(cheby_nodes),
+                            .sample_points = std::move(sample_points),
                             .interp_buffer = std::move(interp_buffer)};
         });
 
