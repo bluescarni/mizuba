@@ -231,7 +231,8 @@ int gpe_eval_vallado(auto &interp_buffer, elsetrec &satrec, const auto &sample_p
 
     // Evaluate positions and velocities at the sample points, writing the result
     // into the second chunk of interp_buffer.
-    const auto ibspan1 = hy::mdspan<double, heyoka::dextents<std::size_t, 2>>{interp_buffer.data() + op1 * 7u, op1, 7u};
+    const auto ibspan1 = hy::mdspan<double, heyoka::extents<std::size_t, std::dynamic_extent, 7>>{
+        interp_buffer.data() + op1 * 7u, op1};
     for (std::size_t i = 0; i < op1; ++i) {
         // NOTE: we can write directly into ibspan1.
         SGP4Funcs::sgp4(satrec, sample_points[i], &ibspan1[i, 0], &ibspan1[i, 3]);
