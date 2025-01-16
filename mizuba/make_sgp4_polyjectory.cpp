@@ -208,7 +208,7 @@ void build_tplts(auto &ta_kepler_tplt, auto &sgp4_prop_tplt, auto &jit_state_tpl
         });
 }
 
-// Evaluate a single gpe via the official sgp4 C++ code at multiple time points.
+// Evaluate the state of a single gpe via the official sgp4 C++ code at multiple time points.
 //
 // sample_points is the list of time points used for evaluation, and its size is op1.
 // satrec is the already-initialised satellite object to be passed to the propagation
@@ -219,7 +219,7 @@ void build_tplts(auto &ta_kepler_tplt, auto &sgp4_prop_tplt, auto &jit_state_tpl
 // [x, y, z, vx, vy, vz, r] for the corresponding time point in sample_points.
 //
 // The return value will be 0 if everything went ok, otherwise an sgp4 error code will be returned.
-int gpe_interp_eval(auto &interp_buffer, elsetrec &satrec, const auto &sample_points)
+int gpe_eval_vallado(auto &interp_buffer, elsetrec &satrec, const auto &sample_points)
 {
     namespace hy = heyoka;
 
@@ -248,7 +248,7 @@ int gpe_interp_eval(auto &interp_buffer, elsetrec &satrec, const auto &sample_po
     return 0;
 }
 
-// Evaluate a single gpe via our sgp4 propagator at multiple time points.
+// Evaluate the state of a single gpe via heyoka's sgp4 propagator at multiple time points.
 //
 // sample_points is the list of time points used for evaluation, and its size is op1. sgp4_prop is the sgp4
 // propagator, which has been initialised with op1 copies of the same gpe. cfunc_r is the compiled function to be
@@ -258,7 +258,7 @@ int gpe_interp_eval(auto &interp_buffer, elsetrec &satrec, const auto &sample_po
 // evaluation of [x, y, z, vx, vy, vz, r] for a time point in sample_points.
 //
 // The return value will be 0 if everything went ok, otherwise an sgp4 error code will be returned.
-int gpe_interp_eval(auto &interp_buffer, auto &sgp4_prop, const auto &sample_points, auto *cfunc_r)
+int gpe_eval_heyoka(auto &interp_buffer, auto &sgp4_prop, const auto &sample_points, auto *cfunc_r)
 {
     namespace hy = heyoka;
 
@@ -507,8 +507,8 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
 
         // Evaluate at the interpolation points, using either our own SGP4 implementation
         // or the official SGP4 C++ code.
-        const auto res = is_deep_space ? gpe_interp_eval(interp_buffer, satrec, sample_points)
-                                       : gpe_interp_eval(interp_buffer, sgp4_prop, sample_points, cfunc_r);
+        const auto res = is_deep_space ? gpe_eval_vallado(interp_buffer, satrec, sample_points)
+                                       : gpe_eval_heyoka(interp_buffer, sgp4_prop, sample_points, cfunc_r);
         if (res != 0) [[unlikely]] {
             // sgp4 error detected, no point in continuing further.
             return res;
