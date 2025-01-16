@@ -213,7 +213,7 @@ void build_tplts(auto &ta_kepler_tplt, auto &sgp4_prop_tplt, auto &jit_state_tpl
 // sample_points is the list of time points used for evaluation, and its size is op1.
 // satrec is the already-initialised satellite object to be passed to the propagation
 // function of the official sgp4 C++ code. interp_buffer is a memory buffer of size
-// op1 * 21. The result of the evaluation is supposed to be stored in the middle chunk
+// op1 * 14. The result of the evaluation is supposed to be stored in the second chunk
 // of interp_buffer, that is, in the [op1 * 7, op1 * 14) range in row-major format,
 // i.e., op1 rows and 7 columns. Each row will contain the evaluation of
 // [x, y, z, vx, vy, vz, r] for the corresponding time point in sample_points.
@@ -227,10 +227,10 @@ int gpe_interp_eval(auto &interp_buffer, elsetrec &satrec, const auto &sample_po
     // NOTE: we checked earlier that this conversion is ok: interp_buffer has a size > op1 and we checked
     // that we can build a std::size_t-sized span on top of it.
     const auto op1 = static_cast<std::size_t>(sample_points.size());
-    assert(interp_buffer.size() == op1 * 21u);
+    assert(interp_buffer.size() == op1 * 14u);
 
     // Evaluate positions and velocities at the sample points, writing the result
-    // into the middle chunk of interp_buffer.
+    // into the second chunk of interp_buffer.
     const auto ibspan1 = hy::mdspan<double, heyoka::dextents<std::size_t, 2>>{interp_buffer.data() + op1 * 7u, op1, 7u};
     for (std::size_t i = 0; i < op1; ++i) {
         // NOTE: we can write directly into ibspan1.
@@ -253,7 +253,7 @@ int gpe_interp_eval(auto &interp_buffer, elsetrec &satrec, const auto &sample_po
 // sample_points is the list of time points used for evaluation, and its size is op1. sgp4_prop is the sgp4
 // propagator, which has been initialised with op1 copies of the same gpe. cfunc_r is the compiled function to be
 // used to compute the radial coordinate from the propagated xyz coordinates. interp_buffer is a memory buffer of
-// size op1 * 21. The result of the evaluation is supposed to be stored in the middle chunk of interp_buffer, that
+// size op1 * 14. The result of the evaluation is supposed to be stored in the second chunk of interp_buffer, that
 // is, in the [op1 * 7, op1 * 14) range in row-major format, i.e., op1 rows and 7 columns. Each row will contain the
 // evaluation of [x, y, z, vx, vy, vz, r] for a time point in sample_points.
 //
@@ -267,11 +267,11 @@ int gpe_interp_eval(auto &interp_buffer, auto &sgp4_prop, const auto &sample_poi
     // that we can build a std::size_t-sized span on top of it.
     const auto op1 = static_cast<std::size_t>(sample_points.size());
     assert(sgp4_prop.get_nsats() == op1);
-    assert(interp_buffer.size() == op1 * 21u);
+    assert(interp_buffer.size() == op1 * 14u);
 
     // Step 1: evaluate at the sample points. We will be writing the output at the *beginning* of interp_buffer,
-    // i.e., not in the correct final position in the middle. We do this because the output of the propagator will have
-    // to be transposed, so we use the first chunk of interp_buffer as temporary storage.
+    // i.e., not in the correct final position in the second chunk. We do this because the output of the propagator will
+    // have to be transposed, so we use the first chunk of interp_buffer as temporary storage.
     //
     // NOTE: the evaluation produces a 7 x op1 array with the following layout:
     //
@@ -415,6 +415,9 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
     auto *cfunc_r = ets.cfunc_r;
     auto *cfunc_interp = ets.cfunc_interp;
 
+    // Fetch the poly cache.
+    auto &interp_poly_pcache = ets.interp_poly_pcache;
+
     // NOTE: we now have to transform several UTC dates/epochs into TAI
     // in order to ensure we are operating within a uniform scale of time.
     // If we do not do that, doing arithmetics on UTC Julian dates would
@@ -525,29 +528,30 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
             }
         }
 
+        // Fetch a buffer from the poly cache to store the result of polynomial interpolation.
+        // NOTE: here we are abusing a bit the pwrap class in the sense that we will be storing
+        // multiple polynomials into a single pwrap. This is ok, as pwrap is ultimately nothing but
+        // a std::vector with caching.
+        pwrap cfs_vec(interp_poly_pcache, boost::safe_numerics::safe<std::uint32_t>(7) * op1);
+        auto *cf_ptr = cfs_vec.v.data();
+
         // Interpolate.
         //
-        // NOTE: after interpolation, the layout of interp_buffer will be as follows:
+        // NOTE: at this point, the layout of interp_buffer is as follows:
         //
         // c0, c0, c0, ...
         // c1, c1, c1, ...
         // ...
         // x0, y0, z0, ...
         // x1, y1, z1, ...
-        // ...
-        // p0x, p0y, p0z, ...
-        // p1x, p1y, p1z, ...
-        // ...
         //
-        // This is, a (3op1 x 7) array divided logically into three (op1 x 7) parts:
+        // This is, a (2op1 x 7) array divided logically into two (op1 x 7) parts:
         //
         // - the evaluation nodes,
-        // - the evaluation values,
-        // - the polynomial coefficients resulting from the interpolation.
+        // - the evaluation values.
         //
         // NOTE: if we end up with non-finite poly coefficients or end times,
         // these will be caught by the polyjectory constructor.
-        auto *cf_ptr = interp_buffer.data() + op1 * static_cast<std::size_t>(14);
         cfunc_interp(cf_ptr, interp_buffer.data(), nullptr, nullptr);
 
         // Add the polynomial coefficients to poly_cf_buf.
@@ -719,6 +723,8 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
             std::vector<double> sample_points;
             // The evaluation/interpolation buffer.
             std::vector<double> interp_buffer;
+            // Polynomial cache providing storage for the results of polynomial interpolation.
+            poly_cache interp_poly_pcache;
         };
         using ets_t = oneapi::tbb::enumerable_thread_specific<ets_data, oneapi::tbb::cache_aligned_allocator<ets_data>,
                                                               oneapi::tbb::ets_key_usage_type::ets_key_per_instance>;
@@ -742,7 +748,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
 
             // Init the evaluation/interpolation buffer.
             std::vector<double> interp_buffer;
-            interp_buffer.resize(boost::safe_numerics::safe<decltype(interp_buffer.size())>(op1) * 21);
+            interp_buffer.resize(boost::safe_numerics::safe<decltype(interp_buffer.size())>(op1) * 14);
             // NOTE: we need to construct std::size_t-sized spans on top of this buffer.
             static_cast<void>(boost::numeric_cast<std::size_t>(interp_buffer.size()));
 
@@ -754,7 +760,8 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
                             .sgp4_sat_data_buffer = std::move(sgp4_sat_data_buffer),
                             .cheby_nodes_unit = c_nodes_unit,
                             .sample_points = std::move(sample_points),
-                            .interp_buffer = std::move(interp_buffer)};
+                            .interp_buffer = std::move(interp_buffer),
+                            .interp_poly_pcache{}};
         });
 
         // Run the parallel interpolation loop.
