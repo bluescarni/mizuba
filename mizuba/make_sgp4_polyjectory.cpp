@@ -593,6 +593,19 @@ int gpe_interpolate_with_bisection(const double init_step_begin, const double in
     // Sort the polynomials according to the begin time of the step.
     std::ranges::sort(ipolys, {}, [](const auto &tup) { return std::get<0>(tup); });
 
+    // NOTE: here in principle we could maybe try to remove sequences of increasingly-short
+    // steps in the proximity of a step with discontinuities. In order to achieve this,
+    // we would need to:
+    //
+    // - keep track of the interpolation error for *all* the steps,
+    // - identify contiguous sequences of steps with interpolation
+    //   error below the threshold,
+    // - consolidate these sequences into a single step and re-do the
+    //   interpolation over the consolidated step.
+    //
+    // This should reduce the memory/disk footprint and improve performance during
+    // conjunction detection.
+
     // Write the polynomials and the step end times into poly_cf_buf and time_buf.
     for (const auto &[step_begin, step_end, poly] : ipolys) {
         // Add the polynomial coefficients to poly_cf_buf.
