@@ -36,6 +36,50 @@ _gpe_fields = {
 }
 
 
+def _make_satrec_from_dict(d):
+    # Helper to construct a Satrec object from
+    # GPE values contained in a dictionary.
+    from sgp4.api import Satrec, WGS72
+    from ._dl_utils import _dl_add, _eft_add_knuth
+
+    # NOTE: this is the baseline reference epoch
+    # used by the C++ SGP4 code.
+    jd_sub = 2433281.5
+
+    # Normalise the components of the Julian dates.
+    jd1, jd2 = _eft_add_knuth(d["epoch_jd1"], d["epoch_jd2"])
+
+    # Compute the date required by sgp4init().
+    jd = _dl_add(
+        jd1,
+        jd2,
+        -jd_sub,
+        0.0,
+    )[0]
+
+    # Construct and init the Satrec.
+    sat = Satrec()
+    sat.sgp4init(
+        WGS72,
+        "i",
+        d["norad_id"],
+        jd,
+        d["bstar"],
+        # NOTE: ignore ndot and nddot, as they
+        # are not used during propagation.
+        0.0,
+        0.0,
+        d["e0"],
+        d["omega0"],
+        d["i0"],
+        d["m0"],
+        d["n0"],
+        d["node0"],
+    )
+
+    return sat
+
+
 def make_sgp4_polyjectory(
     gpes: Union[pl.DataFrame, np.ndarray[gpe_dtype]], jd_begin: float, jd_end: float
 ) -> polyjectory:

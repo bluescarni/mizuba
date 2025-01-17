@@ -99,7 +99,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             self._compare_sgp4(jd_begin, i, sat, rng, cfs, end_times)
 
     def test_single_gpe_ds(self):
-        # Simple test with a single gpe.
+        # Simple test with a single deep-space gpe.
         from .. import _have_sgp4_deps
 
         if not _have_sgp4_deps():
@@ -142,7 +142,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
     def test_single_gpe_syncom(self):
         # This is a test with a deep-space satellite that, for some
         # interpolation steps, exhibits a degraded interpolation accuracy
-        # with respect to what we normally expect. This is most likely
+        # with respect to what we normally expect. This is
         # due to the sgp4 algorithm exhibiting occasional spikes in the
         # values of the time derivatives at orders 2 and higher which throw
         # off the interpolation algorithm.
@@ -242,35 +242,11 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         from .. import make_sgp4_polyjectory
         from .._dl_utils import _dl_add
+        from .._sgp4_polyjectory import _make_satrec_from_dict as make_satrec
         import pathlib
-        from sgp4.api import Satrec, WGS72
         import polars as pl
         import numpy as np
         import bisect
-
-        # Small helper to construct a Satrec from a row
-        # in the gpe dataset.
-        def make_satrec(row):
-            sat = Satrec()
-            sat.sgp4init(
-                WGS72,
-                "i",
-                row["norad_id"],
-                # NOTE: ignore the epoch, as we are in
-                # LEO and only the tsince matters.
-                0.0,
-                row["bstar"],
-                0.0,
-                0.0,
-                row["e0"],
-                row["omega0"],
-                row["i0"],
-                row["m0"],
-                row["n0"],
-                row["node0"],
-            )
-
-            return sat
 
         # Deterministic seeding.
         rng = np.random.default_rng(123)

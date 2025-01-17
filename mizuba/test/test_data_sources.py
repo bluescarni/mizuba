@@ -26,43 +26,10 @@ class data_sources_test_case(_ut.TestCase):
             return
 
         from ..data_sources import download_all_gpes, gpes_schema
-        from .._dl_utils import _dl_add
-        from sgp4.api import Satrec, WGS72
+        from .._sgp4_polyjectory import _make_satrec_from_dict as make_satrec
+        from sgp4.api import Satrec
         import numpy as np
         import polars as pl
-
-        # Small helper to construct a Satrec from a row
-        # in the datasets.
-        def make_satrec(row):
-            # NOTE: this is the baseline reference epoch
-            # used by the C++ SGP4 code.
-            jd_sub = 2433281.5
-
-            sat = Satrec()
-            sat.sgp4init(
-                WGS72,
-                "i",
-                row["norad_id"],
-                _dl_add(
-                    # NOTE: we are assuming here that the two
-                    # jd components are already normalised.
-                    row["epoch_jd1"],
-                    row["epoch_jd2"],
-                    -jd_sub,
-                    0.0,
-                )[0],
-                row["bstar"],
-                0.0,
-                0.0,
-                row["e0"],
-                row["omega0"],
-                row["i0"],
-                row["m0"],
-                row["n0"],
-                row["node0"],
-            )
-
-            return sat
 
         # Download the full GPE datasets with and without supgp data.
         gpes = download_all_gpes()
