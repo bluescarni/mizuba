@@ -324,12 +324,12 @@ int gpe_eval_heyoka(auto &interp_buffer, auto &sgp4_prop, const auto &sample_poi
 // buffer, which is assumed to contain in the first chunk the Cheby nodes which were used to produce the
 // interpolating polynomials (thus, these are cheby nodes measured in days since the beginning of the
 // interpolation step). Similarly, sample_points is assumed to contain the same Cheby nodes but measured
-// in minutes since the satellite's epoch. xyz_eval is a buffer that will store the evaluations
-// of the interpolating polynomials. step_begin_sat_epoch represents the step's begin time measured in
-// days since the satellite's epoch. is_deep_space signals whether the satellite is a deep-space one or not.
-// satrec is the initialised satellite object for computations with the official C++ code. sgp4_prop is the
-// initialised heyoka sgp4 propagator. cfunc_r is the jit-compiled function to compute the satellite's radial
-// coordinate from its xyz coordinates.
+// in minutes since the satellite's epoch (for use in the sgp4 propagators). xyz_eval is a buffer that will store the
+// evaluations of the interpolating polynomials. step_begin_sat_epoch represents the step's begin time measured in days
+// since the satellite's epoch. is_deep_space signals whether the satellite is a deep-space one or not. satrec is the
+// initialised satellite object for computations with the official C++ code. sgp4_prop is the initialised heyoka sgp4
+// propagator. cfunc_r is the jit-compiled function to compute the satellite's radial coordinate from its xyz
+// coordinates.
 //
 // An error code will be returned if either sgp4 propagation produces an error or if non-finite values
 // are detected during the computations.
@@ -415,6 +415,12 @@ std::variant<double, int> eval_interp_error2(const double *cf_ptr, auto &interp_
 
 // Interpolate a gpe within an interpolation step, bisecting the step if necessary in case
 // low-precision interpolations are detected.
+//
+// sgp4 trajectories exhibit occasional discontinuities due to the branchy nature of the sgp4 algorithm.
+// These discontinuities (which may show up in the trajectories themselves and/or in their time derivatives)
+// can result in a degradation of the interpolation accuracy within a step. Although this degradation
+// is unavoidable, we can limit its effect by confining it to a very short interpolation step, so that
+// the window of time in which we have an inaccurate interpolation is minimised.
 //
 // The interpolation step's boundaries are given, in days since the polyjectory's epoch,
 // by [init_step_begin, init_step_end), and, in days since the satellite's epoch, by
