@@ -16,6 +16,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <chrono>
@@ -28,7 +29,9 @@
 #include <ranges>
 #include <span>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <boost/filesystem/operations.hpp>
@@ -310,6 +313,306 @@ int gpe_eval_heyoka(auto &interp_buffer, auto &sgp4_prop, const auto &sample_poi
     return 0;
 }
 
+// Estimate the squared interpolation error within an interpolation step.
+//
+// The estimation is based on the positional error. The interpolating polynomials for xyz are evaluated
+// at the half points between the original Cheby nodes that were used to produce the polynomials. The positions
+// produced by the interpolating polynomials are compared to the positions produced by the sgp4
+// propagators, and the maximum squared positional difference is returned.
+//
+// cf_ptr contains the interpolating polynomials' coefficients. interp_buffer is the evaluation/interpolation
+// buffer, which is assumed to contain in the first chunk the Cheby nodes which were used to produce the
+// interpolating polynomials (thus, these are cheby nodes measured in days since the beginning of the
+// interpolation step). Similarly, sample_points is assumed to contain the same Cheby nodes but measured
+// in minutes since the satellite's epoch. xyz_eval is a buffer that will store the evaluations
+// of the interpolating polynomials. step_begin_sat_epoch represents the step's begin time measured in
+// days since the satellite's epoch. is_deep_space signals whether the satellite is a deep-space one or not.
+// satrec is the initialised satellite object for computations with the official C++ code. sgp4_prop is the
+// initialised heyoka sgp4 propagator. cfunc_r is the jit-compiled function to compute the satellite's radial
+// coordinate from its xyz coordinates.
+//
+// An error code will be returned if either sgp4 propagation produces an error or if non-finite values
+// are detected during the computations.
+std::variant<double, int> eval_interp_error2(const double *cf_ptr, auto &interp_buffer, auto &sample_points,
+                                             auto &xyz_ieval, const double step_begin_sat_epoch, bool is_deep_space,
+                                             elsetrec &satrec, auto &sgp4_prop, auto *cfunc_r)
+{
+    namespace hy = heyoka;
+
+    // Cache op1.
+    // NOTE: we know that by construction sample_points has the size of the poly
+    // interpolation order + 1, which is by definition representable as a std::uint32_t.
+    const auto op1 = static_cast<std::uint32_t>(sample_points.size());
+    assert(xyz_ieval.size() == op1);
+    assert(op1 != 0u);
+
+    // Evaluate the interpolating polynomials for xyz halfway between the Cheby nodes and
+    // write the results into xyz_eval.
+    // NOTE: interp_buffer is assumed to contain the Cheby nodes measured in days since
+    // the beginning of the step.
+    const auto ipoints_span
+        = hy::mdspan<const double, hy::extents<std::size_t, std::dynamic_extent, 7>>(interp_buffer.data(), op1);
+    for (std::uint32_t i = 0; i < op1; ++i) {
+        const auto prev_tm = (i == 0u) ? 0. : ipoints_span[i - 1u, 0];
+        const auto cur_tm = ipoints_span[i, 0];
+        const auto eval_tm = prev_tm / 2 + cur_tm / 2;
+
+        auto &cur_xyz = xyz_ieval[i];
+        for (auto j = 0u; j < 3u; ++j) {
+            cur_xyz[j] = horner_eval(cf_ptr + j, op1 - 1u, eval_tm, 7);
+        }
+    }
+
+    // Write at the beginning of interp_buffer the midpoints between the Cheby nodes from sample_points.
+    // NOTE: here we are using the first chunk of interp_buffer as temporary storage.
+    // NOTE: sample_points is assumed to contain the Cheby nodes measured in minutes since
+    // the satellite's epoch (this is the time coordinate required by the sgp4 propagators).
+    for (std::uint32_t i = 0; i < op1; ++i) {
+        const auto prev_tm = (i == 0u) ? (step_begin_sat_epoch * 1440.) : sample_points[i - 1u];
+        const auto cur_tm = sample_points[i];
+        const auto eval_tm = prev_tm / 2 + cur_tm / 2;
+
+        interp_buffer[i] = eval_tm;
+    }
+
+    // Copy back to sample_points.
+    std::ranges::copy(interp_buffer.data(), interp_buffer.data() + op1, sample_points.begin());
+
+    // Evaluate at sample_points, using one of the two sgp4 propagators.
+    const auto res = is_deep_space ? gpe_eval_vallado(interp_buffer, satrec, sample_points)
+                                   : gpe_eval_heyoka(interp_buffer, sgp4_prop, sample_points, cfunc_r);
+    // Check for errors.
+    if (res != 0) [[unlikely]] {
+        return res;
+    }
+
+    // Fetch a span to the result of the evaluation within interp_buffer.
+    const auto epoints_span = hy::mdspan<const double, hy::extents<std::size_t, std::dynamic_extent, 7>>(
+        interp_buffer.data() + op1 * static_cast<std::size_t>(7), op1);
+
+    // Compute the maximum positional error.
+    auto max_err2 = 0.;
+    for (std::uint32_t i = 0; i < op1; ++i) {
+        const auto &cur_xyz = xyz_ieval[i];
+
+        const auto x_err = cur_xyz[0] - epoints_span[i, 0];
+        const auto y_err = cur_xyz[1] - epoints_span[i, 1];
+        const auto z_err = cur_xyz[2] - epoints_span[i, 2];
+
+        const auto cur_err2 = x_err * x_err + y_err * y_err + z_err * z_err;
+
+        // NOTE: if something went awry with propagation or poly evaluation, we will
+        // catch it here.
+        if (!std::isfinite(cur_err2)) [[unlikely]] {
+            return 10;
+        }
+
+        max_err2 = std::max(max_err2, cur_err2);
+    }
+
+    return max_err2;
+}
+
+// Interpolate a gpe within an interpolation step, bisecting the step if necessary in case
+// low-precision interpolations are detected.
+//
+// The interpolation step's boundaries are given, in days since the polyjectory's epoch,
+// by [init_step_begin, init_step_end), and, in days since the satellite's epoch, by
+// [init_step_begin_sat_epoch, init_step_end_sat_epoch). ets is a bag of thread-local data.
+// is_deep_space signals whether the satellite is a deep-space one or not. satrec is the
+// initialised satellite object for computations with the official C++ code. sgp4_prop is the
+// initialised heyoka sgp4 propagator. poly_cf_buf and time_buf are the buffers for storing,
+// respectively, the interpolating polynomials' coefficients and the end times of the
+// interpolation steps.
+int gpe_interpolate_with_bisection(const double init_step_begin, const double init_step_end,
+                                   const double init_step_begin_sat_epoch, const double init_step_end_sat_epoch,
+                                   auto &ets, bool is_deep_space, elsetrec &satrec, auto &sgp4_prop, auto &poly_cf_buf,
+                                   auto &time_buf)
+{
+    namespace hy = heyoka;
+
+    // Minimum allowed step size (in days).
+    constexpr double min_step_size = 5. / 86400.;
+
+    // Positional interpolation error threshold (in km).
+    constexpr double err_thresh = 1e-7;
+
+    // Fetch the Chebyshev nodes buffer.
+    const auto &cheby_nodes_unit = ets.cheby_nodes_unit;
+
+    // Cache op1.
+    // NOTE: we know that by construction cheby_nodes_unit has the size of the poly
+    // interpolation order + 1, which is by definition representable as a std::uint32_t.
+    const auto op1 = static_cast<std::uint32_t>(cheby_nodes_unit.size());
+
+    // Fetch the sample points buffer.
+    auto &sample_points = ets.sample_points;
+
+    // Fetch the evaluation/interpolation buffer.
+    auto &interp_buffer = ets.interp_buffer;
+
+    // Fetch the jitted functions.
+    auto *cfunc_r = ets.cfunc_r;
+    auto *cfunc_interp = ets.cfunc_interp;
+
+    // Fetch xyz_ieval.
+    auto &xyz_ieval = ets.xyz_ieval;
+
+    // Fetch the poly cache.
+    auto &interp_poly_pcache = ets.interp_poly_pcache;
+
+    // Clear up the stack and ipolys.
+    auto &stack = ets.stack;
+    stack.clear();
+    auto &ipolys = ets.ipolys;
+    ipolys.clear();
+
+    // Seed the starting interpolation interval into the stack.
+    stack.push_back({{init_step_begin, init_step_end, init_step_begin_sat_epoch, init_step_end_sat_epoch}});
+
+    while (!stack.empty()) {
+        // Pop back an interval from the stack.
+        const auto [step_begin, step_end, step_begin_sat_epoch, step_end_sat_epoch] = stack.back();
+        stack.pop_back();
+
+        // Compute the durations of the current interval.
+        const auto cur_duration = step_end - step_begin;
+        const auto cur_duration_sat_epoch = step_end_sat_epoch - step_begin_sat_epoch;
+        // NOTE: check for finiteness here, because if these are not finite we may break the logic
+        // for sorting ipolys and for accepting the current polynomial. If we have non-finite values being produced
+        // during evaluation/interpolation, they may be caught during the evaluation of the interpolation error. In any
+        // case, even if we end up producing non-finite poly coefficients or step end times, these will be caught by the
+        // polyjectory constructor.
+        if (!std::isfinite(cur_duration) || !std::isfinite(cur_duration_sat_epoch)) [[unlikely]] {
+            return 10;
+        }
+
+        // Setup the interpolation points. Since we will be evaluating the interpolation points
+        // with sgp4 propagators, we need to transform the Chebyshev
+        // nodes from the [-1, 1] range into the [step_begin, step_end] range, expressed
+        // in *minutes elapsed from the satellite epoch* (which is the time coordinate
+        // used by the sgp4 propagators). We do this via an affine transformation.
+        for (std::uint32_t i = 0; i < op1; ++i) {
+            // The affine transformation.
+            sample_points[i]
+                = (cheby_nodes_unit[i] + 1) / 2 * (cur_duration_sat_epoch * 1440.) + step_begin_sat_epoch * 1440.;
+        }
+
+        // Evaluate at the interpolation points, using one of the two sgp4 propagators.
+        const auto res = is_deep_space ? gpe_eval_vallado(interp_buffer, satrec, sample_points)
+                                       : gpe_eval_heyoka(interp_buffer, sgp4_prop, sample_points, cfunc_r);
+        if (res != 0) [[unlikely]] {
+            // sgp4 error detected, no point in continuing further.
+            return res;
+        }
+
+        // Fill in the first chunk of interp_buffer with the interpolation points.
+        const auto ipoints_span
+            = hy::mdspan<double, hy::extents<std::size_t, std::dynamic_extent, 7>>(interp_buffer.data(), op1);
+        for (std::size_t i = 0; i < op1; ++i) {
+            // NOTE: for the actual interpolation, we want the interpolation points in the [0, step_end - step_begin]
+            // range. We need this because because in the polyjectory the polynomials are to be evaluated with the
+            // time counted from the beginning of the step (in days).
+            const auto ipoint = (cheby_nodes_unit[i] + 1) / 2 * cur_duration;
+
+            for (auto j = 0u; j < 7u; ++j) {
+                ipoints_span[i, j] = ipoint;
+            }
+        }
+
+        // Fetch a buffer from the poly cache to store the result of polynomial interpolation.
+        // NOTE: here we are abusing a bit the pwrap class in the sense that we will be storing
+        // multiple polynomials into a single pwrap. This is ok, as pwrap is ultimately nothing but
+        // a std::vector with caching.
+        pwrap cfs_vec(interp_poly_pcache, boost::safe_numerics::safe<std::uint32_t>(7) * op1);
+        auto *cf_ptr = cfs_vec.v.data();
+
+        // Interpolate.
+        //
+        // NOTE: at this point, the layout of interp_buffer is as follows:
+        //
+        // c0, c0, c0, ...
+        // c1, c1, c1, ...
+        // ...
+        // x0, y0, z0, ...
+        // x1, y1, z1, ...
+        //
+        // This is, a (2op1 x 7) array divided logically into two (op1 x 7) parts:
+        //
+        // - the evaluation nodes,
+        // - the evaluation values.
+        //
+        // The evaluation nodes are the Cheby nodes in the [0, step_end - step_begin] range,
+        // and they are the same for all coordinates/velocities.
+        //
+        // The polynomial coefficients will be written into cf_ptr with the following layout:
+        //
+        // p0x, p0y, p0z, ...
+        // p1x, p1y, p1z, ...
+        // ...
+        //
+        // That is, an (op1 x 7) array.
+        cfunc_interp(cf_ptr, interp_buffer.data(), nullptr, nullptr);
+
+        // NOTE: unconditionally accept the interpolating polynomials
+        // if the step size is below the min threshold.
+        if (cur_duration < min_step_size) {
+            ipolys.emplace_back(step_begin, step_end, std::move(cfs_vec));
+            continue;
+        }
+
+        // Estimate the squared interpolation error.
+        const auto interp_err2 = eval_interp_error2(cf_ptr, interp_buffer, sample_points, xyz_ieval,
+                                                    step_begin_sat_epoch, is_deep_space, satrec, sgp4_prop, cfunc_r);
+        if (std::holds_alternative<int>(interp_err2)) [[unlikely]] {
+            return std::get<int>(interp_err2);
+        }
+        const double ierr2 = std::get<double>(interp_err2);
+
+        if (ierr2 < err_thresh * err_thresh) {
+            // The interpolation error is below the threshold, accept the polynomial.
+            ipolys.emplace_back(step_begin, step_end, std::move(cfs_vec));
+        } else {
+            // The interpolation error is too high, bisect.
+            // NOTE: since step_begin, step_end and cur_duration are all finite,
+            // the bisection should not produce any non-finite value.
+            const auto mid = step_begin + cur_duration / 2;
+            const auto mid_sat_epoch = step_begin_sat_epoch + cur_duration_sat_epoch / 2;
+
+            stack.push_back({step_begin, mid, step_begin_sat_epoch, mid_sat_epoch});
+            stack.push_back({mid, step_end, mid_sat_epoch, step_end_sat_epoch});
+        }
+    }
+
+    // Sort the polynomials according to the begin time of the step.
+    std::ranges::sort(ipolys, {}, [](const auto &tup) { return std::get<0>(tup); });
+
+    // Write the polynomials and the step end times into poly_cf_buf and time_buf.
+    for (const auto &[step_begin, step_end, poly] : ipolys) {
+        // Add the polynomial coefficients to poly_cf_buf.
+        const auto cf_span
+            = hy::mdspan<const double, hy::extents<std::size_t, std::dynamic_extent, 7>>(poly.v.data(), op1);
+        for (auto j = 0u; j < 7u; ++j) {
+            for (std::size_t i = 0; i < op1; ++i) {
+                poly_cf_buf.push_back(cf_span[i, j]);
+            }
+        }
+
+        // Add the step end time to time_buf.
+        if (time_buf.empty()) {
+            // NOTE: if time_buf is empty, it means we are at the
+            // very beginning of the satellite's trajectory, which must
+            // be init_step_begin. Thus, since we sorted ipolys, it means
+            // that we must be adding a step beginning at init_step_begin.
+            assert(step_begin == init_step_begin);
+            time_buf.push_back(step_begin);
+        }
+        time_buf.push_back(step_end);
+    }
+
+    return 0;
+}
+
 // Interpolate the gpe g in the [jdate_begin, jdate_end) time range over one or more interpolation steps.
 // jdate_begin/end are UTC Julian dates.
 //
@@ -372,7 +675,7 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
     const std::uint32_t op1 = order + 1u;
 
     // If we are not dealing with a deep-space gpe, we also need
-    // to set up our sgp4 propagator with op1 copies of the gpe g.
+    // to set up heyoka's sgp4 propagator with op1 copies of the gpe g.
     auto &sgp4_prop = ets.sgp4_prop;
     if (!is_deep_space) {
         // Fill in the data buffer containing the gpe data.
@@ -403,22 +706,6 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
             sgp4_sat_data_buffer.data(), op1});
     }
 
-    // Fetch the Chebyshev nodes buffer.
-    const auto &cheby_nodes_unit = ets.cheby_nodes_unit;
-
-    // Fetch the sample points buffer.
-    auto &sample_points = ets.sample_points;
-
-    // Fetch the evaluation/interpolation buffer.
-    auto &interp_buffer = ets.interp_buffer;
-
-    // Fetch the jitted functions.
-    auto *cfunc_r = ets.cfunc_r;
-    auto *cfunc_interp = ets.cfunc_interp;
-
-    // Fetch the poly cache.
-    auto &interp_poly_pcache = ets.interp_poly_pcache;
-
     // NOTE: we now have to transform several UTC dates/epochs into TAI
     // in order to ensure we are operating within a uniform scale of time.
     // If we do not do that, doing arithmetics on UTC Julian dates would
@@ -436,7 +723,7 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
     for (auto cur_jdate_tai = jdate_begin_tai;;) {
         // NOTE: when computing with times and dates, we are careful to use
         // double-length arithmetic as much as possible. We do not however have
-        // a double-length multiplication primitive though, thus for conversions
+        // a double-length multiplication primitive, thus for conversions
         // of time durations we need to cast to single-length. If this ever becomes
         // an issue and we need extra precision, double-length multiplication can be
         // easily implemented on top of std::fma() and the TwoProductFMA() algorithm:
@@ -494,85 +781,16 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         // Compute it also with respect to the epoch of the satellite.
         const auto step_end_sat_epoch = step_begin_sat_epoch + h / 86400.;
 
-        // We now have to setup the interpolation points. Since we will be evaluating
-        // the interpolation points with sgp4 propagators, we need to transform the Chebyshev
-        // nodes from the [-1, 1] range into the [step_begin, step_end] range, expressed
-        // in *minutes elapsed from the satellite epoch* (which is the time coordinate
-        // used by the sgp4 propagators). We do this via an affine transformation.
-        for (std::uint32_t i = 0; i < op1; ++i) {
-            // The affine transformation.
-            sample_points[i] = (cheby_nodes_unit[i] + 1) / 2
-                                   * (static_cast<double>(step_end_sat_epoch - step_begin_sat_epoch) * 1440.)
-                               + static_cast<double>(step_begin_sat_epoch) * 1440.;
-        }
+        // Interpolate, isolating discontinuities via bisection.
+        const auto res = gpe_interpolate_with_bisection(
+            static_cast<double>(step_begin), static_cast<double>(step_end), static_cast<double>(step_begin_sat_epoch),
+            static_cast<double>(step_end_sat_epoch), ets, is_deep_space, satrec, sgp4_prop, poly_cf_buf, time_buf);
 
-        // Evaluate at the interpolation points, using either our own SGP4 implementation
-        // or the official SGP4 C++ code.
-        const auto res = is_deep_space ? gpe_eval_vallado(interp_buffer, satrec, sample_points)
-                                       : gpe_eval_heyoka(interp_buffer, sgp4_prop, sample_points, cfunc_r);
+        // Check the return code.
         if (res != 0) [[unlikely]] {
-            // sgp4 error detected, no point in continuing further.
+            // Error detected, no point in continuing further.
             return res;
         }
-
-        // Fill in the first chunk of interp_buffer with the interpolation points.
-        const auto ipoints_span
-            = hy::mdspan<double, hy::extents<std::size_t, std::dynamic_extent, 7>>(interp_buffer.data(), op1);
-        for (std::size_t i = 0; i < op1; ++i) {
-            // NOTE: for the actual interpolation, we want the interpolation points in the [0, step_end - step_begin]
-            // range. We need this because because in the polyjectory the polynomials are to be evaluated with the
-            // time counted from the beginning of the step (in days).
-            const auto ipoint = (cheby_nodes_unit[i] + 1) / 2 * static_cast<double>(step_end - step_begin);
-
-            for (auto j = 0u; j < 7u; ++j) {
-                ipoints_span[i, j] = ipoint;
-            }
-        }
-
-        // Fetch a buffer from the poly cache to store the result of polynomial interpolation.
-        // NOTE: here we are abusing a bit the pwrap class in the sense that we will be storing
-        // multiple polynomials into a single pwrap. This is ok, as pwrap is ultimately nothing but
-        // a std::vector with caching.
-        pwrap cfs_vec(interp_poly_pcache, boost::safe_numerics::safe<std::uint32_t>(7) * op1);
-        auto *cf_ptr = cfs_vec.v.data();
-
-        // Interpolate.
-        //
-        // NOTE: at this point, the layout of interp_buffer is as follows:
-        //
-        // c0, c0, c0, ...
-        // c1, c1, c1, ...
-        // ...
-        // x0, y0, z0, ...
-        // x1, y1, z1, ...
-        //
-        // This is, a (2op1 x 7) array divided logically into two (op1 x 7) parts:
-        //
-        // - the evaluation nodes,
-        // - the evaluation values.
-        //
-        // NOTE: if we end up with non-finite poly coefficients or end times,
-        // these will be caught by the polyjectory constructor.
-        cfunc_interp(cf_ptr, interp_buffer.data(), nullptr, nullptr);
-
-        // Add the polynomial coefficients to poly_cf_buf.
-        const auto out_span = hy::mdspan<const double, hy::extents<std::size_t, std::dynamic_extent, 7>>(cf_ptr, op1);
-        for (auto j = 0u; j < 7u; ++j) {
-            for (std::size_t i = 0; i < op1; ++i) {
-                poly_cf_buf.push_back(out_span[i, j]);
-            }
-        }
-
-        // Add the step end time to time_buf.
-        if (time_buf.empty()) {
-            // NOTE: if time_buf is empty, it means we are adding the very first
-            // trajectory step for the current satellite. Thus, we need to also add
-            // the starting time of the trajectory, measured in days since
-            // the polyjectory epoch.
-            assert(cur_jdate_tai == jdate_begin_tai);
-            time_buf.push_back(static_cast<double>(step_begin));
-        }
-        time_buf.push_back(static_cast<double>(step_end));
 
         // Break out if this is the last iteration.
         if (last_iteration) {
@@ -709,7 +927,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
 
             // The Keplerian integrator.
             hy::taylor_adaptive<double> ta_kepler;
-            // The sgp4 propagator (our implementation).
+            // The sgp4 propagator (heyoka's implementation).
             hy::model::sgp4_propagator<double> sgp4_prop;
             // llvm state for the auxiliary jitted functions.
             hy::llvm_state jit_state;
@@ -724,8 +942,25 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
             std::vector<double> sample_points;
             // The evaluation/interpolation buffer.
             std::vector<double> interp_buffer;
+            // Stack to be used during bisection of interpolation steps with discontinuities.
+            // The 4 values are the begin/end times of an interpolation step, measured both wrt
+            // the beginning of the polyjectory and the satellite's epoch.
+            std::vector<std::array<double, 4>> stack;
             // Polynomial cache providing storage for the results of polynomial interpolation.
+            // NOTE: it is *really* important that this is declared
+            // *before* ipolys, because ipolys will contain references
+            // to and interact with interp_poly_pcache during destruction,
+            // and we must be sure that ipolys is destroyed *before*
+            // interp_poly_pcache.
             poly_cache interp_poly_pcache;
+            // List of interpolating polynomials, one per bisecting
+            // step. Each polynomial is keyed on the begin/end times
+            // of the bisection step, measured from the beginning
+            // of the polyjectory.
+            std::vector<std::tuple<double, double, pwrap>> ipolys;
+            // Buffer used to store the xyz positions of a satellite
+            // when evaluating the interpolation error.
+            std::vector<std::array<double, 3>> xyz_ieval;
         };
         using ets_t = oneapi::tbb::enumerable_thread_specific<ets_data, oneapi::tbb::cache_aligned_allocator<ets_data>,
                                                               oneapi::tbb::ets_key_usage_type::ets_key_per_instance>;
@@ -753,6 +988,10 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
             // NOTE: we need to construct std::size_t-sized spans on top of this buffer.
             static_cast<void>(boost::numeric_cast<std::size_t>(interp_buffer.size()));
 
+            // Init xyz_ieval.
+            std::vector<std::array<double, 3>> xyz_ieval;
+            xyz_ieval.resize(boost::numeric_cast<decltype(xyz_ieval.size())>(op1));
+
             return ets_data{.ta_kepler = *ta_kepler_tplt,
                             .sgp4_prop = *sgp4_prop_tplt,
                             .jit_state = std::move(jit_state),
@@ -762,7 +1001,10 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
                             .cheby_nodes_unit = c_nodes_unit,
                             .sample_points = std::move(sample_points),
                             .interp_buffer = std::move(interp_buffer),
-                            .interp_poly_pcache{}};
+                            .stack{},
+                            .interp_poly_pcache{},
+                            .ipolys{},
+                            .xyz_ieval = std::move(xyz_ieval)};
         });
 
         // Run the parallel interpolation loop.
@@ -805,7 +1047,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
 
                     // NOTE: isolate to avoid issues with thread-local data. See:
                     // https://oneapi-src.github.io/oneTBB/main/tbb_userguide/work_isolation.html
-                    // We may be invoking TBB primitives when using our sgp4 propagator.
+                    // We may be invoking TBB primitives when using heyoka's sgp4 propagator.
                     oneapi::tbb::this_task_arena::isolate([&local_ets, &range, &gpe_groups, dl_jd_begin, dl_jd_end,
                                                            &global_status, &traj_promises, &time_promises,
                                                            epoch_tai]() {
