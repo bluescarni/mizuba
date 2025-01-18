@@ -310,7 +310,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
                 self.assertEqual(e, 0)
 
                 # Compute the state according to the polyjectory.
-                mz_state = pj(tm)
+                mz_state = pj.state_eval(tm)
 
                 # Compare.
                 self.assertTrue(np.allclose(r, mz_state[0, :3], rtol=0, atol=1e-8))
