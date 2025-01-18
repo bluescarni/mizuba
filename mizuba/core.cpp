@@ -375,92 +375,113 @@ PYBIND11_MODULE(core, m)
         },
         "i"_a.noconvert());
     pt_cl.def(
-        "__call__",
-        [](const mz::polyjectory &self, std::variant<double, py::array_t<double>> time,
-           std::optional<std::size_t> obj_idx) {
-            return std::visit(
-                [&self, &obj_idx]<typename V>(const V &v) {
-                    if constexpr (std::same_as<V, py::array_t<double>>) {
-                        if (obj_idx) [[unlikely]] {
-                            throw std::invalid_argument(
-                                "If an object index is specified when invoking the call operator of a polyjectory, "
-                                "then the evaluation time must be passed as a scalar and not as an array");
-                        }
+        "state_eval",
+        [](const mz::polyjectory &self, std::variant<double, py::array_t<double>> tm,
+           std::optional<py::array_t<double>> out_,
+           std::optional<std::variant<std::size_t, py::array_t<std::size_t>>> selector) {
+            // Setup the selector argument.
+            std::optional<mz::dspan_1d<const std::size_t>> sel;
+            if (selector) {
+                std::visit(
+                    [&sel]<typename V>(const V &v) {
+                        if constexpr (std::same_as<V, std::size_t>) {
+                            // The selector is a single index, wrap it in a 1-element span.
+                            sel.emplace(&v, 1);
+                        } else {
+                            // The selector is an array, check it and wrap it in a span.
+                            mzpy::check_array_cc_aligned(
+                                v,
+                                "The selector array passed to state_eval() must be C contiguous and properly aligned");
 
-                        // Check contiguousness/alignment for the time array.
-                        mzpy::check_array_cc_aligned(v, "The time array passed to the call operator of a polyjectory "
-                                                        "must be C contiguous and properly aligned");
+                            if (v.ndim() != 1) [[unlikely]] {
+                                throw std::invalid_argument(fmt::format(
+                                    "The selector array passed to state_eval() must have 1 dimension, but the "
+                                    "number of dimensions is {} instead",
+                                    v.ndim()));
+                            }
 
-                        // Check the number of dimensions for the time array.
-                        if (v.ndim() != 1) [[unlikely]] {
-                            throw std::invalid_argument(fmt::format(
-                                "The time array passed to the call operator of a polyjectory must have 1 dimension, "
-                                "but the number of dimensions is {} instead",
-                                v.ndim()));
+                            sel.emplace(v.data(), boost::numeric_cast<std::size_t>(v.shape(0)));
                         }
+                    },
+                    *selector);
+            }
+
+            // Check or setup the output array.
+            auto out = [&out_, &sel, &self]() {
+                if (out_) {
+                    // Output array provided, check it.
+                    auto ret = *out_;
+
+                    mzpy::check_array_cc_aligned(
+                        ret, "The output array passed to state_eval() must be C contiguous and properly aligned");
+
+                    // NOTE: we check the number of dimensions and the size in the second
+                    // dimension. The size in the first dimension is checked within the C++ code.
+                    if (ret.ndim() != 2) [[unlikely]] {
+                        throw std::invalid_argument(
+                            fmt::format("The output array passed to state_eval() must have 2 dimensions, but the "
+                                        "number of dimensions is {} instead",
+                                        ret.ndim()));
+                    }
+                    if (ret.shape(1) != 7) [[unlikely]] {
+                        throw std::invalid_argument(
+                            fmt::format("The output array passed to state_eval() must have a size of 7 in the second "
+                                        "dimension, but the size in the second dimension is {} instead",
+                                        ret.shape(1)));
                     }
 
-                    // Cache the total number of objects.
-                    const auto nobjs = self.get_nobjs();
+                    return ret;
+                } else {
+                    // Create the output array.
+                    return py::array_t<double>(py::array::ShapeContainer{
+                        boost::numeric_cast<py::ssize_t>(sel ? sel->extent(0) : self.get_nobjs()),
+                        static_cast<py::ssize_t>(7)});
+                }
+            }();
 
-                    // Prepare the output array.
-                    auto out_arr = obj_idx ? py::array_t<double>(py::array::ShapeContainer{static_cast<py::ssize_t>(7)})
-                                           : py::array_t<double>(py::array::ShapeContainer{
-                                                 boost::numeric_cast<py::ssize_t>(nobjs), static_cast<py::ssize_t>(7)});
+            // Prepare the output span.
+            const auto out_span = mz::polyjectory::single_eval_span_t(out.mutable_data(),
+                                                                      boost::numeric_cast<std::size_t>(out.shape(0)));
 
-                    // Prepare the input argument.
-                    const auto in = [&v]() {
+            // Visit on the time argument and run the evaluation.
+            std::visit(
+                [&self, &out_span, &sel]<typename V>(const V &v) {
+                    // Prepare the time argument.
+                    const auto tm_arg = [&v]() {
                         if constexpr (std::same_as<V, py::array_t<double>>) {
+                            // Time provided in array form.
+
+                            // Check contiguousness/alignment for the time array.
+                            mzpy::check_array_cc_aligned(
+                                v, "The time array passed to state_eval() must be C contiguous and properly aligned");
+
+                            // Check the number of dimensions for the time array.
+                            // NOTE: the size in the first dimension will be checked in the C++ code.
+                            if (v.ndim() != 1) [[unlikely]] {
+                                throw std::invalid_argument(
+                                    fmt::format("The time array passed to state_eval() must have 1 dimension, but the "
+                                                "number of dimensions is {} instead",
+                                                v.ndim()));
+                            }
+
+                            // Wrap the time array in a span.
                             return mz::dspan_1d<const double>(v.data(), boost::numeric_cast<std::size_t>(v.shape(0)));
                         } else {
+                            // Time provided as a scalar, just return it.
                             return v;
                         }
                     }();
 
-                    // Implementation of evaluation for *all* objects in a polyjectory. The evaluation time is passed
-                    // either as a one-dimensional array or as a scalar value.
-                    const auto all_eval_impl = [&out_arr, nobjs, &self](auto input) {
-                        // Prepare the output span.
-                        const auto out_span = mz::polyjectory::eval_span_t(out_arr.mutable_data(), nobjs);
+                    // NOTE: release the GIL during evaluation.
+                    py::gil_scoped_release release;
 
-                        // NOTE: release the GIL during evaluation.
-                        py::gil_scoped_release release;
-
-                        self(out_span, input);
-                    };
-
-                    // Implementation of evaluation for a single object in a polyjectory. The evaluation time is passed
-                    // as a scalar value. idx is the object's index in the polyjectory.
-                    const auto single_eval_impl = [&out_arr, &self](std::size_t idx, double input) {
-                        // Prepare the output span.
-                        const auto out_span = mz::sspan<double, 7>(out_arr.mutable_data());
-
-                        // NOTE: release the GIL during evaluation.
-                        py::gil_scoped_release release;
-
-                        self(out_span, idx, input);
-                    };
-
-                    // Perform the evaluation, writing the result in out_arr.
-                    if constexpr (std::same_as<V, py::array_t<double>>) {
-                        // The input time is an array, we are evaluating all objects.
-                        all_eval_impl(in);
-                    } else {
-                        // The input time is not an array.
-                        if (obj_idx) {
-                            // Single object evaluation.
-                            single_eval_impl(*obj_idx, in);
-                        } else {
-                            // All-objects evaluation with scalar time.
-                            all_eval_impl(in);
-                        }
-                    }
-
-                    return out_arr;
+                    self.state_eval(out_span, tm_arg, sel);
                 },
-                time);
+                tm);
+
+            return out;
         },
-        "time"_a.noconvert(), "obj_idx"_a.noconvert() = py::none{});
+        "time"_a, "out"_a = py::none{}, "obj_idx"_a = py::none{});
 
     // Expose static getters for the structured types.
     pt_cl.def_property_readonly_static("traj_offset", [](const py::object &) { return py::dtype::of<traj_offset>(); });

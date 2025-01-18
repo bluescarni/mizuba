@@ -473,52 +473,52 @@ class polyjectory_test_case(_ut.TestCase):
 
         # Error checking first.
         with self.assertRaises(ValueError) as cm:
-            pj(np.zeros((5,))[::2])
+            pj.state_eval(np.zeros((5,))[::2])
         self.assertTrue(
-            "The time array passed to the call operator of a polyjectory must be C contiguous and properly aligned"
+            "The time array passed to state_eval() must be C contiguous and properly aligned"
             in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
-            pj(np.zeros((5, 5)))
+            pj.state_eval(np.zeros((5, 5)))
         self.assertTrue(
-            "The time array passed to the call operator of a polyjectory must have 1 dimension, but the number of dimensions is 2 instead"
+            "The time array passed to state_eval() must have 1 dimension, but the number of dimensions is 2 instead"
             in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
-            pj(np.zeros((5,)))
+            pj.state_eval(time=np.zeros((5,)))
         self.assertTrue(
-            "Invalid input array passed to the call operator of a polyjectory: the number of objects is 2 but the size of the array is 5 (the two numbers must be equal)"
+            "Invalid time array passed to state_eval(): the number of objects is 2 but the size of the array is 5 (the two numbers must be equal)"
             in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
-            pj(np.full((2,), float("inf")))
+            pj.state_eval(time=np.full((2,), float("inf")))
         self.assertTrue("An non-finite evaluation time of " in str(cm.exception))
 
         with self.assertRaises(ValueError) as cm:
-            pj(float("nan"))
+            pj.state_eval(float("nan"))
         self.assertTrue("An non-finite evaluation time of " in str(cm.exception))
 
         with self.assertRaises(ValueError) as cm:
-            pj(time=np.array([0.11, 0.11]), obj_idx=1)
+            pj.state_eval(time=np.array([0.11, 0.11]), obj_idx=1)
         self.assertTrue(
-            "If an object index is specified when invoking the call operator of a polyjectory, then the evaluation time must be passed as a scalar and not as an array"
+            "Invalid time array passed to state_eval(): the number of selected objects is 1 but the size of the array is 2 (the two numbers must be equal)"
             in str(cm.exception)
         )
 
-        with self.assertRaises(ValueError) as cm:
-            pj(time=0.11, obj_idx=2)
+        with self.assertRaises(IndexError) as cm:
+            pj.state_eval(time=0.11, obj_idx=2)
         self.assertTrue(
-            "Invalid object index 2 passed to the call operator of a polyjectory: the index is not less than the total number of objects (2)"
+            "Invalid object index 2 specified - the total number of objects in the polyjectory is only 2"
             in str(cm.exception)
         )
 
         # NOTE: the first trajectory ends at 0.9, the second trajectory
         # begins at 1.1.
         tm = np.array([0.11, 0.11])
-        res = pj(time=tm)
+        res = pj.state_eval(time=tm)
         self.assertTrue(
             np.allclose(
                 res[0], [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
@@ -527,7 +527,7 @@ class polyjectory_test_case(_ut.TestCase):
         self.assertTrue(np.all(np.isnan(res[1])))
 
         tm = np.array([1.2, 1.21])
-        res = pj(time=tm)
+        res = pj.state_eval(time=tm)
         self.assertTrue(np.all(np.isnan(res[0])))
         self.assertTrue(
             np.allclose(
@@ -536,7 +536,7 @@ class polyjectory_test_case(_ut.TestCase):
         )
 
         tm = np.array([0.11, 1.21])
-        res = pj(time=tm)
+        res = pj.state_eval(time=tm)
         self.assertTrue(
             np.allclose(
                 res[0], [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
@@ -549,7 +549,7 @@ class polyjectory_test_case(_ut.TestCase):
         )
 
         # Scalar overloads too.
-        res = pj(time=0.1)
+        res = pj.state_eval(time=0.1)
         self.assertTrue(
             np.allclose(
                 res[0], [0.9, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
@@ -557,7 +557,7 @@ class polyjectory_test_case(_ut.TestCase):
         )
         self.assertTrue(np.all(np.isnan(res[1])))
 
-        res = pj(time=1.2)
+        res = pj.state_eval(time=1.2)
         self.assertTrue(np.all(np.isnan(res[0])))
         self.assertTrue(
             np.allclose(
@@ -566,21 +566,23 @@ class polyjectory_test_case(_ut.TestCase):
         )
 
         # Test single-object evaluations.
-        res = pj(time=0.1, obj_idx=0)
-        self.assertEqual(res.shape, (7,))
+        res = pj.state_eval(time=0.1, obj_idx=0)
+        self.assertEqual(res.shape, (1, 7))
         self.assertTrue(
             np.allclose(
-                res, [0.9, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+                res, [[0.9, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0]], rtol=0.0, atol=1e-15
             ),
         )
 
-        res = pj(time=1.2, obj_idx=1)
+        res = pj.state_eval(time=1.2, obj_idx=1)
         self.assertTrue(
-            np.allclose(res, [0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15),
+            np.allclose(
+                res, [[0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]], rtol=0.0, atol=1e-15
+            ),
         )
 
         # Also test with a trajectory without data.
         pj = polyjectory([traj_data_0, np.empty((0, 7, 4))], [tm_data_0, []], [0, 0])
         tm = np.array([0.1, 0.1])
-        res = pj(time=tm)
+        res = pj.state_eval(time=tm)
         self.assertTrue(np.all(np.isnan(res[1])))
