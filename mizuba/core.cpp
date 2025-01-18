@@ -378,6 +378,8 @@ PYBIND11_MODULE(core, m)
         "state_eval",
         [](const mz::polyjectory &self, std::variant<double, py::array_t<double>> tm,
            std::optional<py::array_t<double>> out_,
+           // NOTE: when documenting, we need to point out that in order to avoid
+           // conversions or copies the numpy type to be used for indexing must be np.uintp
            std::optional<std::variant<std::size_t, py::array_t<std::size_t>>> selector) {
             // Setup the selector argument.
             std::optional<mz::dspan_1d<const std::size_t>> sel;
