@@ -517,4 +517,3 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             make_sgp4_polyjectory(arr, 2.0, 1.0)
         self.assertTrue("Invalid Julian date interval " in str(cm.exception))
-
