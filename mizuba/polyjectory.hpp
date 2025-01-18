@@ -147,6 +147,12 @@ public:
     // - the number of objects,
     // - the 7 state variables.
     using single_eval_span_t = heyoka::mdspan<double, heyoka::extents<std::size_t, std::dynamic_extent, 7>>;
+
+private:
+    template <typename Time>
+    void state_eval_impl(single_eval_span_t, Time, std::optional<dspan_1d<const std::size_t>>) const;
+
+public:
     void state_eval(single_eval_span_t, double, std::optional<dspan_1d<const std::size_t>>) const;
     void state_eval(single_eval_span_t, dspan_1d<const double>, std::optional<dspan_1d<const std::size_t>>) const;
     // Span used to store the output of polyjectory evaluation with *multiple times* per satellite.
@@ -157,6 +163,12 @@ public:
     // - the 7 state variables.
     using multi_eval_span_t
         = heyoka::mdspan<double, heyoka::extents<std::size_t, std::dynamic_extent, std::dynamic_extent, 7>>;
+
+private:
+    template <typename Time>
+    void state_meval_impl(multi_eval_span_t, Time, std::optional<dspan_1d<const std::size_t>>) const;
+
+public:
     void state_meval(multi_eval_span_t, dspan_1d<const double>, std::optional<dspan_1d<const std::size_t>>) const;
     void state_meval(multi_eval_span_t, dspan_2d<const double>, std::optional<dspan_1d<const std::size_t>>) const;
 };
