@@ -379,7 +379,7 @@ PYBIND11_MODULE(core, m)
         [](const mz::polyjectory &self, std::variant<double, py::array_t<double>> tm,
            std::optional<py::array_t<double>> out_,
            // NOTE: when documenting, we need to point out that in order to avoid
-           // conversions or copies the numpy type to be used for indexing must be np.uintp
+           // conversions or copies the numpy type to be used for indexing must be np.uintp.
            std::optional<std::variant<std::size_t, py::array_t<std::size_t>>> selector) {
             // Setup the selector argument.
             std::optional<mz::dspan_1d<const std::size_t>> sel;
@@ -427,8 +427,10 @@ PYBIND11_MODULE(core, m)
                     }
                     if (ret.shape(1) != 7) [[unlikely]] {
                         throw std::invalid_argument(
+                            // LCOV_EXCL_START
                             fmt::format("The output array passed to state_eval() must have a size of 7 in the second "
                                         "dimension, but the size in the second dimension is {} instead",
+                                        // LCOV_EXCL_STOP
                                         ret.shape(1)));
                     }
 

@@ -515,6 +515,13 @@ class polyjectory_test_case(_ut.TestCase):
             in str(cm.exception)
         )
 
+        with self.assertRaises(IndexError) as cm:
+            pj.state_eval(time=0.11, obj_idx=[45])
+        self.assertTrue(
+            "Invalid object index 45 specified - the total number of objects in the polyjectory is only 2"
+            in str(cm.exception)
+        )
+
         with self.assertRaises(ValueError) as cm:
             pj.state_eval(
                 time=0.11, obj_idx=np.array([0, 0, 0, 0], dtype=np.uintp)[::2]
@@ -590,6 +597,18 @@ class polyjectory_test_case(_ut.TestCase):
             ),
         )
         self.assertTrue(np.all(np.isnan(res[1])))
+
+        tm = np.array([0.11, 0.12] * 1000)
+        res = pj.state_eval(time=tm, obj_idx=[0, 1] * 1000)
+        self.assertTrue(
+            np.allclose(
+                res[::2],
+                [[0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0]] * 1000,
+                rtol=0.0,
+                atol=1e-15,
+            ),
+        )
+        self.assertTrue(np.all(np.isnan(res[1::2])))
 
         tm = np.array([1.2, 1.21])
         res = pj.state_eval(time=tm)
