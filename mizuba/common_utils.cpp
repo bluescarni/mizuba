@@ -62,4 +62,9 @@ void check_array_cc_aligned(const py::array &arr, const char *msg)
     }
 }
 
+bool may_share_memory(const py::array &a, const py::array &b)
+{
+    return py::module_::import("numpy").attr("may_share_memory")(a, b).cast<bool>();
+}
+
 } // namespace mizuba_py

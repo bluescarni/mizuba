@@ -18,6 +18,9 @@
 #ifndef MIZUBA_PY_COMMON_UTILS_HPP
 #define MIZUBA_PY_COMMON_UTILS_HPP
 
+#include <array>
+#include <cstddef>
+#include <functional>
 #include <type_traits>
 #include <vector>
 
@@ -56,6 +59,27 @@ auto mdspan_to_array(const py::object &self, heyoka::mdspan<T, std::experimental
 
     return ret;
 } // LCOV_EXCL_LINE
+
+// Helper to check if a list of arrays may share any memory with each other.
+// Quadratic complexity.
+bool may_share_memory(const py::array &, const py::array &);
+
+template <typename... Args>
+bool may_share_memory(const py::array &a, const py::array &b, const Args &...args)
+{
+    const std::array args_arr = {std::cref(a), std::cref(b), std::cref(args)...};
+    const auto nargs = args_arr.size();
+
+    for (std::size_t i = 0; i < nargs; ++i) {
+        for (std::size_t j = i + 1u; j < nargs; ++j) {
+            if (may_share_memory(args_arr[i].get(), args_arr[j].get())) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
 
 } // namespace mizuba_py
 
