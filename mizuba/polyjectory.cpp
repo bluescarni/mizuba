@@ -940,13 +940,19 @@ void polyjectory::state_eval(single_eval_span_t out, dspan_1d<const double> tm_a
     state_eval_impl(out, tm_arr, selector);
 }
 
-// Implementation of state_meval(). tm is either a 1D span or 2D span.
+// Implementation of state_meval(). tm is either a 1D or 2D span.
 template <typename Time>
 void polyjectory::state_meval_impl(multi_eval_span_t out, Time tm,
                                    std::optional<dspan_1d<const std::size_t>> selector) const
 {
     // Cache the number of time evaluations per object.
-    const auto n_time_evals = tm.extent(0);
+    const auto n_time_evals = [&tm]() {
+        if constexpr (std::same_as<dspan_1d<const double>, Time>) {
+            return tm.extent(0);
+        } else {
+            return tm.extent(1);
+        }
+    }();
 
     // The second dimension of out must match the number
     // of time evaluations per object.

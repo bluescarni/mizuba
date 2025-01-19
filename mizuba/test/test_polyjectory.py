@@ -587,6 +587,93 @@ class polyjectory_test_case(_ut.TestCase):
             in str(cm.exception)
         )
 
+        # For state_meval() too.
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=np.array([0.11, 0.11, 0.11, 0.11])[::2])
+        self.assertTrue(
+            "The time array passed to state_meval() must be C contiguous and properly aligned"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=np.zeros((3, 3, 3)))
+        self.assertTrue(
+            "The time array passed to state_meval() must have either 1 or 2 dimensions, but the number of dimensions is 3 instead"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[0.11, 0.11], out=np.array([1.0, 2.0, 0.3, 0.4])[::2])
+        self.assertTrue(
+            "The output array passed to state_meval() must be C contiguous and properly aligned"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[0.11, 0.11], out=np.array([1.0, 2.0, 0.3, 0.4]))
+        self.assertTrue(
+            "The output array passed to state_meval() must have 3 dimensions, but the number of dimensions is 1 instead"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[0.11, 0.11], out=np.zeros((3, 4, 5)))
+        self.assertTrue(
+            "The output array passed to state_meval() must have a size of 7 in the third dimension, but the size in the third dimension is 5 instead"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[0.11, 0.11], out=np.zeros((3, 4, 7)))
+        self.assertTrue(
+            "Invalid output array passed to state_meval(): the number of time evaluations per object is 2 but the size of the second dimension of the array is 4 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[0.11, 0.11], out=np.zeros((2, 2, 7)), obj_idx=[1])
+        self.assertTrue(
+            "Invalid output array passed to state_meval(): the number of selected objects is 1 but the size of the first dimension of the array is 2 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[[0.11, 0.11]], out=np.zeros((2, 2, 7)), obj_idx=[1])
+        self.assertTrue(
+            "Invalid output array passed to state_meval(): the number of selected objects is 1 but the size of the first dimension of the array is 2 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(
+                time=[[0.11, 0.11], [0.11, 0.11]], out=np.zeros((1, 2, 7)), obj_idx=[1]
+            )
+        self.assertTrue(
+            "Invalid time array passed to state_meval(): the number of selected objects is 1 but the size of the first dimension of the array is 2 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[0.11, 0.11], out=np.zeros((3, 2, 7)))
+        self.assertTrue(
+            "Invalid output array passed to state_meval(): the number of objects is 2 but the size of the first dimension of the array is 3 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[[0.11, 0.11]], out=np.zeros((3, 2, 7)))
+        self.assertTrue(
+            "Invalid output array passed to state_meval(): the number of objects is 2 but the size of the first dimension of the array is 3 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[[0.11, 0.11]], out=np.zeros((2, 2, 7)))
+        self.assertTrue(
+            "Invalid time array passed to state_meval(): the number of objects is 2 but the size of the first dimension of the array is 1 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
         # NOTE: the first trajectory ends at 0.9, the second trajectory
         # begins at 1.1.
         tm = np.array([0.11, 0.11])
@@ -594,6 +681,33 @@ class polyjectory_test_case(_ut.TestCase):
         self.assertTrue(
             np.allclose(
                 res[0], [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+            ),
+        )
+        self.assertTrue(np.all(np.isnan(res[1])))
+
+        tm = np.array([0.11, 0.12])
+        res = pj.state_meval(time=tm)
+        self.assertTrue(
+            np.allclose(
+                res[0],
+                [
+                    [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                    [0.88, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                ],
+                rtol=0.0,
+                atol=1e-15,
+            ),
+        )
+        self.assertTrue(np.all(np.isnan(res[1])))
+
+        tm = np.array([[0.11], [0.12]])
+        res = pj.state_meval(time=tm)
+        self.assertTrue(
+            np.allclose(
+                res[0],
+                [[0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0]],
+                rtol=0.0,
+                atol=1e-15,
             ),
         )
         self.assertTrue(np.all(np.isnan(res[1])))
