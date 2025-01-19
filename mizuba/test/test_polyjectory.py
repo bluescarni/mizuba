@@ -587,6 +587,25 @@ class polyjectory_test_case(_ut.TestCase):
             in str(cm.exception)
         )
 
+        out = np.zeros((2, 7))
+        tm = out[:2]
+        with self.assertRaises(ValueError) as cm:
+            pj.state_eval(time=tm, out=out)
+        self.assertTrue(
+            "Potential memory overlap detected between the output array passed to state_eval() and the time array"
+            in str(cm.exception)
+        )
+
+        if np.dtype(np.uintp).itemsize == np.dtype(np.float64).itemsize:
+            with self.assertRaises(ValueError) as cm:
+                pj.state_eval(
+                    time=[1.1, 1.1], out=out, obj_idx=out[0, :2].view(dtype=np.uintp)
+                )
+            self.assertTrue(
+                "Potential memory overlap detected between the output array passed to state_eval() and the array of object indices"
+                in str(cm.exception)
+            )
+
         # For state_meval() too.
         with self.assertRaises(ValueError) as cm:
             pj.state_meval(time=np.array([0.11, 0.11, 0.11, 0.11])[::2])
@@ -673,6 +692,25 @@ class polyjectory_test_case(_ut.TestCase):
             "Invalid time array passed to state_meval(): the number of objects is 2 but the size of the first dimension of the array is 1 (the two numbers must be equal)"
             in str(cm.exception)
         )
+
+        out = np.zeros((2, 2, 7))
+        tm = out[0, 0, :2]
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=tm, out=out)
+        self.assertTrue(
+            "Potential memory overlap detected between the output array passed to state_meval() and the time array"
+            in str(cm.exception)
+        )
+
+        if np.dtype(np.uintp).itemsize == np.dtype(np.float64).itemsize:
+            with self.assertRaises(ValueError) as cm:
+                pj.state_meval(
+                    time=[1.1, 1.1], out=out, obj_idx=out[0, 0, :2].view(dtype=np.uintp)
+                )
+            self.assertTrue(
+                "Potential memory overlap detected between the output array passed to state_meval() and the array of object indices"
+                in str(cm.exception)
+            )
 
         # NOTE: the first trajectory ends at 0.9, the second trajectory
         # begins at 1.1.

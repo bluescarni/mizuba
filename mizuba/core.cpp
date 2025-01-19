@@ -418,7 +418,7 @@ PYBIND11_MODULE(core, m)
             const auto sel = eval_setup_selector(selector);
 
             // Check or setup the output array.
-            auto out = [&out_, &sel, &self]() {
+            auto out = [&out_, &sel, &self, &tm, &selector]() {
                 if (out_) {
                     // Output array provided, check it.
                     auto ret = *out_;
@@ -441,6 +441,28 @@ PYBIND11_MODULE(core, m)
                                         "dimension, but the size in the second dimension is {} instead",
                                         // LCOV_EXCL_STOP
                                         ret.shape(1)));
+                    }
+
+                    // If the output array is provided, we must ensure that it does not overlap
+                    // with the time array or the selector. If it did, we may end up concurrently reading from
+                    // and writing to the same memory areas during multithreaded operations.
+                    //
+                    // NOTE: overlaps between the time array and the selector are ok.
+                    if (const auto *tm_arr = std::get_if<py::array_t<double>>(&tm)) {
+                        if (mzpy::may_share_memory(ret, *tm_arr)) [[unlikely]] {
+                            throw std::invalid_argument("Potential memory overlap detected between the output array "
+                                                        "passed to state_eval() and the time array");
+                        }
+                    }
+
+                    if (selector) {
+                        if (const auto *sel_arr = std::get_if<py::array_t<std::size_t>>(&*selector)) {
+                            if (mzpy::may_share_memory(ret, *sel_arr)) [[unlikely]] {
+                                throw std::invalid_argument(
+                                    "Potential memory overlap detected between the output array "
+                                    "passed to state_eval() and the array of object indices");
+                            }
+                        }
                     }
 
                     return ret;
@@ -521,7 +543,7 @@ PYBIND11_MODULE(core, m)
             const auto n_time_evals = (tm.ndim() == 1) ? tm.shape(0) : tm.shape(1);
 
             // Check or setup the output array.
-            auto out = [&out_, &sel, &self, n_time_evals]() {
+            auto out = [&out_, &sel, &self, n_time_evals, &tm, &selector]() {
                 if (out_) {
                     // Output array provided, check it.
                     auto ret = *out_;
@@ -544,6 +566,26 @@ PYBIND11_MODULE(core, m)
                                         "dimension, but the size in the third dimension is {} instead",
                                         // LCOV_EXCL_STOP
                                         ret.shape(2)));
+                    }
+
+                    // If the output array is provided, we must ensure that it does not overlap
+                    // with the time array or the selector. If it did, we may end up concurrently reading from
+                    // and writing to the same memory areas during multithreaded operations.
+                    //
+                    // NOTE: overlaps between the time array and the selector are ok.
+                    if (mzpy::may_share_memory(ret, tm)) [[unlikely]] {
+                        throw std::invalid_argument("Potential memory overlap detected between the output array "
+                                                    "passed to state_meval() and the time array");
+                    }
+
+                    if (selector) {
+                        if (const auto *sel_arr = std::get_if<py::array_t<std::size_t>>(&*selector)) {
+                            if (mzpy::may_share_memory(ret, *sel_arr)) [[unlikely]] {
+                                throw std::invalid_argument(
+                                    "Potential memory overlap detected between the output array "
+                                    "passed to state_meval() and the array of object indices");
+                            }
+                        }
                     }
 
                     return ret;
