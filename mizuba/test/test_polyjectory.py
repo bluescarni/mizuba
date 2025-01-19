@@ -685,6 +685,17 @@ class polyjectory_test_case(_ut.TestCase):
         )
         self.assertTrue(np.all(np.isnan(res[1])))
 
+        tm = np.array([0.11, 0.11])
+        out = np.zeros((2, 7))
+        res = pj.state_eval(time=tm, out=out)
+        self.assertTrue(
+            np.allclose(
+                res[0], [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+            ),
+        )
+        self.assertTrue(np.all(np.isnan(res[1])))
+        self.assertEqual(id(out), id(res))
+
         tm = np.array([0.11, 0.12])
         res = pj.state_meval(time=tm)
         self.assertTrue(
@@ -699,6 +710,23 @@ class polyjectory_test_case(_ut.TestCase):
             ),
         )
         self.assertTrue(np.all(np.isnan(res[1])))
+
+        tm = np.array([0.11, 0.12])
+        out = np.zeros((2, 2, 7))
+        res = pj.state_meval(out=out, time=tm)
+        self.assertTrue(
+            np.allclose(
+                res[0],
+                [
+                    [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                    [0.88, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                ],
+                rtol=0.0,
+                atol=1e-15,
+            ),
+        )
+        self.assertTrue(np.all(np.isnan(res[1])))
+        self.assertEqual(id(out), id(res))
 
         tm = np.array([[0.11], [0.12]])
         res = pj.state_meval(time=tm)
