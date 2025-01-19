@@ -752,6 +752,76 @@ class polyjectory_test_case(_ut.TestCase):
         )
         self.assertTrue(np.all(np.isnan(res[1::2])))
 
+        tm = np.array([0.11, 0.12] * 1000)
+        res = pj.state_meval(time=tm, obj_idx=[0, 1] * 1000)
+        self.assertTrue(
+            np.allclose(
+                res[::2],
+                [
+                    [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                    [0.88, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                ]
+                * 1000,
+                rtol=0.0,
+                atol=1e-15,
+            ),
+        )
+        self.assertTrue(np.all(np.isnan(res[1::2])))
+
+        tm = np.array([[0.11, 0.12] * 1000, [1.2, 1.21] * 1000])
+        res = pj.state_meval(time=tm, obj_idx=[0, 1])
+        self.assertTrue(
+            np.allclose(
+                res[0],
+                [
+                    [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                    [0.88, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                ]
+                * 1000,
+                rtol=0.0,
+                atol=1e-15,
+            ),
+        )
+        self.assertTrue(
+            np.allclose(
+                res[1],
+                [
+                    [0.20, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                    [0.21, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                ]
+                * 1000,
+                rtol=0.0,
+                atol=1e-15,
+            ),
+        )
+
+        tm = np.array([[0.11, 0.12] * 1000, [1.2, 1.21] * 1000] * 1000)
+        res = pj.state_meval(time=tm, obj_idx=[0, 1] * 1000)
+        self.assertTrue(
+            np.allclose(
+                res[::2],
+                [
+                    [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                    [0.88, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                ]
+                * 1000,
+                rtol=0.0,
+                atol=1e-15,
+            ),
+        )
+        self.assertTrue(
+            np.allclose(
+                res[1::2],
+                [
+                    [0.20, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                    [0.21, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                ]
+                * 1000,
+                rtol=0.0,
+                atol=1e-15,
+            ),
+        )
+
         tm = np.array([1.2, 1.21])
         res = pj.state_eval(time=tm)
         self.assertTrue(np.all(np.isnan(res[0])))
