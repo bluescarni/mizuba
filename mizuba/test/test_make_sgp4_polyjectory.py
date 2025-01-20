@@ -65,10 +65,12 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             return
 
         from .. import make_sgp4_polyjectory
+        from .._dl_utils import _eft_add_knuth
         import pathlib
         from sgp4.api import Satrec
         import polars as pl
         import numpy as np
+        from astropy.time import Time
 
         # Deterministic seeding.
         rng = np.random.default_rng(42)
@@ -97,6 +99,12 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         cfs, end_times, _ = pj[0]
         for i in range(1, len(end_times)):
             self._compare_sgp4(jd_begin, i, sat, rng, cfs, end_times)
+
+        # Check also the conversion of the polyjectory epoch to TAI.
+        tm = Time(val=jd_begin, format="jd", scale="utc").tai
+        jd1, jd2 = _eft_add_knuth(tm.jd1, tm.jd2)
+        self.assertEqual(jd1, pj.epoch[0])
+        self.assertEqual(jd2, pj.epoch[1])
 
     def test_single_gpe_ds(self):
         # Simple test with a single deep-space gpe.
