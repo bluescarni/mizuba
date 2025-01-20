@@ -81,7 +81,11 @@ def _make_satrec_from_dict(d):
 
 
 def make_sgp4_polyjectory(
-    gpes: Union[pl.DataFrame, np.ndarray[gpe_dtype]], jd_begin: float, jd_end: float
+    gpes: Union[pl.DataFrame, np.ndarray[gpe_dtype]],
+    jd_begin: float,
+    jd_end: float,
+    reentry_radius: float = 0.0,
+    exit_radius: float = float("inf"),
 ) -> polyjectory:
     from .core import _make_sgp4_polyjectory
     import polars as pl
@@ -105,7 +109,9 @@ def make_sgp4_polyjectory(
         gpes_arr = gpes
 
     # Invoke the C++ function.
-    return _make_sgp4_polyjectory(gpes_arr, jd_begin, jd_end)
+    return _make_sgp4_polyjectory(
+        gpes_arr, jd_begin, jd_end, reentry_radius, exit_radius
+    )
 
 
 del polyjectory, pl, gpe_dtype, Union, np

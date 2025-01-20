@@ -81,7 +81,7 @@ namespace
 // should be done every time a new polyjectory is created in C++ before it is
 // wrapped and returned as a py::object.
 //
-// For instance, both the polyjectory __init__() and the sgp4_polyjectory() factory need
+// For instance, both the polyjectory __init__() and the make_sgp4_polyjectory() factory need
 // to register a weak pointer for the new polyjectory they create. OTOH, the
 // 'polyjectory' property getter of a conjunctions object does not, because:
 //
@@ -638,7 +638,8 @@ PYBIND11_MODULE(core, m)
 
     m.def(
         "_make_sgp4_polyjectory",
-        [](py::array_t<gpe> gpes, double jd_begin, double jd_end) {
+        [](py::array_t<gpe> gpes, const double jd_begin, const double jd_end, const double reentry_radius,
+           const double exit_radius) {
             // Check the number of dimensions for gpes.
             if (gpes.ndim() != 1) [[unlikely]] {
                 throw std::invalid_argument(fmt::format("The array of gpes passed to make_sgp4_polyjectory() must have "
@@ -657,14 +658,14 @@ PYBIND11_MODULE(core, m)
             // NOTE: release the GIL during the creation of the polyjectory.
             py::gil_scoped_release release;
 
-            auto ret = mz::make_sgp4_polyjectory(gpes_span, jd_begin, jd_end);
+            auto ret = mz::make_sgp4_polyjectory(gpes_span, jd_begin, jd_end, reentry_radius, exit_radius);
 
             // Register the polyjectory implementation in the cleanup machinery.
             mzpy::detail::add_pj_weak_ptr(mz::detail::fetch_pj_impl(ret));
 
             return ret;
         },
-        "gpes"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert());
+        "gpes"_a.noconvert(), "jd_begin"_a, "jd_end"_a, "reentry_radius"_a, "exit_radius"_a);
 
     // sgp4 polyjectory.
     m.def(

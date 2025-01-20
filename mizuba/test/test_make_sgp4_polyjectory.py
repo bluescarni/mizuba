@@ -526,6 +526,29 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             make_sgp4_polyjectory(arr, 2.0, 1.0)
         self.assertTrue("Invalid Julian date interval " in str(cm.exception))
 
+        # Invalid reentry/exit radiuses.
+        with self.assertRaises(ValueError) as cm:
+            make_sgp4_polyjectory(arr, 0.0, 1.0, reentry_radius=float("nan"))
+        self.assertTrue("The reentry/exit radiuses cannot be NaN" in str(cm.exception))
+
+        with self.assertRaises(ValueError) as cm:
+            make_sgp4_polyjectory(arr, 0.0, 1.0, exit_radius=float("nan"))
+        self.assertTrue("The reentry/exit radiuses cannot be NaN" in str(cm.exception))
+
+        with self.assertRaises(ValueError) as cm:
+            make_sgp4_polyjectory(arr, 0.0, 1.0, reentry_radius=2, exit_radius=2)
+        self.assertTrue(
+            "The reentry radius (2) must be less than the exit radius (2)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            make_sgp4_polyjectory(arr, 0.0, 1.0, reentry_radius=3, exit_radius=2)
+        self.assertTrue(
+            "The reentry radius (3) must be less than the exit radius (2)"
+            in str(cm.exception)
+        )
+
     def test_disc_gpe_01(self):
         # Test a GPE with known discontinuities.
         from .. import _have_sgp4_deps

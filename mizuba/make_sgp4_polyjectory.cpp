@@ -640,14 +640,13 @@ int gpe_interpolate_with_bisection(const double init_step_begin, const double in
 //
 // ets is a bag of thread-local data. poly_cf_buf and time_buf are buffers to which the interpolating
 // polynomial coefficients and the times of the interpolation steps will be appended. pj_epoch_tai
-// is the polyjectory's epoch in the TAI scale of time.
+// is the polyjectory's epoch in the TAI scale of time. reentry_radius and exit_radius are the
+// reentry/exit radiuses.
 //
 // The return value will be 0 if everything went ok, otherwise it will be either an sgp4 error code,
 // or error code 10 if non-finite values are detected.
-//
-// TODO put max limit on the number of kepler steps? Or perhaps on the step size?
 int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end, auto &ets, auto &poly_cf_buf,
-                    auto &time_buf, const auto &pj_epoch_tai)
+                    auto &time_buf, const auto &pj_epoch_tai, const double reentry_radius, const double exit_radius)
 {
     namespace hy = heyoka;
 
@@ -770,6 +769,14 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         if (satrec.error != 0) [[unlikely]] {
             return satrec.error;
         }
+        // Check for reentry/exit.
+        const auto begin_r2 = sgp4_r[0] * sgp4_r[0] + sgp4_r[1] * sgp4_r[1] + sgp4_r[2] * sgp4_r[2];
+        if (begin_r2 < reentry_radius * reentry_radius) [[unlikely]] {
+            return 11;
+        }
+        if (begin_r2 >= exit_radius * exit_radius) [[unlikely]] {
+            return 12;
+        }
 
         // Setup ta_kepler.
         ta_kepler.set_time(0.);
@@ -791,6 +798,12 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
         } else {
             // The only possible outcome at this point is success.
             assert(oc == heyoka::taylor_outcome::success);
+
+            // Check if the step is too short. This is meant to detect pathological trajectories
+            // ending up close to the Earth's center.
+            if (h < 1.) [[unlikely]] {
+                return 13;
+            }
         }
 
         // Compute the end of the current interpolation step (again, in days since the epoch of
@@ -828,10 +841,11 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
 // c_nodes_unit are the Chebyshev interpolation nodes in the [-1, 1] interval. *_tplt are the template
 // propagator/integrator/llvm_state objects to be copied and used during interpolation. gpe_groups is the range of GPE
 // groups (one per satellite). tmp_dir_path is the path to the output files. epoch_tai is the polyjectory's epoch,
-// that is, jd_begin converted to double-length TAI.
+// that is, jd_begin converted to double-length TAI. reentry_radius and exit_radius are the reentry/exit radiuses.
 auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const auto &sgp4_prop_tplt,
                      const auto &jit_state_tplt, const auto &gpe_groups, const double jd_begin, const double jd_end,
-                     const auto &tmp_dir_path, const auto epoch_tai)
+                     const auto &tmp_dir_path, const auto epoch_tai, const double reentry_radius,
+                     const double exit_radius)
 {
     namespace hy = heyoka;
     using dfloat = hy::detail::dfloat<double>;
@@ -1060,7 +1074,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
             oneapi::tbb::parallel_for(
                 oneapi::tbb::blocked_range<decltype(gpe_groups.size())>(start_sat_idx, end_sat_idx),
                 [&ets, &gpe_groups, dl_jd_begin = dfloat{jd_begin, 0.}, dl_jd_end = dfloat{jd_end, 0.}, &global_status,
-                 &traj_promises, &time_promises, epoch_tai](const auto &range) {
+                 &traj_promises, &time_promises, epoch_tai, reentry_radius, exit_radius](const auto &range) {
                     // Fetch the thread-local data.
                     auto &local_ets = ets.local();
 
@@ -1068,8 +1082,8 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
                     // https://oneapi-src.github.io/oneTBB/main/tbb_userguide/work_isolation.html
                     // We may be invoking TBB primitives when using heyoka's sgp4 propagator.
                     oneapi::tbb::this_task_arena::isolate([&local_ets, &range, &gpe_groups, dl_jd_begin, dl_jd_end,
-                                                           &global_status, &traj_promises, &time_promises,
-                                                           epoch_tai]() {
+                                                           &global_status, &traj_promises, &time_promises, epoch_tai,
+                                                           reentry_radius, exit_radius]() {
                         for (auto sat_idx = range.begin(); sat_idx != range.end(); ++sat_idx) {
                             // Fetch the gpe group for the current satellite.
                             const auto gpe_group = *gpe_groups[sat_idx];
@@ -1147,8 +1161,9 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
                                 }
 
                                 // Interpolate using the current gpe.
-                                const auto res = gpe_interpolate(*it_gpe, interpolation_begin, interpolation_end,
-                                                                 local_ets, poly_cf_buf, time_buf, epoch_tai);
+                                const auto res
+                                    = gpe_interpolate(*it_gpe, interpolation_begin, interpolation_end, local_ets,
+                                                      poly_cf_buf, time_buf, epoch_tai, reentry_radius, exit_radius);
 
                                 // Check the status. If it is nonzero, set the global status
                                 // flag for the satellite and break out.
@@ -1216,7 +1231,8 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
 } // namespace detail
 
 polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std::size_t, std::dynamic_extent>> gpes,
-                                  double jd_begin, double jd_end)
+                                  const double jd_begin, const double jd_end, const double reentry_radius,
+                                  const double exit_radius)
 {
     namespace hy = heyoka;
     using dfloat = hy::detail::dfloat<double>;
@@ -1227,6 +1243,15 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
             "Invalid Julian date interval [{}, {}) supplied to make_sgp4_polyjectory(): the begin/end dates "
             "must be finite and the end date must be strictly after the begin date",
             jd_begin, jd_end));
+    }
+
+    // Check the reentry/exit radiuses.
+    if (std::isnan(reentry_radius) || std::isnan(exit_radius)) [[unlikely]] {
+        throw std::invalid_argument("The reentry/exit radiuses cannot be NaN");
+    }
+    if (!(reentry_radius < exit_radius)) [[unlikely]] {
+        throw std::invalid_argument(
+            fmt::format("The reentry radius ({}) must be less than the exit radius ({})", reentry_radius, exit_radius));
     }
 
     // Cache the total number of GPEs.
@@ -1329,8 +1354,9 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
 
     // Interpolate all satellites.
     sw.reset();
-    auto [status, traj_offsets] = detail::interpolate_all(c_nodes_unit, ta_kepler_tplt, sgp4_prop_tplt, jit_state_tplt,
-                                                          gpe_groups, jd_begin, jd_end, tmp_dir_path, epoch_tai);
+    auto [status, traj_offsets]
+        = detail::interpolate_all(c_nodes_unit, ta_kepler_tplt, sgp4_prop_tplt, jit_state_tplt, gpe_groups, jd_begin,
+                                  jd_end, tmp_dir_path, epoch_tai, reentry_radius, exit_radius);
     log_trace("make_sgp4_polyjectory() total interpolation time: {}s", sw);
 
     // Build and return the polyjectory.
