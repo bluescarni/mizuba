@@ -584,3 +584,28 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             # has been isolated in a short step.
             if max_err > 1e-6:
                 self.assertLess(duration, 5.0)
+
+    def test_nz_status(self):
+        # Test nonzero statuses at the beginning of the polyjectory.
+        import pathlib
+        import polars as pl
+        from astropy.time import Time
+        from .. import make_sgp4_polyjectory
+
+        # Fetch the current directory.
+        cur_dir = pathlib.Path(__file__).parent.resolve()
+
+        # Load the test data.
+        gpes = pl.read_parquet(cur_dir / "full_catalog.parquet")
+
+        # Setup the time.
+        tm = Time("2025-01-12T12:00:00Z", format="isot", scale="utc")
+        jd_begin = tm.jd1
+
+        # Build the polyjectory, propagating only for 10 seconds.
+        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 10 / 86400.0)
+
+        # Check that all trajectories without data have a nonzero status.
+        for cfs, times, status in pj:
+            if times.shape[0] == 0:
+                self.assertNotEqual(status, 0)
