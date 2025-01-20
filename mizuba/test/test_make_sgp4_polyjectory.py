@@ -517,3 +517,62 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             make_sgp4_polyjectory(arr, 2.0, 1.0)
         self.assertTrue("Invalid Julian date interval " in str(cm.exception))
+
+    def test_disc_gpe_01(self):
+        # Test a GPE with known discontinuities.
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
+            return
+
+        from .. import make_sgp4_polyjectory
+        from .._sgp4_polyjectory import _make_satrec_from_dict as make_satrec
+        import pathlib
+        from sgp4.api import Satrec
+        import polars as pl
+        import numpy as np
+        from astropy.time import Time
+
+        # Fetch the current directory.
+        cur_dir = pathlib.Path(__file__).parent.resolve()
+
+        # Load the test data.
+        gpes = pl.read_parquet(cur_dir / "disc_gpe_01.parquet")
+
+        # Create the satrec object.
+        sat = make_satrec(gpes.row(0, named=True))
+
+        # Setup the time.
+        tm = Time("2025-01-12T12:00:00Z", format="isot", scale="utc")
+        jd_begin = tm.jd1
+
+        # Create the polyjectory.
+        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 5.0)
+
+        # Fetch the poly coefficients and the end times.
+        cfs, end_times, _ = pj[0]
+        for idx in range(1, len(end_times)):
+            # Establish begin/end of the interpolation step.
+            step_begin = end_times[idx - 1]
+            step_end = end_times[idx]
+
+            # Sample uniformly within.
+            times = np.linspace(step_begin, np.nextafter(step_end, -1.0), 1000)
+
+            # Evaluate the state with the sgp4 propagator.
+            e, r, v = sat.sgp4_array(np.full((1000,), jd_begin), times)
+            self.assertTrue(np.all(e == 0))
+
+            # Evaluate the state using the polyjectory.
+            pjs = pj.state_meval(time=times, obj_idx=0)
+
+            # Evaluate the max positional error (in km).
+            max_err = np.max(np.linalg.norm(r - pjs[0, :, :3], axis=1))
+
+            # Compute the step duration (in seconds).
+            duration = (step_end - step_begin) * 86400.0
+
+            # NOTE: we want to check that high-error interpolation
+            # has been isolated in a short step.
+            if max_err > 1e-6:
+                self.assertLess(duration, 5.0)
