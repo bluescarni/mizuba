@@ -591,6 +591,16 @@ int gpe_interpolate_with_bisection(const double init_step_begin, const double in
     }
 
     // Sort the polynomials according to the begin time of the step.
+    //
+    // NOTE: in principle we would want to provide a swap() primitive to pwrap
+    // so that this sorting uses swap() rather than moves. However, in practice,
+    // at least on GCC we never end up using swapping anyway for sorting because of this
+    // optimisation:
+    //
+    // https://stackoverflow.com/questions/14212701/stdsort-does-not-always-call-stdswap
+    //
+    // This happens because the range we are sorting here is typically small. In the future,
+    // if needed, we can implement the swap primitive for pwrap.
     std::ranges::sort(ipolys, {}, [](const auto &tup) { return std::get<0>(tup); });
 
     // NOTE: here in principle we could maybe try to remove sequences of increasingly-short

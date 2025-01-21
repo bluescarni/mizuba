@@ -145,18 +145,6 @@ pwrap::~pwrap()
     back_to_cache();
 }
 
-// Swap primitive.
-//
-// NOTE: this assumes that p1 and p2 share the same cache.
-void swap(pwrap &p1, pwrap &p2) noexcept
-{
-    // Make sure the polyomial caches match.
-    assert(&p1.pc == &p2.pc); // LCOV_EXCL_LINE
-
-    // Swap the coefficient vectors.
-    p1.v.swap(p2.v);
-}
-
 namespace
 {
 
