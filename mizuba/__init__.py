@@ -86,6 +86,7 @@ def _have_sgp4_deps():
     # Helper to check if we have all the dependencies
     # necessary to support TLE propagation via sgp4.
     try:
+        # TODO decide about skyfield, remove pandas.
         import skyfield
         import sgp4
         import pandas
@@ -98,6 +99,7 @@ def _have_sgp4_deps():
 def _check_sgp4_deps():
     # Throwing variant of the previous function.
     if not _have_sgp4_deps():
+        # TODO fix error message.
         raise ImportError(
             "Support for TLE propagation via SGP4 requires the following Python"
             " modules: sgp4, skyfield, pandas and astropy"

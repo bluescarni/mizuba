@@ -432,7 +432,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             )
 
     def test_malformed_data(self):
-        from .. import make_sgp4_polyjectory, gpe_dtype
+        from .. import make_sgp4_polyjectory, gpe_dtype, _have_sgp4_deps
         import numpy as np
 
         # Wrong dimensionality for the array of gpes.
@@ -549,6 +549,48 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             in str(cm.exception)
         )
 
+        # Wrong type for the floating-point arguments.
+        with self.assertRaises(TypeError) as cm:
+            make_sgp4_polyjectory(arr, [], 1.0, reentry_radius=3, exit_radius=2)
+        self.assertTrue(
+            "The jd_begin, jd_end, reentry_radius and exit_radius arguments to make_sgp4_polyjectory() must all be floats or ints"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(TypeError) as cm:
+            make_sgp4_polyjectory(arr, 0, 1.0, reentry_radius=3, exit_radius=[])
+        self.assertTrue(
+            "The jd_begin, jd_end, reentry_radius and exit_radius arguments to make_sgp4_polyjectory() must all be floats or ints"
+            in str(cm.exception)
+        )
+
+        # Wrong type of the gpes argument.
+        with self.assertRaises(TypeError) as cm:
+            make_sgp4_polyjectory(1.0, 0, 1.0)
+        self.assertTrue(
+            "The 'gpes' argument to make_sgp4_polyjectory() must be either a polars dataframe, a NumPy array or a list of Satrec objects, but it is of type"
+            in str(cm.exception)
+        )
+
+        # Wrong dtype for the gpes argument,
+        with self.assertRaises(TypeError) as cm:
+            make_sgp4_polyjectory(np.zeros((1,)), 0, 1.0)
+        self.assertTrue(
+            "When passing the 'gpes' argument to make_sgp4_polyjectory() as a NumPy array, the dtype must be 'gpe_dtype', but it is '"
+            in str(cm.exception)
+        )
+
+        if not _have_sgp4_deps():
+            return
+
+        # Wrong gpes list argument.
+        with self.assertRaises(TypeError) as cm:
+            make_sgp4_polyjectory([1, 2, 3], 0, 1.0)
+        self.assertTrue(
+            "When passing the 'gpes' argument to make_sgp4_polyjectory() as a list, all elements of the list must be Satrec instances"
+            in str(cm.exception)
+        )
+
     def test_disc_gpe_01(self):
         # Test a GPE with known discontinuities.
         from .. import _have_sgp4_deps
@@ -632,3 +674,41 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         for cfs, times, status in pj:
             if times.shape[0] == 0:
                 self.assertNotEqual(status, 0)
+
+    def test_satrec_construction(self):
+        # Test construction from a list of satrec objects.
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
+            return
+
+        from .. import make_sgp4_polyjectory
+        import pathlib
+        from sgp4.api import Satrec
+        import polars as pl
+        import numpy as np
+
+        # Fetch the current directory.
+        cur_dir = pathlib.Path(__file__).parent.resolve()
+
+        # Load the test data.
+        gpes = pl.read_parquet(cur_dir / "single_gpe.parquet")
+
+        # Build the first polyjectory.
+        jd_begin = 2460669.0
+        pj1 = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1)
+
+        # Build a satrec from the satellite.
+        sat = Satrec.twoline2rv(gpes["tle_line1"][0], gpes["tle_line2"][0])
+
+        # Build the second polyjectory.
+        pj2 = make_sgp4_polyjectory([sat], jd_begin, jd_begin + 1)
+
+        # Fetch the content of the polyjectories.
+        cfs1, times1, status1 = pj1[0]
+        cfs2, times2, status2 = pj2[0]
+
+        # Compare.
+        self.assertEqual(status1, status2)
+        self.assertTrue(np.all(cfs1 == cfs2))
+        self.assertTrue(np.all(times1 == times2))

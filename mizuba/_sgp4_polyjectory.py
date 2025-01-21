@@ -15,10 +15,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import annotations
 from .core import polyjectory, gpe_dtype
 import polars as pl
 from typing import Union
 import numpy as np
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sgp4.api import Satrec
 
 # The fields expected to be in a dataframe
 # containing GPEs.
@@ -34,6 +39,21 @@ _gpe_fields = {
     "m0": float,
     "bstar": float,
 }
+
+# The fields in a Satrec object corresponding
+# to _gpe_fields.
+_satrec_fields = [
+    "satnum",
+    "jdsatepoch",
+    "jdsatepochF",
+    "no_kozai",
+    "ecco",
+    "inclo",
+    "nodeo",
+    "argpo",
+    "mo",
+    "bstar",
+]
 
 
 def _make_satrec_from_dict(d):
@@ -81,15 +101,26 @@ def _make_satrec_from_dict(d):
 
 
 def make_sgp4_polyjectory(
-    gpes: Union[pl.DataFrame, np.ndarray[gpe_dtype]],
+    gpes: Union[pl.DataFrame, np.ndarray[gpe_dtype], list[Satrec]],
     jd_begin: float,
     jd_end: float,
     reentry_radius: float = 0.0,
     exit_radius: float = float("inf"),
 ) -> polyjectory:
-    from .core import _make_sgp4_polyjectory
+    # NOTE: remember in the documentation the sorting requirement
+    # on gpes.
+    from .core import _make_sgp4_polyjectory, gpe_dtype
     import polars as pl
     import numpy as np
+
+    # Check jd_begin, jd_end, reentry_radius, exit_radius.
+    if any(
+        not isinstance(x, (float, int))
+        for x in [jd_begin, jd_end, reentry_radius, exit_radius]
+    ):
+        raise TypeError(
+            "The jd_begin, jd_end, reentry_radius and exit_radius arguments to make_sgp4_polyjectory() must all be floats or ints"
+        )
 
     if isinstance(gpes, pl.DataFrame):
         # Make sure the expected fields in gpes have the correct type.
@@ -105,7 +136,39 @@ def make_sgp4_polyjectory(
         # it should not be necessary to cast manually to the gpe
         # dtype.
         gpes_arr = np.ascontiguousarray(gpes.to_numpy(structured=True))
+    elif isinstance(gpes, list):
+        from . import _check_sgp4_deps
+
+        _check_sgp4_deps()
+        from sgp4.api import Satrec
+
+        if any(not isinstance(sat, Satrec) for sat in gpes):
+            raise TypeError(
+                "When passing the 'gpes' argument to make_sgp4_polyjectory() as a list, all elements of the list must be Satrec instances"
+            )
+
+        # Extract the satellites' data as a list of tuples.
+        sat_arr = [
+            tuple(getattr(_, col_name) for col_name in _satrec_fields) for _ in gpes
+        ]
+
+        # Init gpes_arr.
+        gpes_arr = np.zeros((len(gpes),), dtype=gpe_dtype)
+
+        # Assign.
+        gpes_arr[:] = sat_arr
+
     else:
+        if not isinstance(gpes, np.ndarray):
+            raise TypeError(
+                f"The 'gpes' argument to make_sgp4_polyjectory() must be either a polars dataframe, a NumPy array or a list of Satrec objects, but it is of type '{type(gpes)}' instead"
+            )
+
+        if gpes.dtype != gpe_dtype:
+            raise TypeError(
+                f"When passing the 'gpes' argument to make_sgp4_polyjectory() as a NumPy array, the dtype must be 'gpe_dtype', but it is '{gpes.dtype}' instead"
+            )
+
         gpes_arr = gpes
 
     # Invoke the C++ function.
@@ -114,4 +177,4 @@ def make_sgp4_polyjectory(
     )
 
 
-del polyjectory, pl, gpe_dtype, Union, np
+del polyjectory, pl, gpe_dtype, Union, np, TYPE_CHECKING, annotations
