@@ -390,7 +390,7 @@ std::variant<double, int> eval_interp_error2(const double *cf_ptr, auto &interp_
     const auto epoints_span = hy::mdspan<const double, hy::extents<std::size_t, std::dynamic_extent, 7>>(
         interp_buffer.data() + op1 * static_cast<std::size_t>(7), op1);
 
-    // Compute the maximum positional error.
+    // Compute the maximum positional error squared.
     auto max_err2 = 0.;
     for (std::uint32_t i = 0; i < op1; ++i) {
         const auto &cur_xyz = xyz_ieval[i];
