@@ -17,6 +17,15 @@
 
 import unittest as _ut
 
+# TLEs of an object whose orbital radius goes
+# over 8000km.
+_s_8000 = "1 00011U 59001A   24187.51496924  .00001069  00000-0  55482-3 0  9992"
+_t_8000 = "2 00011  32.8711 255.0638 1455653 332.1888  20.7734 11.88503118450690"
+
+# TLEs of an object which eventually decays.
+_s_dec = "1 04206U 69082BV  24187.08533867  .00584698  00000-0  52886-2 0  9990"
+_t_dec = "2 04206  69.8949  69.3024 0029370 203.3165 156.6698 15.65658911882875"
+
 
 class make_sgp4_polyjectory_test_case(_ut.TestCase):
     def _compare_sgp4(
@@ -712,3 +721,25 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         self.assertEqual(status1, status2)
         self.assertTrue(np.all(cfs1 == cfs2))
         self.assertTrue(np.all(times1 == times2))
+
+    def test_exit_decay(self):
+        # Test exiting and decaying satellites.
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
+            return
+
+        from .. import make_sgp4_polyjectory
+        from sgp4.api import Satrec
+        import numpy as np
+
+        sat = Satrec.twoline2rv(_s_8000, _t_8000)
+        sat_dec = Satrec.twoline2rv(_s_dec, _t_dec)
+        pj = make_sgp4_polyjectory(
+            [sat, sat_dec], 2460496.5 + 1.0 / 32, 2460496.5 + 7, exit_radius=8000.0
+        )
+        self.assertTrue(np.all(pj.status == [12, 0]))
+
+        sat = Satrec.twoline2rv(_s_dec, _t_dec)
+        pj = make_sgp4_polyjectory([sat], 2460496.5 + 30.0, 2460496.5 + 30.0 + 7)
+        self.assertTrue(np.all(pj.status == [6]))
