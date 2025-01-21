@@ -443,6 +443,14 @@ int gpe_interpolate_with_bisection(const double init_step_begin, const double in
     // Positional interpolation error threshold (in km).
     constexpr double err_thresh = 1e-7;
 
+    // Maximum number of interpolating polynomials for an interpolation step.
+    // NOTE: the idea here is that there are pathological cases (e.g., already-decayed
+    // satellites) in which the sgp4 algorithm goes crazy without necessarily returning
+    // an error code. When this happens, bisection may produce a large number of useless
+    // interpolating polynomials while slowing down operations to a crawl. We want to prevent
+    // that and return a specific error code instead.
+    constexpr unsigned max_n_ipolys = 20;
+
     // Fetch the Chebyshev nodes buffer.
     const auto &cheby_nodes_unit = ets.cheby_nodes_unit;
 
@@ -477,6 +485,11 @@ int gpe_interpolate_with_bisection(const double init_step_begin, const double in
     stack.push_back({{init_step_begin, init_step_end, init_step_begin_sat_epoch, init_step_end_sat_epoch}});
 
     while (!stack.empty()) {
+        // Check the total number of interpolating polynomials.
+        if (ipolys.size() > max_n_ipolys) [[unlikely]] {
+            return 14;
+        }
+
         // Pop back an interval from the stack.
         const auto [step_begin, step_end, step_begin_sat_epoch, step_end_sat_epoch] = stack.back();
         stack.pop_back();
