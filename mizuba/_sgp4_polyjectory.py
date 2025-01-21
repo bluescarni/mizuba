@@ -107,8 +107,7 @@ def make_sgp4_polyjectory(
     reentry_radius: float = 0.0,
     exit_radius: float = float("inf"),
 ) -> polyjectory:
-    # NOTE: remember in the documentation the sorting requirement
-    # on gpes.
+    # NOTE: remember to document the ordering requirement on gpes.
     from .core import _make_sgp4_polyjectory, gpe_dtype
     import polars as pl
     import numpy as np
@@ -157,7 +156,6 @@ def make_sgp4_polyjectory(
 
         # Assign.
         gpes_arr[:] = sat_arr
-
     else:
         if not isinstance(gpes, np.ndarray):
             raise TypeError(
