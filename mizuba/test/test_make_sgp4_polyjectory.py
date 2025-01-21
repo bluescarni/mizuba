@@ -743,3 +743,66 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         sat = Satrec.twoline2rv(_s_dec, _t_dec)
         pj = make_sgp4_polyjectory([sat], 2460496.5 + 30.0, 2460496.5 + 30.0 + 7)
         self.assertTrue(np.all(pj.status == [6]))
+
+    def test_strack(self):
+        # Tests with datasets from space-track.org.
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
+            return
+
+        from .. import make_sgp4_polyjectory
+        import pathlib
+        from sgp4.api import SatrecArray, Satrec
+
+        # from sgp4.api import Satrec
+        import polars as pl
+        import numpy as np
+
+        # Fetch the current directory.
+        cur_dir = pathlib.Path(__file__).parent.resolve()
+
+        # Total propagation time (4 hours).
+        prop_time = 1 / 6.0
+
+        # NOTE: these datasets contains GPEs of decayed
+        # satellites that trigger the bisection limit.
+        for fname, begin_jd in zip(
+            ["strack_20240705.parquet", "strack_20240917.parquet"],
+            [2460496.5, 2460569.5],
+        ):
+            # Load the test data.
+            gpes = pl.read_parquet(cur_dir / fname)
+
+            # Build the polyjectory.
+            pj = make_sgp4_polyjectory(gpes, begin_jd, begin_jd + prop_time)
+
+            # Check the presence of the bisection limit error code.
+            self.assertTrue(np.any(pj.status == 14))
+
+            # Create the evaluation timespan.
+            N_times = 10
+            tspan = np.linspace(0.0, prop_time, N_times)
+
+            # Create the satellite objects.
+            sat_list = [
+                Satrec.twoline2rv(_["tle_line1"], _["tle_line2"])
+                for _ in gpes.iter_rows(named=True)
+            ]
+
+            # Create the satrec array.
+            sat_arr = SatrecArray(sat_list)
+
+            # Evaluate with the sgp4 propagator.
+            e, r, v = sat_arr.sgp4(np.full((N_times,), begin_jd), tspan)
+
+            # Evaluate with the polyjectory.
+            pj_state = pj.state_meval(tspan)
+
+            # Compute the positional difference.
+            diff = np.linalg.norm(pj_state[:, :, :3] - r, axis=2).reshape((-1,))
+
+            # Filter out trajectories which errored out and compute the max err.
+            max_err = np.max(diff[~np.isnan(diff)])
+
+            self.assertLess(max_err, 1e-6)

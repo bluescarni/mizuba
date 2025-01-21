@@ -25,6 +25,8 @@ set(MIZUBA_PYTHON_FILES
     test/syncom_gpe.parquet
     test/disc_gpe_01.parquet
     test/full_catalog.parquet
+    test/strack_20240705.parquet
+    test/strack_20240917.parquet
     data_sources/__init__.py
     data_sources/_common.py
     data_sources/_spacetrack.py
