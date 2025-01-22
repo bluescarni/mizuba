@@ -782,7 +782,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
             # Create the evaluation timespan.
             N_times = 10
-            tspan = np.linspace(0.0, prop_time, N_times)
+            tspan = np.linspace(0.0, np.nextafter(prop_time, -1.0), N_times)
 
             # Create the satellite objects.
             sat_list = [
