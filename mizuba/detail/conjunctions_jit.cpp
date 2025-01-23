@@ -106,32 +106,37 @@ auto poly_translate(const std::vector<heyoka::expression> &cfs, const heyoka::ex
     return out;
 }
 
-// Add a compiled function for the computation of the translation of a polynomial.
-// The translation amount is par[0].
-void add_poly_translator_a(heyoka::llvm_state &s, std::uint32_t order_)
+// Add a compiled function for the computation of the translations of 6 polynomials.
+// The translation amount is par[0]. The coefficients of the 6 polynomials are assumed
+// to be stored contiguously in row-major format (that is, the coefficients of the first
+// poly, followed by the coefficients of the second poly, and so on).
+void add_poly_translator_a6(heyoka::llvm_state &s, std::uint32_t order)
 {
     namespace hy = heyoka;
-    using safe_uint32_t = boost::safe_numerics::safe<std::uint32_t>;
-
-    const auto order = safe_uint32_t(order_);
 
     // The original polynomial coefficients are the
     // input variables for the compiled function.
     std::vector<hy::expression> cfs;
-    cfs.reserve(order + 1);
-    for (safe_uint32_t i = 0; i <= order; ++i) {
-        cfs.emplace_back(fmt::format("c_{}", static_cast<std::uint32_t>(i)));
+    using cfs_size_t = decltype(cfs.size());
+    for (auto i = 0u; i < 6u; ++i) {
+        for (std::uint32_t j = 0; j <= order; ++j) {
+            cfs.emplace_back(fmt::format("c_{}_{}", i, j));
+        }
     }
 
     // The translation amount 'a' is implemented as the
     // first and only parameter of the compiled function.
     const auto a = hy::par[0];
 
-    // Create the expression for the translation of the coefficients.
-    const auto out = poly_translate(cfs, a);
+    // Create the expressions for the translation of the coefficients.
+    std::vector<hy::expression> out;
+    for (cfs_size_t i = 0u; i < 6u; ++i) {
+        auto tmp = poly_translate(std::vector(cfs.data() + i * (order + 1u), cfs.data() + (i + 1u) * (order + 1u)), a);
+        out.insert(out.end(), tmp.begin(), tmp.end());
+    }
 
     // Add the compiled function.
-    hy::add_cfunc<double>(s, "pta_cfunc", out, cfs);
+    hy::add_cfunc<double>(s, "pta6_cfunc", out, cfs);
 }
 
 // Add a compiled function for the computation of the sum of the squares
@@ -450,7 +455,7 @@ conj_jit_data::conj_jit_data(std::uint32_t order)
 
     // Add the compiled functions.
     auto *fp_t = hy::detail::to_internal_llvm_type<double>(state);
-    detail::add_poly_translator_a(state, order);
+    detail::add_poly_translator_a6(state, order);
     detail::add_poly_ssdiff3_cfunc(state, order);
     hy::detail::llvm_add_fex_check(state, fp_t, order, 1);
     hy::detail::llvm_add_poly_rtscc(state, fp_t, order, 1);
@@ -461,7 +466,7 @@ conj_jit_data::conj_jit_data(std::uint32_t order)
     state.compile();
 
     // Lookup.
-    pta_cfunc = reinterpret_cast<decltype(pta_cfunc)>(state.jit_lookup("pta_cfunc"));
+    pta6_cfunc = reinterpret_cast<decltype(pta6_cfunc)>(state.jit_lookup("pta6_cfunc"));
     pssdiff3_cfunc = reinterpret_cast<decltype(pssdiff3_cfunc)>(state.jit_lookup("ssdiff3_cfunc"));
     fex_check = reinterpret_cast<decltype(fex_check)>(state.jit_lookup("fex_check"));
     rtscc = reinterpret_cast<decltype(rtscc)>(state.jit_lookup("poly_rtscc"));
