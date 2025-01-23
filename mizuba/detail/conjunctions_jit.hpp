@@ -44,7 +44,7 @@ struct conj_jit_data {
     ~conj_jit_data();
 
     heyoka::llvm_state state;
-    cfunc_func_t pta_cfunc = nullptr;
+    cfunc_func_t pta6_cfunc = nullptr;
     cfunc_func_t pssdiff3_cfunc = nullptr;
     fex_check_t fex_check = nullptr;
     rtscc_t rtscc = nullptr;
