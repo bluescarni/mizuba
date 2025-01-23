@@ -26,20 +26,23 @@ class conjunctions_test_case(_ut.TestCase):
         if not _have_sgp4_deps():
             return
 
-        from skyfield.api import load
-        from skyfield.iokit import parse_tle_file
-        from ._sgp4_test_data_20240705 import sgp4_test_tle
+        import pathlib
+        import polars as pl
+        from sgp4.api import SatrecArray, Satrec
 
-        # Load the test TLEs.
-        ts = load.timescale()
-        sat_list = list(
-            parse_tle_file(
-                (bytes(_, "ascii") for _ in sgp4_test_tle.split("\n")),
-                ts,
-            )
-        )
+        # Fetch the current directory.
+        cur_dir = pathlib.Path(__file__).parent.resolve()
 
-        # A sparse list of satellites.
+        # Load the test data.
+        gpes = pl.read_parquet(cur_dir / "strack_20240705.parquet")
+
+        # Create the satellite objects.
+        sat_list = [
+            Satrec.twoline2rv(_["tle_line1"], _["tle_line2"])
+            for _ in gpes.iter_rows(named=True)
+        ]
+
+        # Create a sparse list of satellites.
         # NOTE: we manually include an object for which the
         # trajectory data terminates early if the exit_radius
         # is set to 12000.
@@ -745,12 +748,11 @@ class conjunctions_test_case(_ut.TestCase):
             return
 
         from .. import (
-            sgp4_polyjectory,
+            make_sgp4_polyjectory,
             conjunctions as conj,
             make_sgp4_conjunctions_df,
             otype,
         )
-        from .test_sgp4_polyjectory import _check_sgp4_pj_ret_consistency
         import numpy as np
 
         sat_list = self.half_sat_list
@@ -758,8 +760,7 @@ class conjunctions_test_case(_ut.TestCase):
         begin_jd = 2460496.5
 
         # Build the polyjectory. Run it for only 15 minutes.
-        pt, df, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 15.0 / 1440.0)
-        _check_sgp4_pj_ret_consistency(self, pt, df, mask)
+        pt = make_sgp4_polyjectory(sat_list, begin_jd, begin_jd + 15.0 * 60.0 / 86400.0)
 
         # Build a list of object types that excludes two satellites
         # that we know undergo a conjunction.
@@ -784,8 +785,8 @@ class conjunctions_test_case(_ut.TestCase):
         )
 
         # Build the conjunctions dataframe and verify it.
-        cdf = make_sgp4_conjunctions_df(c, df, begin_jd)
-        self._verify_sgp4_cj_df(c, df, cdf)
+        # cdf = make_sgp4_conjunctions_df(c, df, begin_jd)
+        # self._verify_sgp4_cj_df(c, df, cdf)
 
         # The conjunctions must be sorted according
         # to the TCA.

@@ -125,23 +125,23 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
             return
 
         import heyoka as hy
-        from skyfield.api import load
-        from skyfield.iokit import parse_tle_file
-        from sgp4.api import SatrecArray
-
-        # NOTE: we will be using TLE data to run the test.
-        from ._sgp4_test_data_20240705 import sgp4_test_tle
         from .. import conjunctions as conj, polyjectory
         import numpy as np
+        import pathlib
+        import polars as pl
+        from sgp4.api import SatrecArray, Satrec
 
-        # Load the test TLEs.
-        ts = load.timescale()
-        sat_list = list(
-            parse_tle_file(
-                (bytes(_, "ascii") for _ in sgp4_test_tle.split("\n")),
-                ts,
-            )
-        )
+        # Fetch the current directory.
+        cur_dir = pathlib.Path(__file__).parent.resolve()
+
+        # Load the test data.
+        gpes = pl.read_parquet(cur_dir / "strack_20240705.parquet")
+
+        # Create the satellite objects.
+        sat_list = [
+            Satrec.twoline2rv(_["tle_line1"], _["tle_line2"])
+            for _ in gpes.iter_rows(named=True)
+        ]
 
         # Select around 10 objects.
         sat_list = sat_list[:: len(sat_list) // 10]

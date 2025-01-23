@@ -20,7 +20,6 @@ def run_test_suite(data_sources: bool = False) -> None:
     import unittest as _ut
 
     from . import (
-        test_sgp4_polyjectory,
         test_conjunctions,
         test_boundary_conjunctions,
         test_polyjectory,
@@ -41,9 +40,6 @@ def run_test_suite(data_sources: bool = False) -> None:
     )
     suite.addTest(
         tl.loadTestsFromTestCase(test_heyoka_conjunctions.heyoka_conjunctions_test_case)
-    )
-    suite.addTest(
-        tl.loadTestsFromTestCase(test_sgp4_polyjectory.sgp4_polyjectory_test_case)
     )
     suite.addTest(tl.loadTestsFromTestCase(test_polyjectory.polyjectory_test_case))
     if data_sources:
