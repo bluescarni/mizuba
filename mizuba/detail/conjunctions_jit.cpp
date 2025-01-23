@@ -117,7 +117,6 @@ void add_poly_translator_a6(heyoka::llvm_state &s, std::uint32_t order)
     // The original polynomial coefficients are the
     // input variables for the compiled function.
     std::vector<hy::expression> cfs;
-    using cfs_size_t = decltype(cfs.size());
     for (auto i = 0u; i < 6u; ++i) {
         for (std::uint32_t j = 0; j <= order; ++j) {
             cfs.emplace_back(fmt::format("c_{}_{}", i, j));
@@ -130,7 +129,7 @@ void add_poly_translator_a6(heyoka::llvm_state &s, std::uint32_t order)
 
     // Create the expressions for the translation of the coefficients.
     std::vector<hy::expression> out;
-    for (cfs_size_t i = 0u; i < 6u; ++i) {
+    for (decltype(cfs.size()) i = 0u; i < 6u; ++i) {
         auto tmp = poly_translate(std::vector(cfs.data() + i * (order + 1u), cfs.data() + (i + 1u) * (order + 1u)), a);
         out.insert(out.end(), tmp.begin(), tmp.end());
     }
