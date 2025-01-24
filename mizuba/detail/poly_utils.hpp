@@ -38,8 +38,8 @@ namespace mizuba::detail
 // convertible to T. 'it' must be a random-access iterator.
 // An optional 'stride' argument can be passed if the polynomial
 // coefficients are not stored consecutively.
-template <typename It, typename T>
-T horner_eval(It it, std::uint32_t order, const T &x, std::uint32_t stride = 1)
+template <typename It, typename T, typename Stride = std::uint32_t>
+T horner_eval(It it, std::uint32_t order, const T &x, Stride stride = 1)
 {
     assert(stride != 0u);
 

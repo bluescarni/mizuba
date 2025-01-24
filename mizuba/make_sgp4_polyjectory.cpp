@@ -359,7 +359,9 @@ std::variant<double, int> eval_interp_error2(const double *cf_ptr, auto &interp_
 
         auto &cur_xyz = xyz_ieval[i];
         for (auto j = 0u; j < 3u; ++j) {
-            cur_xyz[j] = horner_eval(cf_ptr + j, op1 - 1u, eval_tm, 7);
+            // NOTE: a stride type of std::uint32_t here is ok, as we know that
+            // cf_ptr is coming from a buffer whose size fits std::uint32_t.
+            cur_xyz[j] = horner_eval(cf_ptr + j, op1 - 1u, eval_tm, static_cast<std::uint32_t>(7));
         }
     }
 
