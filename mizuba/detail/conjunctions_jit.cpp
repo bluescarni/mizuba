@@ -245,10 +245,14 @@ void add_poly_ssdiff3_cfunc(heyoka::llvm_state &s, std::uint32_t order)
 }
 
 // Utilities for the implementation of the Cargo-Shisha algorithm.
-auto hy_min = [](auto a, auto b) { return heyoka::select(heyoka::lt(a, b), a, b); };
 
-auto hy_max = [](auto a, auto b) { return heyoka::select(heyoka::gt(a, b), a, b); };
+// min() implementation with nan propagation: (b == b) ? ((b < a) ? b : a) : b.
+auto hy_min = [](auto a, auto b) { return select(eq(b, b), select(lt(b, a), b, a), b); };
 
+// max() implementation with nan propagation: (b == b) ? ((a < b) ? b : a) : b.
+auto hy_max = [](auto a, auto b) { return select(eq(b, b), select(lt(a, b), b, a), b); };
+
+// Pairwise reduction on a list of values vals using the binary functor f.
 auto pairwise_reduce(auto vals, const auto &f)
 {
     assert(!vals.empty());
@@ -360,6 +364,7 @@ auto cs_enclosure(const std::vector<heyoka::expression> &cfs, const heyoka::expr
     }
 
     // Calculate min/max among the b values.
+    // NOTE: the hy_min/max primitives ensure the propagation of nans.
     auto min_b = pairwise_reduce(b_values, hy_min);
     auto max_b = pairwise_reduce(b_values, hy_max);
 

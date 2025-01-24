@@ -184,6 +184,9 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
         // This is fine, as the end result is a slight enlargement of the aabb,
         // which is not problematic as the resulting aabb is still guaranteed
         // to contain the position of the object.
+        // NOTE: our implementation of the Cargo-Shisha algorithm ensures correct
+        // propagation of nan values. If nans are generated, they will be caught by
+        // the lb/ub_make_float helpers.
         aabb_cs_cfunc(xyzr_int.data(), cf_ptr, cs_pars.data(), nullptr);
 
         // A couple of helpers to cast lower/upper bounds from double to float. After
