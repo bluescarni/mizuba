@@ -22,7 +22,6 @@
 #include <cstddef>
 #include <functional>
 #include <type_traits>
-#include <vector>
 
 #include <boost/numeric/conversion/cast.hpp>
 
@@ -35,8 +34,6 @@ namespace mizuba_py
 {
 
 namespace py = pybind11;
-
-std::vector<double> sat_list_to_vector(py::list);
 
 void check_array_cc_aligned(const py::array &, const char *);
 

@@ -34,7 +34,6 @@ set(_MIZUBA_CORE_SOURCES
     core.cpp
     common_utils.cpp
     polyjectory.cpp
-    sgp4_polyjectory.cpp
     conjunctions.cpp
     detect_conjunctions.cpp
     detect_conjunctions_aabbs.cpp

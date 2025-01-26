@@ -26,7 +26,6 @@
 #include <optional>
 #include <random>
 #include <ranges>
-#include <span>
 #include <stdexcept>
 #include <unordered_set>
 #include <utility>
@@ -45,15 +44,12 @@
 
 #include <Python.h>
 
-#include <heyoka/mdspan.hpp>
-
 #include "common_utils.hpp"
 #include "conjunctions.hpp"
 #include "logging.hpp"
 #include "make_sgp4_polyjectory.hpp"
 #include "mdspan.hpp"
 #include "polyjectory.hpp"
-#include "sgp4_polyjectory.hpp"
 
 namespace mizuba_py::detail
 {
@@ -241,7 +237,6 @@ PYBIND11_MODULE(core, m)
     namespace py = pybind11;
     namespace mz = mizuba;
     namespace mzpy = mizuba_py;
-    namespace hy = heyoka;
 
     using namespace py::literals;
 
@@ -666,51 +661,6 @@ PYBIND11_MODULE(core, m)
             return ret;
         },
         "gpes"_a.noconvert(), "jd_begin"_a, "jd_end"_a, "reentry_radius"_a, "exit_radius"_a);
-
-    // sgp4 polyjectory.
-    m.def(
-        "sgp4_polyjectory",
-        [](py::list sat_list, double jd_begin, double jd_end, double exit_radius, double reentry_radius, double epoch,
-           double epoch2) {
-            // Check for the necessary dependencies.
-            py::module_::import("mizuba").attr("_check_sgp4_deps")();
-
-            // Check and pre-filter sat_list.
-            py::tuple filter_res = py::module_::import("mizuba").attr("_sgp4_pre_filter_sat_list")(
-                sat_list, jd_begin, exit_radius, reentry_radius);
-            sat_list = filter_res[0];
-            py::object mask = filter_res[1];
-            py::object pd = filter_res[2];
-
-            // Turn sat_list into a data vector.
-            const auto sat_data = mzpy::sat_list_to_vector(sat_list);
-            assert(sat_data.size() % 9u == 0u);
-
-            // Create the input span.
-            using span_t = hy::mdspan<const double, hy::extents<std::size_t, 9, std::dynamic_extent>>;
-            const span_t in(sat_data.data(), boost::numeric_cast<std::size_t>(sat_data.size()) / 9u);
-
-            auto poly_ret = [in, jd_begin, jd_end, exit_radius, reentry_radius, epoch, epoch2]() {
-                // NOTE: release the GIL during propagation.
-                py::gil_scoped_release release;
-
-                return mz::sgp4_polyjectory(in, jd_begin, jd_end, exit_radius, reentry_radius, epoch, epoch2);
-            }();
-
-            // Register the polyjectory implementation in the cleanup machinery.
-            mzpy::detail::add_pj_weak_ptr(mz::detail::fetch_pj_impl(poly_ret));
-
-            // Convert the polyjectory into a Python object.
-            py::object poly_obj = py::cast(std::move(poly_ret));
-
-            // Amend the dataframe with the final statuses from the polyjectory.
-            pd = py::module_::import("mizuba").attr("_sgp4_set_final_status")(poly_obj, pd);
-
-            return py::make_tuple(std::move(poly_obj), std::move(pd), std::move(mask));
-        },
-        "sat_list"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert(),
-        "exit_radius"_a.noconvert() = mz::sgp4_exit_radius, "reentry_radius"_a.noconvert() = mz::sgp4_reentry_radius,
-        "epoch"_a.noconvert() = 0., "epoch2"_a.noconvert() = 0.);
 
     // Register conjunctions::bvh_node as a structured NumPy datatype.
     using bvh_node = mz::conjunctions::bvh_node;
