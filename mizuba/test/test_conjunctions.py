@@ -28,6 +28,7 @@ class conjunctions_test_case(_ut.TestCase):
 
         import pathlib
         import polars as pl
+        from bisect import bisect_left
         from sgp4.api import SatrecArray, Satrec
 
         # Fetch the current directory.
@@ -46,7 +47,14 @@ class conjunctions_test_case(_ut.TestCase):
         # NOTE: we manually include an object for which the
         # trajectory data terminates early if the exit_radius
         # is set to 12000.
-        cls.sparse_sat_list = sat_list[::2000] + [sat_list[220]]
+        cls.sparse_sat_list = sorted(
+            sat_list[::2000] + [sat_list[220]], key=lambda sat: sat.satnum
+        )
+
+        # Identify the new index of the added satellite in the sorted list.
+        norad_id_list = [_.satnum for _ in cls.sparse_sat_list]
+        idx = bisect_left(norad_id_list, sat_list[220].satnum)
+        cls.exiting_idx = idx
 
         # List of 9000 satellites.
         cls.half_sat_list = sat_list[:9000]
@@ -408,8 +416,7 @@ class conjunctions_test_case(_ut.TestCase):
         if not hasattr(type(self), "sparse_sat_list"):
             return
 
-        from .. import sgp4_polyjectory
-        from .test_sgp4_polyjectory import _check_sgp4_pj_ret_consistency
+        from .. import make_sgp4_polyjectory
 
         # Use the sparse satellite list.
         sat_list = self.sparse_sat_list
@@ -417,15 +424,14 @@ class conjunctions_test_case(_ut.TestCase):
         begin_jd = 2460496.5
 
         # Build the polyjectory.
-        pt, df, mask = sgp4_polyjectory(
+        pt = make_sgp4_polyjectory(
             sat_list, begin_jd, begin_jd + 0.25, exit_radius=12000.0
         )
-        _check_sgp4_pj_ret_consistency(self, pt, df, mask)
         tot_nobjs = pt.nobjs
 
         # Build the conjunctions object. Keep a small threshold not to interfere
         # with aabb checking.
-        c = conj(pt, conj_thresh=1e-8, conj_det_interval=1.0)
+        c = conj(pt, conj_thresh=1e-8, conj_det_interval=1.0 / 1440.0)
 
         # Verify the aabbs.
         self._verify_conj_aabbs(c, rng)
@@ -478,18 +484,29 @@ class conjunctions_test_case(_ut.TestCase):
                 np.all(c.mcodes[cd_idx, c.srt_idx[cd_idx]] == c.srt_mcodes[cd_idx])
             )
 
-        # The last satellite's trajectory data terminates
+        # The exiting satellite's trajectory data terminates
         # early. After termination, the morton codes must be -1.
-        last_aabbs = c.aabbs[:, c.polyjectory.nobjs - 1, :, :]
-        self.assertFalse(np.all(np.isfinite(last_aabbs)))
-        inf_idx = np.isinf(last_aabbs).nonzero()[0]
-        self.assertTrue(np.all(c.mcodes[inf_idx, -1] == ((1 << 64) - 1)))
+
+        # Fetch all the aabbs of the exiting satellite.
+        exit_aabbs = c.aabbs[:, self.exiting_idx, :, :]
+
+        # Check that not all are finite.
+        self.assertFalse(np.all(np.isfinite(exit_aabbs)))
+
+        # Compute the indices of the conjunction steps
+        # in which infinite aabbs show up.
+        inf_idx = np.any(np.isinf(exit_aabbs), axis=(1, 2)).nonzero()[0]
+
+        # Check the Morton codes.
+        self.assertTrue(np.all(c.mcodes[inf_idx, self.exiting_idx] == ((1 << 64) - 1)))
 
         # Similarly, the number of objects reported in the root
-        # node of the bvh trees must be tot_nobjs - 1.
+        # node of the bvh trees must be tot_nobjs - 2.
+        # NOTE: -3 (rather than -1) because 2 other satellites generated
+        # infinite aabbs.
         for idx in inf_idx:
             t = c.get_bvh_tree(idx)
-            self.assertEqual(t[0]["end"] - t[0]["begin"], tot_nobjs - 1)
+            self.assertEqual(t[0]["end"] - t[0]["begin"], tot_nobjs - 3)
 
     def test_zero_aabbs(self):
         # Test to check behaviour with aabbs of zero size.
