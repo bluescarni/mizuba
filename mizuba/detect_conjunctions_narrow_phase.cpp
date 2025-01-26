@@ -267,43 +267,46 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                 auto ts_end_j = std::lower_bound(ts_begin_j, t_end_j, cd_end);
                 ts_end_j += (ts_end_j != t_end_j);
 
+                // Storage for the computation of an enclosure for the distance square.
+                std::array<double, 2> dist2_ieval{};
+
+                // A small helper to update it_i and it_j for the next iteration of the for-loop below.
+                const auto update_iterators = [](auto &it_i, auto &it_j) {
+                    // NOTE: explanation on how we compute the iterator increments:
+                    //
+                    // 1) if *it_i == *it_j, then the trajectory steps end at the same time,
+                    //    and we need to move to the next step for both objects (i.e., in the
+                    //    current iteration of the for loop we processed the timeline up to
+                    //    the same time for both objects). This can happen at the very end
+                    //    of a polyjectory, or if both steps end exactly at the same time;
+                    //
+                    // 2) if *it_i < *it_j, then the trajectory step for object i ends before
+                    //    the trajectory step for object j. We must move to the next step for
+                    //    object i while remaining on the current step for object j;
+                    //
+                    // 3) if *it_j < *it_i, we have the specular case of 2.
+
+                    // Compute the increments.
+                    const auto inc_i = (*it_i <= *it_j);
+                    const auto inc_j = (*it_j <= *it_i);
+
+                    // Apply them.
+                    it_i += inc_i;
+                    it_j += inc_j;
+                };
+
 #if !defined(NDEBUG)
                 bool loop_entered = false;
 #endif
+
                 // Iterate until we get to the end of at least one range.
                 // NOTE: if either range is empty, this loop is never entered.
                 // This should never happen.
-                for (auto it_i = ts_begin_i, it_j = ts_begin_j; it_i != ts_end_i && it_j != ts_end_j;) {
+                for (auto it_i = ts_begin_i, it_j = ts_begin_j; it_i != ts_end_i && it_j != ts_end_j;
+                     update_iterators(it_i, it_j)) {
 #if !defined(NDEBUG)
                     loop_entered = true;
 #endif
-
-                    // A small helper to update it_i and it_j for the next iteration of the for-loop.
-                    // Normally this is invoked at the end of the loop, however it will be invoked earlier
-                    // if the current i and j trajectory steps do not overlap.
-                    const auto update_iterators = [&it_i, &it_j]() {
-                        // NOTE: explanation on how we compute the iterator increments:
-                        //
-                        // 1) if *it_i == *it_j, then the trajectory steps end at the same time,
-                        //    and we need to move to the next step for both objects (i.e., in the
-                        //    current iteration of the for loop we processed the timeline up to
-                        //    the same time for both objects). This can happen at the very end
-                        //    of a polyjectory, or if both steps end exactly at the same time;
-                        //
-                        // 2) if *it_i < *it_j, then the trajectory step for object i ends before
-                        //    the trajectory step for object j. We must move to the next step for
-                        //    object i while remaining on the current step for object j;
-                        //
-                        // 3) if *it_j < *it_i, we have the specular case of 2.
-
-                        // Compute the increments.
-                        const auto inc_i = (*it_i <= *it_j);
-                        const auto inc_j = (*it_j <= *it_i);
-
-                        // Apply them.
-                        it_i += inc_i;
-                        it_j += inc_j;
-                    };
 
                     // Initial time coordinates of the trajectory steps of i and j.
                     assert(it_i != t_begin_i);
@@ -330,7 +333,6 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                     // the current trajectory steps of i and j. Just move to the next loop
                     // iteration.
                     if (!(ub_i > lb_j && lb_i < ub_j)) {
-                        update_iterators();
                         continue;
                     }
 
@@ -405,7 +407,6 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                     dist2_interp(ptd2_ptr, diff_input.data(), &rf_int, nullptr);
 
                     // Compute an enclosure for the distance square.
-                    std::array<double, 2> dist2_ieval{};
                     cs_enc_func(dist2_ieval.data(), ptd2_ptr, &rf_int, nullptr);
 
                     // NOTE: the computation of dist2_ieval will correctly propagate nans, which will then be caught
@@ -632,9 +633,6 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                         // Update n_dist2_check.
                         ++n_dist2_check;
                     }
-
-                    // Update it_i and it_j.
-                    update_iterators();
                 }
 
                 assert(loop_entered);
