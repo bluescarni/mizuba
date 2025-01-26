@@ -31,7 +31,7 @@ Documentation = "https://github.com/bluescarni/mizuba"
 Repository = "https://github.com/bluescarni/mizuba"
 
 [project.optional-dependencies]
-sgp4 = ["sgp4", "skyfield", "pandas"]
+sgp4 = ["sgp4"]
 heyoka = ["heyoka >= 7.2.1, < 8"]
 
 [tool.scikit-build]

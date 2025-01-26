@@ -13,7 +13,7 @@ export PATH="$HOME/miniconda/bin:$PATH"
 bash miniconda.sh -b -p $HOME/miniconda
 conda create -y -p $deps_dir cmake ninja \
     tbb-devel tbb libboost-devel heyoka fmt spdlog 'python=3.12' numpy \
-    pybind11 pandas astropy heyoka.py requests polars
+    pybind11 astropy heyoka.py requests polars
 source activate $deps_dir
 
 # NOTE: not sure what is going on with conda OSX, but somehow
@@ -30,10 +30,10 @@ else
     conda install -y c-compiler cxx-compiler
 fi
 
-# Workaround: install sgp4 and skyfield with pip
+# Workaround: install sgp4 with pip
 # because the conda package for sgp4 on aarch64
 # seemingly does not ship with OMM support.
-pip install skyfield sgp4
+pip install sgp4
 
 # Create the build dir and cd into it.
 mkdir build
