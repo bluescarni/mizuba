@@ -76,10 +76,16 @@ if np.any(cj1.conjunctions["j"] != cj3.conjunctions["j"]):
 # Check TCAs.
 nonzero = np.where(cj1.conjunctions["tca"] != 0)
 
-tca_diff = np.abs((cj1.conjunctions["tca"][nonzero] - cj2.conjunctions["tca"][nonzero]) / cj1.conjunctions["tca"][nonzero])
+tca_diff = np.abs(
+    (cj1.conjunctions["tca"][nonzero] - cj2.conjunctions["tca"][nonzero])
+    / cj1.conjunctions["tca"][nonzero]
+)
 if np.any(tca_diff > 1e-10):
     raise ValueError("Differences detected in the tcas between cj1 and cj2")
 
-tca_diff = np.abs((cj1.conjunctions["tca"][nonzero] - cj3.conjunctions["tca"][nonzero]) / cj1.conjunctions["tca"][nonzero])
+tca_diff = np.abs(
+    (cj1.conjunctions["tca"][nonzero] - cj3.conjunctions["tca"][nonzero])
+    / cj1.conjunctions["tca"][nonzero]
+)
 if np.any(tca_diff > 1e-10):
     raise ValueError("Differences detected in the tcas between cj1 and cj3")

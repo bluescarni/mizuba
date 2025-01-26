@@ -33,10 +33,10 @@ gpes = pl.read_parquet(data_path)
 # Retain only the GPEs with TLE data.
 # NOTE: we do this because the sgp4 propagator does not like
 # satellite numbers with too many digits.
-gpes = gpes.filter(~pl.col('tle_line1').is_null())
+gpes = gpes.filter(~pl.col("tle_line1").is_null())
 
 # Setup the polyjectory epoch.
-tm = Time('2025-01-12T12:00:00Z',format='isot',scale='utc')
+tm = Time("2025-01-12T12:00:00Z", format="isot", scale="utc")
 jd_begin = tm.jd1
 
 # Build the sat list.
@@ -44,20 +44,20 @@ sat_list = [make_satrec(_) for _ in gpes.iter_rows(named=True)]
 sat_arr = SatrecArray(sat_list)
 
 # Build the polyjectory.
-pj = mz.make_sgp4_polyjectory(gpes, jd_begin, jd_begin+5.1)
+pj = mz.make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 5.1)
 
 # Setup the sample times.
 N_times = 1000
 tm_range = np.linspace(0, 5, N_times)
 
 # Evaluate with the sgp4 propagator.
-e, r, v = sat_arr.sgp4(np.full((N_times,), jd_begin),tm_range)
+e, r, v = sat_arr.sgp4(np.full((N_times,), jd_begin), tm_range)
 
 # Evaluate with the polyjectory.
 pj_state = pj.state_meval(tm_range)
 
 # Compute the positional difference.
-diff = np.linalg.norm(pj_state[:,:,:3] - r, axis=2).reshape((-1,))
+diff = np.linalg.norm(pj_state[:, :, :3] - r, axis=2).reshape((-1,))
 
 # Filter out trajectories which errored out and compute the max err.
 max_err = np.max(diff[~np.isnan(diff)])
