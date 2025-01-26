@@ -149,7 +149,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
 
         # Compute their positions at some date.
         jd = 2460496.5
-        sat_arr = SatrecArray([_.model for _ in sat_list])
+        sat_arr = SatrecArray(sat_list)
         e, r, v = sat_arr.sgp4(np.array([jd]), np.array([0.0]))
         self.assertTrue(np.all(e == 0))
 
@@ -198,10 +198,10 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         self.assertTrue(np.all(np.isclose(cjc["dca"], hy_conj_list["dca"], rtol=1e-12)))
         self.assertTrue(np.all(cjc["i"] == hy_conj_list["i"]))
         self.assertTrue(np.all(cjc["j"] == hy_conj_list["j"]))
-        self.assertTrue(np.all(np.isclose(cjc["ri"], hy_conj_list["ri"], rtol=1e-12)))
-        self.assertTrue(np.all(np.isclose(cjc["rj"], hy_conj_list["rj"], rtol=1e-12)))
-        self.assertTrue(np.all(np.isclose(cjc["vi"], hy_conj_list["vi"], rtol=1e-12)))
-        self.assertTrue(np.all(np.isclose(cjc["vj"], hy_conj_list["vj"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["ri"], hy_conj_list["ri"], rtol=1e-11)))
+        self.assertTrue(np.all(np.isclose(cjc["rj"], hy_conj_list["rj"], rtol=1e-11)))
+        self.assertTrue(np.all(np.isclose(cjc["vi"], hy_conj_list["vi"], rtol=1e-11)))
+        self.assertTrue(np.all(np.isclose(cjc["vj"], hy_conj_list["vj"], rtol=1e-11)))
 
         # Re-run the same conjunction but with only 0 and 1 as primaries.
         otypes = [otype.SECONDARY] * pj.nobjs
@@ -233,10 +233,10 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         self.assertTrue(np.all(np.isclose(cjc["dca"], flist["dca"], rtol=1e-12)))
         self.assertTrue(np.all(cjc["i"] == flist["i"]))
         self.assertTrue(np.all(cjc["j"] == flist["j"]))
-        self.assertTrue(np.all(np.isclose(cjc["ri"], flist["ri"], rtol=1e-12)))
-        self.assertTrue(np.all(np.isclose(cjc["rj"], flist["rj"], rtol=1e-12)))
-        self.assertTrue(np.all(np.isclose(cjc["vi"], flist["vi"], rtol=1e-12)))
-        self.assertTrue(np.all(np.isclose(cjc["vj"], flist["vj"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["ri"], flist["ri"], rtol=1e-11)))
+        self.assertTrue(np.all(np.isclose(cjc["rj"], flist["rj"], rtol=1e-11)))
+        self.assertTrue(np.all(np.isclose(cjc["vi"], flist["vi"], rtol=1e-11)))
+        self.assertTrue(np.all(np.isclose(cjc["vj"], flist["vj"], rtol=1e-11)))
 
         # Run another conjunction detection, this time conjunction
         # thresh 500km.

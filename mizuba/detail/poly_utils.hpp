@@ -93,12 +93,8 @@ bool run_poly_root_finding(const double *, std::uint32_t, double, isol_t &, wlis
                            conj_jit_data::rtscc_t, conj_jit_data::pt1_t, std::uint32_t, std::uint32_t, int,
                            std::vector<std::tuple<std::uint32_t, std::uint32_t, double>> &, poly_cache &);
 
-// Create the heyoka expression for Vandermonde polynomial interpolation. See:
-//
-// https://www.ams.org/journals/mcom/1970-24-112/S0025-5718-1970-0290541-1/S0025-5718-1970-0290541-1.pdf
-//
-// The only input argument is the polynomial interpolation order.
-std::pair<std::vector<heyoka::expression>, std::vector<heyoka::expression>> vm_interp(std::uint32_t);
+std::pair<std::vector<heyoka::expression>, std::vector<heyoka::expression>>
+vm_interp(std::uint32_t, std::vector<heyoka::expression> = {}, std::vector<heyoka::expression> = {});
 
 } // namespace mizuba::detail
 

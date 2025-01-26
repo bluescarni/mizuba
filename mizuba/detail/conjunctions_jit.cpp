@@ -16,7 +16,9 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <cassert>
+#include <cmath>
 #include <cstdint>
+#include <initializer_list>
 #include <mutex>
 #include <unordered_map>
 #include <utility>
@@ -24,6 +26,7 @@
 
 #include <fmt/core.h>
 
+#include <boost/math/constants/constants.hpp>
 #include <boost/math/special_functions/binomial.hpp>
 #include <boost/safe_numerics/safe_integer.hpp>
 
@@ -31,12 +34,14 @@
 #include <heyoka/detail/llvm_helpers.hpp>
 #include <heyoka/expression.hpp>
 #include <heyoka/llvm_state.hpp>
+#include <heyoka/math/pow.hpp>
 #include <heyoka/math/relational.hpp>
 #include <heyoka/math/select.hpp>
 #include <heyoka/math/sum.hpp>
 #include <heyoka/mdspan.hpp>
 
 #include "conjunctions_jit.hpp"
+#include "poly_utils.hpp"
 
 namespace mizuba::detail
 {
@@ -136,112 +141,6 @@ void add_poly_translator_a6(heyoka::llvm_state &s, std::uint32_t order)
 
     // Add the compiled function.
     hy::add_cfunc<double>(s, "pta6_cfunc", out, cfs);
-}
-
-// Add a compiled function for the computation of the sum of the squares
-// of the differences between three polynomials. The computation
-// is performed in the truncated power series algebra.
-void add_poly_ssdiff3_cfunc(heyoka::llvm_state &s, std::uint32_t order)
-{
-    namespace stdex = std::experimental;
-    namespace hy = heyoka;
-    using namespace hy::literals;
-
-    // NOTE: this is guaranteed by the checks in polyjectory.
-    assert(order >= 2u); // LCOV_EXCL_LINE
-
-    // The coefficients of are given in row-major
-    // format for the polynomials of xi,yi,zi,xj,yj,zj.
-    std::vector<hy::expression> vars;
-    for (std::uint32_t i = 0; i <= order; ++i) {
-        vars.emplace_back(fmt::format("xi_{}", i));
-    }
-    for (std::uint32_t i = 0; i <= order; ++i) {
-        vars.emplace_back(fmt::format("yi_{}", i));
-    }
-    for (std::uint32_t i = 0; i <= order; ++i) {
-        vars.emplace_back(fmt::format("zi_{}", i));
-    }
-    for (std::uint32_t i = 0; i <= order; ++i) {
-        vars.emplace_back(fmt::format("xj_{}", i));
-    }
-    for (std::uint32_t i = 0; i <= order; ++i) {
-        vars.emplace_back(fmt::format("yj_{}", i));
-    }
-    for (std::uint32_t i = 0; i <= order; ++i) {
-        vars.emplace_back(fmt::format("zj_{}", i));
-    }
-
-    // Access the polynomials as submdspans into vars.
-    stdex::mdspan var_arr(std::as_const(vars).data(), static_cast<decltype(vars.size())>(6), order + 1u);
-    auto xi_poly = stdex::submdspan(var_arr, 0u, stdex::full_extent);
-    auto yi_poly = stdex::submdspan(var_arr, 1u, stdex::full_extent);
-    auto zi_poly = stdex::submdspan(var_arr, 2u, stdex::full_extent);
-    auto xj_poly = stdex::submdspan(var_arr, 3u, stdex::full_extent);
-    auto yj_poly = stdex::submdspan(var_arr, 4u, stdex::full_extent);
-    auto zj_poly = stdex::submdspan(var_arr, 5u, stdex::full_extent);
-
-    // Helper to compute the difference between two polynomials.
-    auto pdiff = [order](const auto &p1, const auto &p2) {
-        std::vector<hy::expression> ret;
-        ret.reserve(order + 1u);
-
-        for (std::uint32_t i = 0; i <= order; ++i) {
-            ret.push_back(p1[i] - p2[i]);
-        }
-
-        return ret;
-    }; // LCOV_EXCL_LINE
-
-    // Compute the differences.
-    auto diff_x = pdiff(xi_poly, xj_poly);
-    auto diff_y = pdiff(yi_poly, yj_poly);
-    auto diff_z = pdiff(zi_poly, zj_poly);
-
-    // Helper to compute the square of a polynomial.
-    auto psquare = [order](const auto &p) {
-        std::vector<hy::expression> ret, tmp;
-        ret.reserve(order + 1u);
-
-        for (std::uint32_t i = 0; i <= order; ++i) {
-            tmp.clear();
-
-            if (i % 2u == 0u) {
-                if (i == 0u) {
-                    ret.push_back(p[0] * p[0]);
-                } else {
-                    for (std::uint32_t j = 0; j <= i / 2u - 1u; ++j) {
-                        tmp.push_back(p[i - j] * p[j]);
-                    }
-
-                    ret.push_back(2_dbl * hy::sum(std::move(tmp)) + p[i / 2u] * p[i / 2u]);
-                }
-            } else {
-                for (std::uint32_t j = 0; j <= (i - 1u) / 2u; ++j) {
-                    tmp.push_back(p[i - j] * p[j]);
-                }
-
-                ret.push_back(2_dbl * hy::sum(std::move(tmp)));
-            }
-        }
-
-        return ret;
-    };
-
-    // Compute the squares.
-    auto diff2_x = psquare(diff_x);
-    auto diff2_y = psquare(diff_y);
-    auto diff2_z = psquare(diff_z);
-
-    // Build the outputs vector as the sum of the squares
-    std::vector<hy::expression> out;
-    out.reserve(order + 1u);
-    for (std::uint32_t i = 0; i <= order; ++i) {
-        out.push_back(hy::sum({diff2_x[i], diff2_y[i], diff2_z[i]}));
-    }
-
-    // Add the compiled function.
-    hy::add_cfunc<double>(s, "ssdiff3_cfunc", out, vars);
 }
 
 // Utilities for the implementation of the Cargo-Shisha algorithm.
@@ -450,6 +349,64 @@ void add_cs_enc_func(heyoka::llvm_state &s, std::uint32_t order_)
     heyoka::add_cfunc<double>(s, "cs_enc", {min, max}, inputs);
 }
 
+// Add a compiled function for the computation of the interpolating polynomial
+// of order 'order' for the distance square between two objects over a time interval.
+//
+// The evolution in time of the objects' positions is expressed via time-dependent polynomials
+// of order 'order'. The interpolation interval is [0, par[0]].
+void add_dist2_interp(heyoka::llvm_state &s, std::uint32_t order)
+{
+    namespace hy = heyoka;
+    using safe_uint32_t = boost::safe_numerics::safe<std::uint32_t>;
+
+    // Safely compute order + 1.
+    const auto op1 = static_cast<std::uint32_t>(safe_uint32_t(order) + 1);
+
+    // Create the expressions representing the input polynomial coefficients.
+    // NOTE: the polynomials are expected to be stored in column-major format.
+    std::vector<hy::expression> cfs;
+    for (std::uint32_t i = 0; i < op1; ++i) {
+        for (const char *s : {"c_{}_xi", "c_{}_yi", "c_{}_zi", "c_{}_xj", "c_{}_yj", "c_{}_zj"}) {
+            cfs.emplace_back(fmt::format(fmt::runtime(s), i));
+        }
+    }
+
+    // Create the expressions for the evaluation points. These are the Chebyshev nodes
+    // rescaled to the [0, par[0]] interval.
+    std::vector<hy::expression> eval_points;
+    for (std::uint32_t i = 0; i < op1; ++i) {
+        eval_points.push_back(
+            (std::cos((2. * i + 1.) / (2. * static_cast<std::uint32_t>(op1)) * boost::math::constants::pi<double>())
+             + 1.)
+            / 2. * hy::par[0]);
+    }
+
+    // Compute the distance square at the evaluation points.
+    std::vector<hy::expression> dist2;
+    for (std::uint32_t i = 0; i < op1; ++i) {
+        // Init the array of positions at the current evaluation point.
+        std::array<hy::expression, 6> cur_pos;
+
+        // Compute the positions for the current evaluation point.
+        for (std::uint32_t j = 0; j < 6u; ++j) {
+            cur_pos[j] = horner_eval(cfs.data() + j, order, eval_points[i],
+                                     // NOTE: it is important that we cast the stride argument to decltype(cfs.size()),
+                                     // this ensures no overflow when computing indices in horner_eval().
+                                     static_cast<decltype(cfs.size())>(6));
+        }
+
+        // Add the distance square for the current evaluation point.
+        const auto &[xi, yi, zi, xj, yj, zj] = cur_pos;
+        dist2.push_back(hy::sum({pow(xi - xj, 2.), pow(yi - yj, 2.), pow(zi - zj, 2.)}));
+    }
+
+    // Interpolate.
+    const auto interp_res = vm_interp(order, std::move(eval_points), std::move(dist2));
+
+    // Add the compiled function.
+    heyoka::add_cfunc<double>(s, "dist2_interp", interp_res.second, cfs);
+}
+
 } // namespace
 
 // NOTE: consider experimenting with, e.g., slp vectorization here.
@@ -460,24 +417,24 @@ conj_jit_data::conj_jit_data(std::uint32_t order)
     // Add the compiled functions.
     auto *fp_t = hy::detail::to_internal_llvm_type<double>(state);
     detail::add_poly_translator_a6(state, order);
-    detail::add_poly_ssdiff3_cfunc(state, order);
     hy::detail::llvm_add_fex_check(state, fp_t, order, 1);
     hy::detail::llvm_add_poly_rtscc(state, fp_t, order, 1);
     detail::add_aabb_cs_func(state, order);
     detail::add_cs_enc_func(state, order);
+    detail::add_dist2_interp(state, order);
 
     // Compile.
     state.compile();
 
     // Lookup.
     pta6_cfunc = reinterpret_cast<decltype(pta6_cfunc)>(state.jit_lookup("pta6_cfunc"));
-    pssdiff3_cfunc = reinterpret_cast<decltype(pssdiff3_cfunc)>(state.jit_lookup("ssdiff3_cfunc"));
     fex_check = reinterpret_cast<decltype(fex_check)>(state.jit_lookup("fex_check"));
     rtscc = reinterpret_cast<decltype(rtscc)>(state.jit_lookup("poly_rtscc"));
     // NOTE: this is implicitly added by llvm_add_poly_rtscc().
     pt1 = reinterpret_cast<decltype(pt1)>(state.jit_lookup("poly_translate_1"));
     aabb_cs_cfunc = reinterpret_cast<decltype(aabb_cs_cfunc)>(state.jit_lookup("aabb_cs"));
     cs_enc_func = reinterpret_cast<decltype(cs_enc_func)>(state.jit_lookup("cs_enc"));
+    dist2_interp_func = reinterpret_cast<decltype(dist2_interp_func)>(state.jit_lookup("dist2_interp"));
 }
 
 conj_jit_data::~conj_jit_data() = default;
