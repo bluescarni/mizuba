@@ -366,8 +366,8 @@ void add_dist2_interp(heyoka::llvm_state &s, std::uint32_t order)
     // NOTE: the polynomials are expected to be stored in column-major format.
     std::vector<hy::expression> cfs;
     for (std::uint32_t i = 0; i < op1; ++i) {
-        for (const char *s : {"c_{}_xi", "c_{}_yi", "c_{}_zi", "c_{}_xj", "c_{}_yj", "c_{}_zj"}) {
-            cfs.emplace_back(fmt::format(fmt::runtime(s), i));
+        for (const char *fmt : {"c_{}_xi", "c_{}_yi", "c_{}_zi", "c_{}_xj", "c_{}_yj", "c_{}_zj"}) {
+            cfs.emplace_back(fmt::format(fmt::runtime(fmt), i));
         }
     }
 
