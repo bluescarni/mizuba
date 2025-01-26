@@ -168,7 +168,10 @@ void build_tplts(auto &ta_kepler_tplt, auto &sgp4_prop_tplt, auto &jit_state_tpl
                                               hy::kw::positions = {0., 0., 0.});
 
     // Build the integrator.
-    ta_kepler_tplt.emplace(dyn);
+    // NOTE: set a tolerance higher than the epsilon here, on account that polynomial
+    // interpolation is expected to produce better approximations than Taylor series
+    // and thus should require a lower polynomial order.
+    ta_kepler_tplt.emplace(dyn, hy::kw::tol = 1e-14);
 
     // Fetch the Taylor order.
     const auto order = ta_kepler_tplt->get_order();
