@@ -295,7 +295,6 @@ class conjunctions_test_case(_ut.TestCase):
         from .. import (
             conjunctions as conj,
             polyjectory,
-            make_sgp4_conjunctions_df,
             otype,
         )
         from ._planar_circ import _planar_circ_tcs, _planar_circ_times
@@ -718,7 +717,6 @@ class conjunctions_test_case(_ut.TestCase):
         from .. import (
             make_sgp4_polyjectory,
             conjunctions as conj,
-            make_sgp4_conjunctions_df,
             otype,
         )
         import numpy as np
