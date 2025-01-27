@@ -425,7 +425,7 @@ class conjunctions_test_case(_ut.TestCase):
         # Build the polyjectory.
         pt = make_sgp4_polyjectory(
             sat_list, begin_jd, begin_jd + 0.25, exit_radius=12000.0
-        )
+        )[0]
         tot_nobjs = pt.nobjs
 
         # Build the conjunctions object. Keep a small threshold not to interfere
@@ -727,7 +727,7 @@ class conjunctions_test_case(_ut.TestCase):
 
         # Build the polyjectory. Run it for only 15 minutes.
         duration = 15.0 / 1440.0
-        pt = make_sgp4_polyjectory(sat_list, begin_jd, begin_jd + duration)
+        pt = make_sgp4_polyjectory(sat_list, begin_jd, begin_jd + duration)[0]
 
         # Build a list of object types that excludes two satellites
         # that we know undergo a conjunction.

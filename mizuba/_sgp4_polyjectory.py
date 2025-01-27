@@ -18,12 +18,33 @@
 from __future__ import annotations
 from .core import polyjectory, gpe_dtype
 import polars as pl
-from typing import Union
+from typing import Union, Tuple
 import numpy as np
+from enum import IntEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from sgp4.api import Satrec
+
+
+class sgp4_pj_status(IntEnum):
+    # NOTE: the first few entries correspond to errors
+    # produced by the sgp4 propagators.
+    OK = 0
+    SGP4_ERROR_MEAN_ECC = 1
+    SGP4_ERROR_MEAN_MEAN_MOTION = 2
+    SGP4_ERROR_PERT_ECC = 3
+    SGP4_ERROR_SEMI_LATUS_RECTUM = 4
+    # NOTE: here we are skipping sgp4 error code 5, which should not be in use
+    # any more in the latest sgp4 implementations.
+    SGP4_DECAY = 6
+    # NOTE: the following are our own error codes.
+    ERROR_NONFINITE = 10
+    REENTRY = 11
+    EXIT = 12
+    ERROR_SMALL_STEP = 13
+    ERROR_INTERPOLATION = 14
+
 
 # The fields expected to be in a dataframe
 # containing GPEs.
@@ -106,7 +127,7 @@ def make_sgp4_polyjectory(
     jd_end: float,
     reentry_radius: float = 0.0,
     exit_radius: float = float("inf"),
-) -> polyjectory:
+) -> Tuple[polyjectory, pl.DataFrame]:
     # NOTE: remember to document the ordering requirement on gpes.
     from .core import _make_sgp4_polyjectory, gpe_dtype
     import polars as pl
@@ -170,9 +191,18 @@ def make_sgp4_polyjectory(
         gpes_arr = gpes
 
     # Invoke the C++ function.
-    return _make_sgp4_polyjectory(
+    ret = _make_sgp4_polyjectory(
         gpes_arr, jd_begin, jd_end, reentry_radius, exit_radius
     )
 
+    # Prepare the output dataframe.
+    # NOTE: we apply np.unique() because gpes_arr may contain
+    # multiple GPEs for a single satellite.
+    df = pl.DataFrame(
+        {"norad_id": np.unique(gpes_arr["norad_id"])[0], "status": ret.status}
+    )
 
-del polyjectory, pl, gpe_dtype, Union, np, TYPE_CHECKING, annotations
+    return ret, df
+
+
+del polyjectory, pl, gpe_dtype, Union, np, TYPE_CHECKING, annotations, IntEnum, Tuple

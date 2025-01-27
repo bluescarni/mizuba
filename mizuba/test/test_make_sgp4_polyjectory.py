@@ -92,7 +92,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         # Build the polyjectory.
         jd_begin = 2460669.0
-        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1)
+        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1)[0]
 
         # Check that the initial time of the trajectory is exactly zero.
         self.assertEqual(pj[0][1][0], 0.0)
@@ -139,7 +139,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         # Build the polyjectory.
         jd_begin = 2460669.0
-        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1)
+        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1)[0]
 
         # Check that the initial time of the trajectory is exactly zero.
         self.assertEqual(pj[0][1][0], 0.0)
@@ -185,7 +185,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         # Build the polyjectory.
         jd_begin = 2460666.5
-        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 10)
+        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 10)[0]
 
         # Check that the initial time of the trajectory is exactly zero.
         self.assertEqual(pj[0][1][0], 0.0)
@@ -227,7 +227,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         # Build the polyjectory.
         jd_begin = 2460669.0
-        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1)
+        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1)[0]
 
         # Check that the initial times of the trajectories are exactly zero.
         for _, tm, _ in pj:
@@ -281,7 +281,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         for jd_begin, jd_end in jd_ranges:
             # Build the polyjectory.
-            pj = make_sgp4_polyjectory(gpes, jd_begin, jd_end)
+            pj = make_sgp4_polyjectory(gpes, jd_begin, jd_end)[0]
 
             # Check that the initial time of the trajectory is exactly zero.
             self.assertEqual(pj[0][1][0], 0.0)
@@ -383,7 +383,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         # Build the polyjectory up to 10 days in the future,
         # well beyond year's end.
         jd_begin = sat.jdsatepoch + sat.jdsatepochF
-        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 10)
+        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 10)[0]
 
         # Check that the initial time of the trajectory is exactly zero.
         self.assertEqual(pj[0][1][0], 0.0)
@@ -447,7 +447,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         # Wrong dimensionality for the array of gpes.
         arr = np.zeros((1, 1), dtype=gpe_dtype)
         with self.assertRaises(ValueError) as cm:
-            make_sgp4_polyjectory(arr, 0.0, 1.0)
+            make_sgp4_polyjectory(arr, 0.0, 1.0)[0]
         self.assertTrue(
             "The array of gpes passed to make_sgp4_polyjectory() must have 1 dimension, but the number of dimensions is 2 instead"
             in str(cm.exception)
@@ -455,7 +455,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         arr = np.zeros((), dtype=gpe_dtype)
         with self.assertRaises(ValueError) as cm:
-            make_sgp4_polyjectory(arr, 0.0, 1.0)
+            make_sgp4_polyjectory(arr, 0.0, 1.0)[0]
         self.assertTrue(
             "The array of gpes passed to make_sgp4_polyjectory() must have 1 dimension, but the number of dimensions is 0 instead"
             in str(cm.exception)
@@ -464,7 +464,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         # Non-contiguous array.
         arr = np.zeros((10,), dtype=gpe_dtype)
         with self.assertRaises(ValueError) as cm:
-            make_sgp4_polyjectory(arr[::2], 0.0, 1.0)
+            make_sgp4_polyjectory(arr[::2], 0.0, 1.0)[0]
         self.assertTrue(
             "The array of gpes passed to make_sgp4_polyjectory() must be C contiguous and properly aligned"
             in str(cm.exception)
@@ -473,7 +473,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         # Empty array.
         arr = np.zeros((0,), dtype=gpe_dtype)
         with self.assertRaises(ValueError) as cm:
-            make_sgp4_polyjectory(arr, 0.0, 1.0)
+            make_sgp4_polyjectory(arr, 0.0, 1.0)[0]
         self.assertTrue(
             "make_sgp4_polyjectory() requires a non-empty array of GPEs in input"
             in str(cm.exception)
@@ -485,7 +485,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         arr["epoch_jd1"][:] = 123
         arr["epoch_jd2"][:] = 1
         with self.assertRaises(ValueError) as cm:
-            make_sgp4_polyjectory(arr, 0.0, 1.0)
+            make_sgp4_polyjectory(arr, 0.0, 1.0)[0]
         self.assertTrue(
             "Two GPEs with identical NORAD ID 1 and epoch (123, 1) were identified by make_sgp4_polyjectory() - this is not allowed"
             in str(cm.exception)
@@ -500,7 +500,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         arr["epoch_jd1"][1] = 123
         arr["epoch_jd2"][1] = 1
         with self.assertRaises(ValueError) as cm:
-            make_sgp4_polyjectory(arr, 0.0, 1.0)
+            make_sgp4_polyjectory(arr, 0.0, 1.0)[0]
         self.assertTrue(
             "The set of GPEs passed to make_sgp4_polyjectory() is not sorted correctly: it must be ordered first by NORAD ID and then by epoch"
             in str(cm.exception)
@@ -514,7 +514,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         arr["epoch_jd1"][1] = 122
         arr["epoch_jd2"][1] = 1
         with self.assertRaises(ValueError) as cm:
-            make_sgp4_polyjectory(arr, 0.0, 1.0)
+            make_sgp4_polyjectory(arr, 0.0, 1.0)[0]
         self.assertTrue(
             "The set of GPEs passed to make_sgp4_polyjectory() is not sorted correctly: it must be ordered first by NORAD ID and then by epoch"
             in str(cm.exception)
@@ -523,36 +523,36 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         # Invalid polyjectory dates.
         arr = np.zeros((2,), dtype=gpe_dtype)
         with self.assertRaises(ValueError) as cm:
-            make_sgp4_polyjectory(arr, float("inf"), 1.0)
+            make_sgp4_polyjectory(arr, float("inf"), 1.0)[0]
         self.assertTrue("Invalid Julian date interval " in str(cm.exception))
         with self.assertRaises(ValueError) as cm:
-            make_sgp4_polyjectory(arr, 1.0, float("nan"))
+            make_sgp4_polyjectory(arr, 1.0, float("nan"))[0]
         self.assertTrue("Invalid Julian date interval " in str(cm.exception))
         with self.assertRaises(ValueError) as cm:
-            make_sgp4_polyjectory(arr, 1.0, 1.0)
+            make_sgp4_polyjectory(arr, 1.0, 1.0)[0]
         self.assertTrue("Invalid Julian date interval " in str(cm.exception))
         with self.assertRaises(ValueError) as cm:
-            make_sgp4_polyjectory(arr, 2.0, 1.0)
+            make_sgp4_polyjectory(arr, 2.0, 1.0)[0]
         self.assertTrue("Invalid Julian date interval " in str(cm.exception))
 
         # Invalid reentry/exit radiuses.
         with self.assertRaises(ValueError) as cm:
-            make_sgp4_polyjectory(arr, 0.0, 1.0, reentry_radius=float("nan"))
+            make_sgp4_polyjectory(arr, 0.0, 1.0, reentry_radius=float("nan"))[0]
         self.assertTrue("The reentry/exit radiuses cannot be NaN" in str(cm.exception))
 
         with self.assertRaises(ValueError) as cm:
-            make_sgp4_polyjectory(arr, 0.0, 1.0, exit_radius=float("nan"))
+            make_sgp4_polyjectory(arr, 0.0, 1.0, exit_radius=float("nan"))[0]
         self.assertTrue("The reentry/exit radiuses cannot be NaN" in str(cm.exception))
 
         with self.assertRaises(ValueError) as cm:
-            make_sgp4_polyjectory(arr, 0.0, 1.0, reentry_radius=2, exit_radius=2)
+            make_sgp4_polyjectory(arr, 0.0, 1.0, reentry_radius=2, exit_radius=2)[0]
         self.assertTrue(
             "The reentry radius (2) must be less than the exit radius (2)"
             in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
-            make_sgp4_polyjectory(arr, 0.0, 1.0, reentry_radius=3, exit_radius=2)
+            make_sgp4_polyjectory(arr, 0.0, 1.0, reentry_radius=3, exit_radius=2)[0]
         self.assertTrue(
             "The reentry radius (3) must be less than the exit radius (2)"
             in str(cm.exception)
@@ -560,14 +560,14 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         # Wrong type for the floating-point arguments.
         with self.assertRaises(TypeError) as cm:
-            make_sgp4_polyjectory(arr, [], 1.0, reentry_radius=3, exit_radius=2)
+            make_sgp4_polyjectory(arr, [], 1.0, reentry_radius=3, exit_radius=2)[0]
         self.assertTrue(
             "The jd_begin, jd_end, reentry_radius and exit_radius arguments to make_sgp4_polyjectory() must all be floats or ints"
             in str(cm.exception)
         )
 
         with self.assertRaises(TypeError) as cm:
-            make_sgp4_polyjectory(arr, 0, 1.0, reentry_radius=3, exit_radius=[])
+            make_sgp4_polyjectory(arr, 0, 1.0, reentry_radius=3, exit_radius=[])[0]
         self.assertTrue(
             "The jd_begin, jd_end, reentry_radius and exit_radius arguments to make_sgp4_polyjectory() must all be floats or ints"
             in str(cm.exception)
@@ -575,7 +575,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         # Wrong type of the gpes argument.
         with self.assertRaises(TypeError) as cm:
-            make_sgp4_polyjectory(1.0, 0, 1.0)
+            make_sgp4_polyjectory(1.0, 0, 1.0)[0]
         self.assertTrue(
             "The 'gpes' argument to make_sgp4_polyjectory() must be either a polars dataframe, a NumPy array or a list of Satrec objects, but it is of type"
             in str(cm.exception)
@@ -583,7 +583,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         # Wrong dtype for the gpes argument,
         with self.assertRaises(TypeError) as cm:
-            make_sgp4_polyjectory(np.zeros((1,)), 0, 1.0)
+            make_sgp4_polyjectory(np.zeros((1,)), 0, 1.0)[0]
         self.assertTrue(
             "When passing the 'gpes' argument to make_sgp4_polyjectory() as a NumPy array, the dtype must be 'gpe_dtype', but it is '"
             in str(cm.exception)
@@ -594,7 +594,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         # Wrong gpes list argument.
         with self.assertRaises(TypeError) as cm:
-            make_sgp4_polyjectory([1, 2, 3], 0, 1.0)
+            make_sgp4_polyjectory([1, 2, 3], 0, 1.0)[0]
         self.assertTrue(
             "When passing the 'gpes' argument to make_sgp4_polyjectory() as a list, all elements of the list must be Satrec instances"
             in str(cm.exception)
@@ -629,7 +629,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         jd_begin = tm.jd1
 
         # Create the polyjectory.
-        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 5.0)
+        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 5.0)[0]
 
         # Fetch the poly coefficients and the end times.
         cfs, end_times, _ = pj[0]
@@ -677,7 +677,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         jd_begin = tm.jd1
 
         # Build the polyjectory, propagating only for 10 seconds.
-        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 10 / 86400.0)
+        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 10 / 86400.0)[0]
 
         # Check that all trajectories without data have a nonzero status.
         for cfs, times, status in pj:
@@ -705,13 +705,13 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         # Build the first polyjectory.
         jd_begin = 2460669.0
-        pj1 = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1)
+        pj1 = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1)[0]
 
         # Build a satrec from the satellite.
         sat = Satrec.twoline2rv(gpes["tle_line1"][0], gpes["tle_line2"][0])
 
         # Build the second polyjectory.
-        pj2 = make_sgp4_polyjectory([sat], jd_begin, jd_begin + 1)
+        pj2 = make_sgp4_polyjectory([sat], jd_begin, jd_begin + 1)[0]
 
         # Fetch the content of the polyjectories.
         cfs1, times1, status1 = pj1[0]
@@ -737,11 +737,11 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         sat_dec = Satrec.twoline2rv(_s_dec, _t_dec)
         pj = make_sgp4_polyjectory(
             [sat, sat_dec], 2460496.5 + 1.0 / 32, 2460496.5 + 7, exit_radius=8000.0
-        )
+        )[0]
         self.assertTrue(np.all(pj.status == [12, 0]))
 
         sat = Satrec.twoline2rv(_s_dec, _t_dec)
-        pj = make_sgp4_polyjectory([sat], 2460496.5 + 30.0, 2460496.5 + 30.0 + 7)
+        pj = make_sgp4_polyjectory([sat], 2460496.5 + 30.0, 2460496.5 + 30.0 + 7)[0]
         self.assertTrue(np.all(pj.status == [6]))
 
     def test_strack(self):
@@ -775,7 +775,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             gpes = pl.read_parquet(cur_dir / fname)
 
             # Build the polyjectory.
-            pj = make_sgp4_polyjectory(gpes, begin_jd, begin_jd + prop_time)
+            pj = make_sgp4_polyjectory(gpes, begin_jd, begin_jd + prop_time)[0]
 
             # Check the presence of the bisection limit error code.
             self.assertTrue(np.any(pj.status == 14))

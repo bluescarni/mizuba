@@ -24,7 +24,7 @@ from .core import *
 del core
 
 from . import test, data_sources
-from ._sgp4_polyjectory import make_sgp4_polyjectory
+from ._sgp4_polyjectory import make_sgp4_polyjectory, sgp4_pj_status
 
 from enum import IntEnum
 
@@ -51,24 +51,6 @@ def _astropy_trigger_utc_tai():
 _astropy_trigger_utc_tai()
 
 del _astropy_trigger_utc_tai
-
-
-class sgp4_pj_status(IntEnum):
-    # NOTE: the numbering here is set up to match the status
-    # codes coming out of the sgp4 polyjectory ctor.
-    OK = 0
-    REENTRY = 1
-    EXIT = 2
-    NONFINITE_STATE = 3
-    DEEP_SPACE = 4
-    DUPLICATE = 5
-    SGP4_ERROR_MEAN_ECC = 11
-    SGP4_ERROR_MEAN_MEAN_MOTION = 12
-    SGP4_ERROR_PERT_ECC = 13
-    SGP4_ERROR_SEMI_LATUS_RECTUM = 14
-    # NOTE: here we are skipping SGP4 error code 5, which should not be in use
-    # any more in the latest SGP4 implementations.
-    SGP4_DECAY = 16
 
 
 class otype(IntEnum):
