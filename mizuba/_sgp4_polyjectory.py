@@ -127,7 +127,7 @@ def make_sgp4_polyjectory(
     jd_end: float,
     reentry_radius: float = 0.0,
     exit_radius: float = float("inf"),
-) -> Tuple[polyjectory, pl.DataFrame]:
+) -> Tuple[polyjectory, np.ndarray[np.uint64]]:
     # NOTE: remember to document the ordering requirement on gpes.
     from .core import _make_sgp4_polyjectory, gpe_dtype
     import polars as pl
