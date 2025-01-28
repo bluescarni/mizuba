@@ -93,8 +93,7 @@ bool run_poly_root_finding(const double *, std::uint32_t, double, isol_t &, wlis
                            conj_jit_data::rtscc_t, conj_jit_data::pt1_t, std::uint32_t, std::uint32_t, int,
                            std::vector<std::tuple<std::uint32_t, std::uint32_t, double>> &, poly_cache &);
 
-std::pair<std::vector<heyoka::expression>, std::vector<heyoka::expression>>
-vm_interp(std::uint32_t, std::vector<heyoka::expression> = {}, std::vector<heyoka::expression> = {});
+std::pair<std::vector<heyoka::expression>, std::vector<heyoka::expression>> vm_interp(std::uint32_t);
 
 } // namespace mizuba::detail
 

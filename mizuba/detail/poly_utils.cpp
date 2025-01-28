@@ -462,34 +462,24 @@ bool run_poly_root_finding(const double *poly, std::uint32_t order, double rf_in
 //
 // https://www.ams.org/journals/mcom/1970-24-112/S0025-5718-1970-0290541-1/S0025-5718-1970-0290541-1.pdf
 //
-// The mandatory input argument is the polynomial interpolation order. The other two (optional) arguments
-// are the expressions for the evaluation points and the evaluation values. If not provided, default
-// names will be used.
-std::pair<std::vector<heyoka::expression>, std::vector<heyoka::expression>>
-vm_interp(std::uint32_t order, std::vector<heyoka::expression> alpha_, std::vector<heyoka::expression> f_)
+// The mandatory input argument is the polynomial interpolation order.
+std::pair<std::vector<heyoka::expression>, std::vector<heyoka::expression>> vm_interp(std::uint32_t order)
 {
     namespace hy = heyoka;
 
     assert(order >= 1u);
-    assert(alpha_.empty() == f_.empty());
 
     // Safely compute order + 1.
     const auto op1 = static_cast<std::uint32_t>(boost::safe_numerics::safe<std::uint32_t>(order) + 1u);
 
-    // Setup the evaluation points and the evaluation values.
+    // Construct the expressions representing
+    // the evaluation points and the evaluation values.
     std::vector<hy::expression> alpha, f;
-    if (alpha_.empty()) {
-        alpha.reserve(op1);
-        f.reserve(op1);
-        for (std::uint32_t i = 0; i < op1; ++i) {
-            alpha.emplace_back(fmt::format("alpha_{}", i));
-            f.emplace_back(fmt::format("f_{}", i));
-        }
-    } else {
-        alpha = std::move(alpha_);
-        f = std::move(f_);
-        assert(alpha.size() == f.size());
-        assert(alpha.size() == op1);
+    alpha.reserve(op1);
+    f.reserve(op1);
+    for (std::uint32_t i = 0; i < op1; ++i) {
+        alpha.emplace_back(fmt::format("alpha_{}", i));
+        f.emplace_back(fmt::format("f_{}", i));
     }
 
     // Construct the c vectors.
