@@ -41,8 +41,9 @@ def download_gpes_celestrak() -> pl.DataFrame:
     with ThreadPoolExecutor() as executor:
         ret = executor.map(_fetch_supgp_celestrak, _supgp_group_names)
 
-    # Concatenate the datasets into a single dataframe.
-    gpes = pl.concat(ret)
+    # Concatenate the datasets into a single dataframe,
+    # skipping any None that may be present.
+    gpes = pl.concat(filter(lambda df: not df is None, ret))
 
     # Pick the GPEs with the lowest rms.
     gpes = _supgp_pick_lowest_rms(gpes)
@@ -105,8 +106,11 @@ def download_all_gpes(
                 for gname in _supgp_group_names
             ]
 
-            # Concatenate the datasets into a single dataframe.
-            gpe_ct = pl.concat(fut.result() for fut in gpe_ct_list)
+            # Concatenate the datasets into a single dataframe,
+            # skipping any None that may be present.
+            gpe_ct = pl.concat(
+                filter(lambda df: not df is None, (fut.result() for fut in gpe_ct_list))
+            )
 
             # Pick the GPEs with the lowest rms.
             gpe_ct = _supgp_pick_lowest_rms(gpe_ct)

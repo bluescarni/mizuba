@@ -16,6 +16,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import polars as pl
+from typing import Optional
 
 
 def _reformat_supgp_celestrak(gpes: pl.DataFrame) -> pl.DataFrame:
@@ -84,12 +85,16 @@ def _reformat_supgp_celestrak(gpes: pl.DataFrame) -> pl.DataFrame:
     return ret
 
 
-def _fetch_supgp_celestrak(group_name: str) -> pl.DataFrame:
+def _fetch_supgp_celestrak(group_name: str) -> Optional[pl.DataFrame]:
     # Fetch the supgp data for the group group_name from celestrak.
     import requests as rq
     from io import StringIO
     import polars as pl
     from ._common import _common_validate_gpes, _common_deduplicate_gpes
+    import logging
+
+    # Fetch the logger.
+    logger = logging.getLogger("mizuba")
 
     download_url = rf"https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?FILE={group_name}&FORMAT=json"
     download_response = rq.get(download_url)
@@ -101,7 +106,20 @@ def _fetch_supgp_celestrak(group_name: str) -> pl.DataFrame:
         )
 
     # Parse the gpes into a polars dataframe.
-    gpes = pl.read_json(StringIO(download_response.text))
+    try:
+        gpes = pl.read_json(StringIO(download_response.text))
+    except Exception as e:
+        # NOTE: in case of an invalid group name, we will get an exception here.
+        # Downgrade the exception to a warning and return None instead. The idea
+        # here is that every now and then there may be additions/removals of supgp
+        # groups on celestrak, and if that happens we do not want to produce
+        # a "hard" error.
+        logger.warning(
+            f'Error parsing the data for the celestrak supgp group "{group_name}"',
+            exc_info=True,
+            stack_info=True,
+        )
+        return None
 
     # Validate.
     # NOTE: supgp data may have duplicate norad ids.
@@ -215,4 +233,4 @@ def _supgp_pick_lowest_rms(gpes: pl.DataFrame) -> pl.DataFrame:
     return gpes
 
 
-del pl
+del pl, Optional
