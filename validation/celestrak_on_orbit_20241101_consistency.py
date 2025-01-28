@@ -19,37 +19,63 @@
 # only that the purpose here is to make sure that different conjunction
 # detection intervals return the same conjunctions.
 
+import polars as pl
+from astropy.time import Time
 import numpy as np
-from pathlib import Path
-from sgp4.api import Satrec
-from skyfield.api import EarthSatellite, load
-from sgp4 import omm
+import pathlib
 import mizuba as mz
-from astropy import time
 
-# Load the TLE data.
-ts = load.timescale()
-sats = []
-with open(Path(".") / "data" / "celestrak_on_orbit_20241101.csv") as datafile:
-    for fields in omm.parse_csv(datafile):
-        sat = Satrec()
-        omm.initialize(sat, fields)
-        sats.append(EarthSatellite.from_satrec(sat, ts))
-sats_arr = np.array(sats)
+# Fetch the current directory.
+cur_dir = pathlib.Path(__file__).parent.resolve()
 
-# Define begin/end times for the conjunction screening.
-date_begin = time.Time("2024-11-01 00:00:00", format="iso", scale="utc", precision=9)
-date_end = time.Time("2024-11-08 00:00:00", format="iso", scale="utc", precision=9)
-
-# Build the polyjectory.
-pt, df, mask = mz.sgp4_polyjectory(
-    sats, date_begin.jd, date_end.jd, exit_radius=60000.0
+# Load the original Socrates data.
+on_orbit = pl.read_csv(
+    cur_dir / "data" / "celestrak_on_orbit_20241101.csv",
+    schema_overrides={"MEAN_MOTION_DDOT": pl.Float64},
 )
 
+# Rename the columns.
+rename_map = {
+    "NORAD_CAT_ID": "norad_id",
+    "MEAN_MOTION": "n0",
+    "ECCENTRICITY": "e0",
+    "INCLINATION": "i0",
+    "RA_OF_ASC_NODE": "node0",
+    "ARG_OF_PERICENTER": "omega0",
+    "MEAN_ANOMALY": "m0",
+    "BSTAR": "bstar",
+}
+on_orbit = on_orbit.rename(rename_map)
+
+# Setup the epoch_jd columns.
+utc_dates = Time(on_orbit["EPOCH"], format="isot", scale="utc")
+on_orbit = on_orbit.with_columns(
+    pl.Series(name="epoch_jd1", values=utc_dates.jd1),
+    pl.Series(name="epoch_jd2", values=utc_dates.jd2),
+)
+
+# Change units of measurement.
+deg2rad = 2.0 * np.pi / 360.0
+on_orbit = on_orbit.with_columns(
+    n0=pl.col("n0") * (2.0 * np.pi / 1440.0),
+    i0=pl.col("i0") * deg2rad,
+    node0=pl.col("node0") * deg2rad,
+    omega0=pl.col("omega0") * deg2rad,
+    m0=pl.col("m0") * deg2rad,
+)
+
+# Setup the propagation period.
+date_begin = Time("2024-11-01 00:00:00", format="iso", scale="utc")
+date_end = Time("2024-11-08 00:00:00", format="iso", scale="utc")
+
+# Build the polyjectory.
+mz.set_logger_level_trace()
+pj, norad_ids = mz.make_sgp4_polyjectory(on_orbit, date_begin.jd, date_end.jd)
+
 # Detect the conjunctions using different conjunction intervals.
-cj1 = mz.conjunctions(pt, 5.0, 1.0)
-cj2 = mz.conjunctions(pt, 5.0, 2.0)
-cj3 = mz.conjunctions(pt, 5.0, 3.0)
+cj1 = mz.conjunctions(pj, 5.0, 1.0 / 1440.0)
+cj2 = mz.conjunctions(pj, 5.0, 2.0 / 1440.0)
+cj3 = mz.conjunctions(pj, 5.0, 3.0 / 1440.0)
 
 if len(cj1.conjunctions) != len(cj2.conjunctions):
     raise ValueError(
@@ -76,16 +102,10 @@ if np.any(cj1.conjunctions["j"] != cj3.conjunctions["j"]):
 # Check TCAs.
 nonzero = np.where(cj1.conjunctions["tca"] != 0)
 
-tca_diff = np.abs(
-    (cj1.conjunctions["tca"][nonzero] - cj2.conjunctions["tca"][nonzero])
-    / cj1.conjunctions["tca"][nonzero]
-)
-if np.any(tca_diff > 1e-10):
+tca_diff = np.abs(cj1.conjunctions["tca"][nonzero] - cj2.conjunctions["tca"][nonzero])
+if np.any(tca_diff > 5e-8):
     raise ValueError("Differences detected in the tcas between cj1 and cj2")
 
-tca_diff = np.abs(
-    (cj1.conjunctions["tca"][nonzero] - cj3.conjunctions["tca"][nonzero])
-    / cj1.conjunctions["tca"][nonzero]
-)
-if np.any(tca_diff > 1e-10):
+tca_diff = np.abs(cj1.conjunctions["tca"][nonzero] - cj3.conjunctions["tca"][nonzero])
+if np.any(tca_diff > 5e-8):
     raise ValueError("Differences detected in the tcas between cj1 and cj3")

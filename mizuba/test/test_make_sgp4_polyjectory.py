@@ -200,7 +200,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         # sgp4 python module.
         cfs, end_times, _ = pj[0]
         for i in range(1, len(end_times)):
-            self._compare_sgp4(jd_begin, i, sat, rng, cfs, end_times, 1e-4, 1e-8)
+            self._compare_sgp4(jd_begin, i, sat, rng, cfs, end_times, 1e-6, 1e-10)
 
     def test_multi_gpes(self):
         # Simple test with multiple satellites,
@@ -227,7 +227,10 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         # Build the polyjectory.
         jd_begin = 2460669.0
-        pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1)[0]
+        pj, norad_ids = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1)
+
+        self.assertEqual(pj.nobjs, len(norad_ids))
+        self.assertTrue((gpes["norad_id"].to_numpy() == norad_ids).all())
 
         # Check that the initial times of the trajectories are exactly zero.
         for _, tm, _ in pj:
@@ -281,7 +284,10 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         for jd_begin, jd_end in jd_ranges:
             # Build the polyjectory.
-            pj = make_sgp4_polyjectory(gpes, jd_begin, jd_end)[0]
+            pj, norad_ids = make_sgp4_polyjectory(gpes, jd_begin, jd_end)
+
+            self.assertEqual(len(norad_ids), 1)
+            self.assertEqual(norad_ids[0], 25544)
 
             # Check that the initial time of the trajectory is exactly zero.
             self.assertEqual(pj[0][1][0], 0.0)

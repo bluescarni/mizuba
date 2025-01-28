@@ -195,14 +195,12 @@ def make_sgp4_polyjectory(
         gpes_arr, jd_begin, jd_end, reentry_radius, exit_radius
     )
 
-    # Prepare the output dataframe.
+    # Prepare the output array of norad ids.
     # NOTE: we apply np.unique() because gpes_arr may contain
     # multiple GPEs for a single satellite.
-    df = pl.DataFrame(
-        {"norad_id": np.unique(gpes_arr["norad_id"])[0], "status": ret.status}
-    )
+    norad_ids = np.unique(gpes_arr["norad_id"])
 
-    return ret, df
+    return ret, norad_ids
 
 
 del polyjectory, pl, gpe_dtype, Union, np, TYPE_CHECKING, annotations, IntEnum, Tuple

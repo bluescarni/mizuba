@@ -44,7 +44,7 @@ sat_list = [make_satrec(_) for _ in gpes.iter_rows(named=True)]
 sat_arr = SatrecArray(sat_list)
 
 # Build the polyjectory.
-pj = mz.make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 5.1)
+pj = mz.make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 5.1)[0]
 
 # Setup the sample times.
 N_times = 1000
