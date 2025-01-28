@@ -25,8 +25,8 @@ del core
 
 from . import test, data_sources
 from ._sgp4_polyjectory import make_sgp4_polyjectory, sgp4_pj_status
-
 from enum import IntEnum
+from ._logging import _setup_logger
 
 
 def _astropy_trigger_utc_tai():
@@ -51,6 +51,11 @@ def _astropy_trigger_utc_tai():
 _astropy_trigger_utc_tai()
 
 del _astropy_trigger_utc_tai
+
+# Setup the logger.
+_setup_logger()
+
+del _setup_logger
 
 
 class otype(IntEnum):
