@@ -29,7 +29,7 @@ def _reformat_supgp_celestrak(gpes: pl.DataFrame) -> pl.DataFrame:
     import polars as pl
     from astropy.time import Time
     import numpy as np
-    from ._common import _eft_add_knuth
+    from .._dl_utils import _eft_add_knuth
 
     # Convert the epochs to astropy Time objects.
     apy_tm = Time(gpes["EPOCH"].cast(str), format="isot", scale="utc", precision=9)
@@ -48,16 +48,16 @@ def _reformat_supgp_celestrak(gpes: pl.DataFrame) -> pl.DataFrame:
     # we are constructing a dataframe with the correct types.
     ret = pl.DataFrame(
         {
-            "norad_id": gpes["NORAD_CAT_ID"].cast(int),
+            "norad_id": gpes["NORAD_CAT_ID"].cast(pl.UInt64),
             "cospar_id": gpes["OBJECT_ID"].cast(str),
             "name": gpes["OBJECT_NAME"].cast(str),
             "epoch_jd1": jd1,
             "epoch_jd2": jd2,
             "n0": gpes["MEAN_MOTION"].cast(float) * (2.0 * np.pi / 1440.0),
-            "ecc0": gpes["ECCENTRICITY"].cast(float),
-            "incl0": gpes["INCLINATION"].cast(float) * deg2rad,
-            "argp0": gpes["ARG_OF_PERICENTER"].cast(float) * deg2rad,
+            "e0": gpes["ECCENTRICITY"].cast(float),
+            "i0": gpes["INCLINATION"].cast(float) * deg2rad,
             "node0": gpes["RA_OF_ASC_NODE"].cast(float) * deg2rad,
+            "omega0": gpes["ARG_OF_PERICENTER"].cast(float) * deg2rad,
             "m0": gpes["MEAN_ANOMALY"].cast(float) * deg2rad,
             "bstar": gpes["BSTAR"].cast(float),
             # NOTE: the RMS is stored as a string, which may be empty
@@ -120,6 +120,7 @@ def _fetch_supgp_celestrak(group_name: str) -> pl.DataFrame:
 def _validate_satcat_celestrak(satcat: pl.DataFrame) -> None:
     # Helper to run minimal validation on the satcat downloaded
     # from celestrak.org.
+    import polars as pl
 
     # We need all satellites to have a non-null and unique norad id.
     if not satcat["NORAD_CAT_ID"].is_not_null().all():
@@ -127,7 +128,7 @@ def _validate_satcat_celestrak(satcat: pl.DataFrame) -> None:
             "One or more NULL NORAD IDs detected in the satcat downloaded from"
             " celestrak.org"
         )
-    if not satcat["NORAD_CAT_ID"].cast(int).is_unique().all():
+    if not satcat["NORAD_CAT_ID"].cast(pl.UInt64).is_unique().all():
         raise ValueError(
             "Non-unique NORAD IDs detected in the satcat downloaded from celestrak.org"
         )

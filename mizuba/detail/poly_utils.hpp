@@ -18,9 +18,13 @@
 #ifndef MIZUBA_DETAIL_POLY_UTILS_HPP
 #define MIZUBA_DETAIL_POLY_UTILS_HPP
 
+#include <cassert>
 #include <cstdint>
 #include <tuple>
+#include <utility>
 #include <vector>
+
+#include <heyoka/expression.hpp>
 
 #include "conjunctions_jit.hpp"
 
@@ -32,12 +36,16 @@ namespace mizuba::detail
 // evaluation value is 'x'. T is the type used to compute
 // the evaluation. The polynomial coefficients must be
 // convertible to T. 'it' must be a random-access iterator.
-template <typename It, typename T>
-T horner_eval(It it, std::uint32_t order, const T &x)
+// An optional 'stride' argument can be passed if the polynomial
+// coefficients are not stored consecutively.
+template <typename It, typename T, typename Stride = std::uint32_t>
+T horner_eval(It it, std::uint32_t order, const T &x, Stride stride = 1)
 {
-    auto res = static_cast<T>(it[order]);
+    assert(stride != 0u);
+
+    auto res = static_cast<T>(it[order * stride]);
     for (std::uint32_t o = 1; o <= order; ++o) {
-        res = static_cast<T>(it[order - o]) + res * x;
+        res = static_cast<T>(it[(order - o) * stride]) + res * x;
     }
 
     return res;
@@ -84,6 +92,8 @@ using wlist_t = std::vector<std::tuple<double, double, pwrap>>;
 bool run_poly_root_finding(const double *, std::uint32_t, double, isol_t &, wlist_t &, conj_jit_data::fex_check_t,
                            conj_jit_data::rtscc_t, conj_jit_data::pt1_t, std::uint32_t, std::uint32_t, int,
                            std::vector<std::tuple<std::uint32_t, std::uint32_t, double>> &, poly_cache &);
+
+std::pair<std::vector<heyoka::expression>, std::vector<heyoka::expression>> vm_interp(std::uint32_t);
 
 } // namespace mizuba::detail
 

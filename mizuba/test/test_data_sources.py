@@ -26,60 +26,10 @@ class data_sources_test_case(_ut.TestCase):
             return
 
         from ..data_sources import download_all_gpes, gpes_schema
-        from sgp4.api import Satrec, WGS72
+        from .._sgp4_polyjectory import _make_satrec_from_dict as make_satrec
+        from sgp4.api import Satrec
         import numpy as np
-
-        # Double-length addition using error-free
-        # transformations.
-        def _dl_add(a_hi, a_lo, b_hi, b_lo):
-            from ..data_sources._common import _eft_add_knuth
-
-            def _eft_add_dekker(a, b):
-                x = a + b
-                y = (a - x) + b
-
-                return x, y
-
-            x_hi, y_hi = _eft_add_knuth(a_hi, b_hi)
-            x_lo, y_lo = _eft_add_knuth(a_lo, b_lo)
-
-            u, v = _eft_add_dekker(x_hi, y_hi + x_lo)
-            u, v = _eft_add_dekker(u, v + y_lo)
-
-            return u, v
-
-        # Small helper to construct a Satrec from a row
-        # in the datasets.
-        def make_satrec(row):
-            # NOTE: this is the baseline reference epoch
-            # used by the C++ SGP4 code.
-            jd_sub = 2433281.5
-
-            sat = Satrec()
-            sat.sgp4init(
-                WGS72,
-                "i",
-                row["norad_id"],
-                _dl_add(
-                    # NOTE: we are assuming here that the two
-                    # jd components are already normalised.
-                    row["epoch_jd1"],
-                    row["epoch_jd2"],
-                    -jd_sub,
-                    0.0,
-                )[0],
-                row["bstar"],
-                0.0,
-                0.0,
-                row["ecc0"],
-                row["argp0"],
-                row["incl0"],
-                row["m0"],
-                row["n0"],
-                row["node0"],
-            )
-
-            return sat
+        import polars as pl
 
         # Download the full GPE datasets with and without supgp data.
         gpes = download_all_gpes()
@@ -126,3 +76,18 @@ class data_sources_test_case(_ut.TestCase):
                 self.assertAlmostEqual(
                     getattr(sat1, attr), getattr(sat2, attr), places=15
                 )
+
+        # For the supgp data, we want to make sure that
+        # we reset to null the TLE fields.
+        # NOTE: test is not great, as it relies on the assumption
+        # of segmented ISS data in the supgp dataset.
+        self.assertTrue(
+            gpes.filter(pl.col("name").str.contains(r"ISS.*Segment"))["tle_line1"]
+            .is_null()
+            .all()
+        )
+        self.assertTrue(
+            gpes.filter(pl.col("name").str.contains(r"ISS.*Segment"))["tle_line2"]
+            .is_null()
+            .all()
+        )

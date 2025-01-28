@@ -4,17 +4,25 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/_version.py.in" "${CMAKE_CURRENT_BIN
 # The list of mizuba's Python files.
 set(MIZUBA_PYTHON_FILES
     __init__.py
+    _sgp4_polyjectory.py
+    _dl_utils.py
     test/__init__.py
-    test/_sgp4_test_data_20240705.py
-    test/_sgp4_test_data_20240917.py
-    test/_sgp4_test_data_20241026.py
-    test/test_sgp4_polyjectory.py
     test/test_conjunctions.py
     test/test_boundary_conjunctions.py
     test/_planar_circ.py
     test/test_polyjectory.py
     test/test_heyoka_conjunctions.py
     test/test_data_sources.py
+    test/test_make_sgp4_polyjectory.py
+    test/single_gpe.parquet
+    test/single_gpe_ds.parquet
+    test/multi_gpes.parquet
+    test/iss_gpes.parquet
+    test/syncom_gpe.parquet
+    test/disc_gpe_01.parquet
+    test/full_catalog.parquet
+    test/strack_20240705.parquet
+    test/strack_20240917.parquet
     data_sources/__init__.py
     data_sources/_common.py
     data_sources/_spacetrack.py
@@ -26,7 +34,6 @@ set(_MIZUBA_CORE_SOURCES
     core.cpp
     common_utils.cpp
     polyjectory.cpp
-    sgp4_polyjectory.cpp
     conjunctions.cpp
     detect_conjunctions.cpp
     detect_conjunctions_aabbs.cpp
@@ -34,6 +41,7 @@ set(_MIZUBA_CORE_SOURCES
     detect_conjunctions_bvh.cpp
     detect_conjunctions_broad_phase.cpp
     detect_conjunctions_narrow_phase.cpp
+    make_sgp4_polyjectory.cpp
     logging.cpp
     detail/conjunctions_jit.cpp
     detail/file_utils.cpp
@@ -67,7 +75,7 @@ target_compile_options(core PRIVATE
 )
 set_target_properties(core PROPERTIES CXX_VISIBILITY_PRESET hidden)
 set_target_properties(core PROPERTIES VISIBILITY_INLINES_HIDDEN TRUE)
-target_compile_features(core PRIVATE cxx_std_20)
+target_compile_features(core PRIVATE cxx_std_23)
 set_property(TARGET core PROPERTY CXX_EXTENSIONS NO)
 
 if (MIZUBA_ENABLE_IPO)

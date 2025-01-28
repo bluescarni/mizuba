@@ -98,7 +98,7 @@ def _reformat_gpes_spacetrack(gpes: pl.DataFrame) -> pl.DataFrame:
     import polars as pl
     from astropy.time import Time
     import numpy as np
-    from ._common import _eft_add_knuth
+    from .._dl_utils import _eft_add_knuth
 
     # Convert the epochs to astropy Time objects.
     apy_tm = Time(gpes["EPOCH"].cast(str), format="isot", scale="utc", precision=9)
@@ -117,16 +117,16 @@ def _reformat_gpes_spacetrack(gpes: pl.DataFrame) -> pl.DataFrame:
     # we are constructing a dataframe with the correct types.
     ret = pl.DataFrame(
         {
-            "norad_id": gpes["NORAD_CAT_ID"].cast(int),
+            "norad_id": gpes["NORAD_CAT_ID"].cast(pl.UInt64),
             "cospar_id": gpes["OBJECT_ID"].cast(str),
             "name": gpes["OBJECT_NAME"].cast(str),
             "epoch_jd1": jd1,
             "epoch_jd2": jd2,
             "n0": gpes["MEAN_MOTION"].cast(float) * (2.0 * np.pi / 1440.0),
-            "ecc0": gpes["ECCENTRICITY"].cast(float),
-            "incl0": gpes["INCLINATION"].cast(float) * deg2rad,
-            "argp0": gpes["ARG_OF_PERICENTER"].cast(float) * deg2rad,
+            "e0": gpes["ECCENTRICITY"].cast(float),
+            "i0": gpes["INCLINATION"].cast(float) * deg2rad,
             "node0": gpes["RA_OF_ASC_NODE"].cast(float) * deg2rad,
+            "omega0": gpes["ARG_OF_PERICENTER"].cast(float) * deg2rad,
             "m0": gpes["MEAN_ANOMALY"].cast(float) * deg2rad,
             "bstar": gpes["BSTAR"].cast(float),
             # NOTE: these two are kept for debugging.

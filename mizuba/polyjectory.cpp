@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <tuple>
 #include <utility>
@@ -38,6 +39,7 @@
 #include <fmt/core.h>
 
 #include <oneapi/tbb/blocked_range.h>
+#include <oneapi/tbb/blocked_range2d.h>
 #include <oneapi/tbb/parallel_for.h>
 
 #include "detail/atomic_minmax.hpp"
@@ -431,7 +433,7 @@ polyjectory::polyjectory(ptag,
 // and 'orig_time_file_path'. The original files will be moved into the polyjectory's data dir.
 //
 // The layout of the trajectory data into the data file is described by traj_offsets, from which we
-// also deduce the layout of the time data. 'order' it the polynomial order of the polyjectory,
+// also deduce the layout of the time data. 'order' is the polynomial order of the polyjectory,
 // 'status' the vector of object statuses.
 polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                          const std::filesystem::path &orig_time_file_path, std::uint32_t order,
@@ -715,8 +717,8 @@ polyjectory::operator[](std::size_t i) const
 {
     if (i >= m_impl->m_traj_offset_vec.size()) [[unlikely]] {
         throw std::out_of_range(
-            fmt::format("Invalid object index {} specified - the total number of objects is only {}", i,
-                        m_impl->m_traj_offset_vec.size()));
+            fmt::format("Invalid object index {} specified - the total number of objects in the polyjectory is only {}",
+                        i, m_impl->m_traj_offset_vec.size()));
     }
 
     // Fetch the base pointers.
@@ -777,14 +779,14 @@ namespace
 // Evaluate the state of an object in a polyjectory at time tm.
 //
 // pj is the polyjectory, obj_idx the object's index in the polyjectory, tm the evaluation
-// time (measured from the polyjectory's epoch), out the span into which the result of
+// time (measured from the polyjectory's epoch), out_ptr the pointer into which the result of
 // the evaluation will be written.
 //
 // NOTE: in principle this function could be implemented in a jitted vectorised fashion using scatter/gather
 // primitives and masked load/store/arithmetic operations. This would work best on AVX512 and later,
 // but it could possibly be advantageous also on AVX2 and less. Keep it in mind if we need to squeeze
 // out the best performance from this.
-void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, const auto &out)
+void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, double *out_ptr)
 {
     // Check the desired evaluation time.
     if (!std::isfinite(tm)) [[unlikely]] {
@@ -807,7 +809,7 @@ void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, co
     // then we cannot compute any evaluation for the current object, and we
     // fill up the output with nans instead.
     if (nsteps == 0u || tm < time_span(0) || tm >= time_span(nsteps)) {
-        std::ranges::fill(&out(obj_idx, 0), &out(obj_idx, 0) + 7, std::numeric_limits<double>::quiet_NaN());
+        std::ranges::fill(out_ptr, out_ptr + 7, std::numeric_limits<double>::quiet_NaN());
         return;
     }
 
@@ -843,7 +845,7 @@ void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, co
 
     // Run the polynomial evaluations and write the results into the output span.
     for (auto i = 0u; i < 7u; ++i) {
-        out(obj_idx, i) = detail::horner_eval(&traj_span(step_idx, i, 0), order, h);
+        out_ptr[i] = detail::horner_eval(&traj_span(step_idx, i, 0), order, h);
     }
 }
 
@@ -851,62 +853,202 @@ void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, co
 
 } // namespace detail
 
-void polyjectory::operator()(eval_span_t out, double tm) const
+// Implementation of state_eval(). tm is either a scalar value or a 1D span.
+template <typename Time>
+void polyjectory::state_eval_impl(single_eval_span_t out, Time tm,
+                                  std::optional<dspan_1d<const std::size_t>> selector) const
 {
-    // Cache the number of objects.
-    const auto nobjs = get_nobjs();
+    if (selector) {
+        // Fetch the selector.
+        const auto sel = *selector;
 
-    // Check the out span.
-    // NOTE: this currently cannot trigger because we do not allow the user
-    // to pass an output array. Remove the coverage exclusion tags once we
-    // allow that.
-    // LCOV_EXCL_START
-    if (out.extent(0) != nobjs) [[unlikely]] {
-        throw std::invalid_argument(
-            fmt::format("Invalid output array passed to the call operator of a polyjectory: the "
-                        "number of objects is {} but the size of the first dimension of the array is {} (the two "
-                        "numbers must be equal)",
-                        nobjs, out.extent(0)));
-    }
-    // LCOV_EXCL_STOP
+        // Cache the number of selected objects.
+        const auto n_sel_objs = sel.extent(0);
 
-    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, nobjs), [this, tm, out](const auto &range) {
-        for (auto obj_idx = range.begin(); obj_idx != range.end(); ++obj_idx) {
-            detail::pj_eval_obj_state(*this, obj_idx, tm, out);
+        // Check the out span.
+        if (out.extent(0) != n_sel_objs) [[unlikely]] {
+            throw std::invalid_argument(fmt::format(
+                "Invalid output array passed to state_eval(): the number of objects selected for evaluation is {} but "
+                "the size of the first dimension of the array is {} (the two numbers must be equal)",
+                n_sel_objs, out.extent(0)));
         }
-    });
+
+        if constexpr (!std::same_as<double, Time>) {
+            // Check the time span.
+            if (tm.extent(0) != n_sel_objs) [[unlikely]] {
+                throw std::invalid_argument(fmt::format(
+                    "Invalid time array passed to state_eval(): the number of selected objects is {} but the "
+                    "size of the array is {} (the two numbers must be equal)",
+                    n_sel_objs, tm.extent(0)));
+            }
+        }
+
+        oneapi::tbb::parallel_for(
+            oneapi::tbb::blocked_range<std::size_t>(0, n_sel_objs), [this, tm, out, sel](const auto &range) {
+                for (auto sel_idx = range.begin(); sel_idx != range.end(); ++sel_idx) {
+                    if constexpr (std::same_as<double, Time>) {
+                        detail::pj_eval_obj_state(*this, sel[sel_idx], tm, &out[sel_idx, 0]);
+                    } else {
+                        detail::pj_eval_obj_state(*this, sel[sel_idx], tm[sel_idx], &out[sel_idx, 0]);
+                    }
+                }
+            });
+    } else {
+        // Cache the number of objects.
+        const auto nobjs = get_nobjs();
+
+        // Check the out span.
+        if (out.extent(0) != nobjs) [[unlikely]] {
+            throw std::invalid_argument(
+                fmt::format("Invalid output array passed to state_eval(): the number of objects is {} but the size of "
+                            "the first dimension of the array is {} (the two numbers must be equal)",
+                            nobjs, out.extent(0)));
+        }
+
+        if constexpr (!std::same_as<double, Time>) {
+            // Check the time span.
+            if (tm.extent(0) != nobjs) [[unlikely]] {
+                throw std::invalid_argument(fmt::format(
+                    "Invalid time array passed to state_eval(): the number of objects is {} but the size of "
+                    "the array is {} (the two numbers must be equal)",
+                    nobjs, tm.extent(0)));
+            }
+        }
+
+        oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, nobjs),
+                                  [this, tm, out](const auto &range) {
+                                      for (auto obj_idx = range.begin(); obj_idx != range.end(); ++obj_idx) {
+                                          if constexpr (std::same_as<double, Time>) {
+                                              detail::pj_eval_obj_state(*this, obj_idx, tm, &out[obj_idx, 0]);
+                                          } else {
+                                              detail::pj_eval_obj_state(*this, obj_idx, tm[obj_idx], &out[obj_idx, 0]);
+                                          }
+                                      }
+                                  });
+    }
 }
 
-void polyjectory::operator()(eval_span_t out, dspan_1d<const double> in) const
+void polyjectory::state_eval(single_eval_span_t out, double tm,
+                             std::optional<dspan_1d<const std::size_t>> selector) const
 {
-    // Cache the number of objects.
-    const auto nobjs = get_nobjs();
+    state_eval_impl(out, tm, selector);
+}
 
-    // Check the spans.
-    // NOTE: this currently cannot trigger because we do not allow the user
-    // to pass an output array. Remove the coverage exclusion tags once we
-    // allow that.
-    // LCOV_EXCL_START
-    if (out.extent(0) != nobjs) [[unlikely]] {
-        throw std::invalid_argument(
-            fmt::format("Invalid output array passed to the call operator of a polyjectory: the "
-                        "number of objects is {} but the size of the first dimension of the array is {} (the two "
-                        "numbers must be equal)",
-                        nobjs, out.extent(0)));
-    }
-    // LCOV_EXCL_STOP
-    if (in.extent(0) != nobjs) [[unlikely]] {
-        throw std::invalid_argument(
-            fmt::format("Invalid input array passed to the call operator of a polyjectory: the "
-                        "number of objects is {} but the size of the array is {} (the two numbers must be equal)",
-                        nobjs, in.extent(0)));
-    }
+void polyjectory::state_eval(single_eval_span_t out, dspan_1d<const double> tm_arr,
+                             std::optional<dspan_1d<const std::size_t>> selector) const
+{
+    state_eval_impl(out, tm_arr, selector);
+}
 
-    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, nobjs), [this, in, out](const auto &range) {
-        for (auto obj_idx = range.begin(); obj_idx != range.end(); ++obj_idx) {
-            detail::pj_eval_obj_state(*this, obj_idx, in(obj_idx), out);
+// Implementation of state_meval(). tm is either a 1D or 2D span.
+template <typename Time>
+void polyjectory::state_meval_impl(multi_eval_span_t out, Time tm,
+                                   std::optional<dspan_1d<const std::size_t>> selector) const
+{
+    // Cache the number of time evaluations per object.
+    const auto n_time_evals = [&tm]() {
+        if constexpr (std::same_as<dspan_1d<const double>, Time>) {
+            return tm.extent(0);
+        } else {
+            return tm.extent(1);
         }
-    });
+    }();
+
+    // The second dimension of out must match the number
+    // of time evaluations per object.
+    if (out.extent(1) != n_time_evals) [[unlikely]] {
+        throw std::invalid_argument(fmt::format(
+            "Invalid output array passed to state_meval(): the number of time evaluations per object is {} but the "
+            "size of the second dimension of the array is {} (the two numbers must be equal)",
+            n_time_evals, out.extent(1)));
+    }
+
+    if (selector) {
+        // Cache the selector.
+        const auto sel = *selector;
+
+        // Cache the number of selected objects.
+        const auto n_sel_objs = sel.extent(0);
+
+        // Check the first dimension of the output span.
+        if (out.extent(0) != n_sel_objs) [[unlikely]] {
+            throw std::invalid_argument(
+                fmt::format("Invalid output array passed to state_meval(): the number of selected objects is {} but "
+                            "the size of the first dimension of the array is {} (the two numbers must be equal)",
+                            n_sel_objs, out.extent(0)));
+        }
+
+        if constexpr (std::same_as<dspan_2d<const double>, Time>) {
+            // Check the first dimension of the time array.
+            if (tm.extent(0) != n_sel_objs) [[unlikely]] {
+                throw std::invalid_argument(
+                    fmt::format("Invalid time array passed to state_meval(): the number of selected objects is {} but "
+                                "the size of the first dimension of the array is {} (the two numbers must be equal)",
+                                n_sel_objs, tm.extent(0)));
+            }
+        }
+
+        oneapi::tbb::parallel_for(
+            oneapi::tbb::blocked_range2d<std::size_t>(0, n_sel_objs, 0, n_time_evals),
+            [this, sel, tm, out](const auto &range) {
+                for (auto sel_idx = range.rows().begin(); sel_idx != range.rows().end(); ++sel_idx) {
+                    for (auto tm_idx = range.cols().begin(); tm_idx != range.cols().end(); ++tm_idx) {
+                        if constexpr (std::same_as<dspan_1d<const double>, Time>) {
+                            detail::pj_eval_obj_state(*this, sel[sel_idx], tm[tm_idx], &out[sel_idx, tm_idx, 0]);
+                        } else {
+                            detail::pj_eval_obj_state(*this, sel[sel_idx], tm[sel_idx, tm_idx],
+                                                      &out[sel_idx, tm_idx, 0]);
+                        }
+                    }
+                }
+            });
+    } else {
+        // Cache the number of objects.
+        const auto nobjs = get_nobjs();
+
+        // Check the first dimension of the output span.
+        if (out.extent(0) != nobjs) [[unlikely]] {
+            throw std::invalid_argument(
+                fmt::format("Invalid output array passed to state_meval(): the number of objects is {} but the size of "
+                            "the first dimension of the array is {} (the two numbers must be equal)",
+                            nobjs, out.extent(0)));
+        }
+
+        if constexpr (std::same_as<dspan_2d<const double>, Time>) {
+            // Check the first dimension of the time array.
+            if (tm.extent(0) != nobjs) [[unlikely]] {
+                throw std::invalid_argument(fmt::format(
+                    "Invalid time array passed to state_meval(): the number of objects is {} but the size of "
+                    "the first dimension of the array is {} (the two numbers must be equal)",
+                    nobjs, tm.extent(0)));
+            }
+        }
+
+        oneapi::tbb::parallel_for(
+            oneapi::tbb::blocked_range2d<std::size_t>(0, nobjs, 0, n_time_evals), [this, tm, out](const auto &range) {
+                for (auto obj_idx = range.rows().begin(); obj_idx != range.rows().end(); ++obj_idx) {
+                    for (auto tm_idx = range.cols().begin(); tm_idx != range.cols().end(); ++tm_idx) {
+                        if constexpr (std::same_as<dspan_1d<const double>, Time>) {
+                            detail::pj_eval_obj_state(*this, obj_idx, tm[tm_idx], &out[obj_idx, tm_idx, 0]);
+                        } else {
+                            detail::pj_eval_obj_state(*this, obj_idx, tm[obj_idx, tm_idx], &out[obj_idx, tm_idx, 0]);
+                        }
+                    }
+                }
+            });
+    }
+}
+
+void polyjectory::state_meval(multi_eval_span_t out, dspan_1d<const double> tm_arr,
+                              std::optional<dspan_1d<const std::size_t>> selector) const
+{
+    state_meval_impl(out, tm_arr, selector);
+}
+
+void polyjectory::state_meval(multi_eval_span_t out, dspan_2d<const double> tm_arr,
+                              std::optional<dspan_1d<const std::size_t>> selector) const
+{
+    state_meval_impl(out, tm_arr, selector);
 }
 
 } // namespace mizuba

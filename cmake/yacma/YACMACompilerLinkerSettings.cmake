@@ -210,6 +210,12 @@ if(NOT _YACMACompilerLinkerSettingsRun)
         _YACMA_CHECK_ENABLE_DEBUG_CXX_FLAG(/W4)
         # Treat warnings as errors.
         _YACMA_CHECK_ENABLE_DEBUG_CXX_FLAG(/WX)
+        # Strict conformance mode.
+        _YACMA_CHECK_ENABLE_CXX_FLAG(/permissive-)
+        # Strict preprocessor conformance mode.
+        # NOTE: this seems to cause issues in some
+        # projects, disable for now.
+        # _YACMA_CHECK_ENABLE_CXX_FLAG(/Zc:preprocessor)
     endif()
 
     # Set the cache variables.

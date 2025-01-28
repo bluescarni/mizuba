@@ -25,6 +25,7 @@
 #include <filesystem>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <span>
 #include <tuple>
@@ -140,14 +141,36 @@ public:
     [[nodiscard]] std::tuple<traj_span_t, time_span_t, std::int32_t> operator[](std::size_t) const;
     [[nodiscard]] dspan_1d<const std::int32_t> get_status() const noexcept;
 
-    // Span used to store the output of polyjectory evaluation. The two dimensions here are, respectively:
+    // Span used to store the output of polyjectory evaluation with a *single time* per satellite.
+    // The two dimensions are, respectively:
     //
-    // - the total number of objects,
-    // - the total number of state variables (which is always 7, i.e.,
-    //   the Cartesian state vector + radius).
-    using eval_span_t = heyoka::mdspan<double, heyoka::extents<std::size_t, std::dynamic_extent, 7>>;
-    void operator()(eval_span_t, double) const;
-    void operator()(eval_span_t, dspan_1d<const double>) const;
+    // - the number of objects,
+    // - the 7 state variables.
+    using single_eval_span_t = heyoka::mdspan<double, heyoka::extents<std::size_t, std::dynamic_extent, 7>>;
+
+private:
+    template <typename Time>
+    void state_eval_impl(single_eval_span_t, Time, std::optional<dspan_1d<const std::size_t>>) const;
+
+public:
+    void state_eval(single_eval_span_t, double, std::optional<dspan_1d<const std::size_t>>) const;
+    void state_eval(single_eval_span_t, dspan_1d<const double>, std::optional<dspan_1d<const std::size_t>>) const;
+    // Span used to store the output of polyjectory evaluation with *multiple times* per satellite.
+    // The three dimensions are, respectively:
+    //
+    // - the number of objects,
+    // - the number of time evaluations per object,
+    // - the 7 state variables.
+    using multi_eval_span_t
+        = heyoka::mdspan<double, heyoka::extents<std::size_t, std::dynamic_extent, std::dynamic_extent, 7>>;
+
+private:
+    template <typename Time>
+    void state_meval_impl(multi_eval_span_t, Time, std::optional<dspan_1d<const std::size_t>>) const;
+
+public:
+    void state_meval(multi_eval_span_t, dspan_1d<const double>, std::optional<dspan_1d<const std::size_t>>) const;
+    void state_meval(multi_eval_span_t, dspan_2d<const double>, std::optional<dspan_1d<const std::size_t>>) const;
 };
 
 } // namespace mizuba

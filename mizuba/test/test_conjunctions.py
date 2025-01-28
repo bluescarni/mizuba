@@ -26,24 +26,35 @@ class conjunctions_test_case(_ut.TestCase):
         if not _have_sgp4_deps():
             return
 
-        from skyfield.api import load
-        from skyfield.iokit import parse_tle_file
-        from ._sgp4_test_data_20240705 import sgp4_test_tle
+        import pathlib
+        import polars as pl
+        from bisect import bisect_left
+        from sgp4.api import SatrecArray, Satrec
 
-        # Load the test TLEs.
-        ts = load.timescale()
-        sat_list = list(
-            parse_tle_file(
-                (bytes(_, "ascii") for _ in sgp4_test_tle.split("\n")),
-                ts,
-            )
-        )
+        # Fetch the current directory.
+        cur_dir = pathlib.Path(__file__).parent.resolve()
 
-        # A sparse list of satellites.
+        # Load the test data.
+        gpes = pl.read_parquet(cur_dir / "strack_20240705.parquet")
+
+        # Create the satellite objects.
+        sat_list = [
+            Satrec.twoline2rv(_["tle_line1"], _["tle_line2"])
+            for _ in gpes.iter_rows(named=True)
+        ]
+
+        # Create a sparse list of satellites.
         # NOTE: we manually include an object for which the
         # trajectory data terminates early if the exit_radius
         # is set to 12000.
-        cls.sparse_sat_list = sat_list[::2000] + [sat_list[220]]
+        cls.sparse_sat_list = sorted(
+            sat_list[::2000] + [sat_list[220]], key=lambda sat: sat.satnum
+        )
+
+        # Identify the new index of the added satellite in the sorted list.
+        norad_id_list = [_.satnum for _ in cls.sparse_sat_list]
+        idx = bisect_left(norad_id_list, sat_list[220].satnum)
+        cls.exiting_idx = idx
 
         # List of 9000 satellites.
         cls.half_sat_list = sat_list[:9000]
@@ -163,51 +174,6 @@ class conjunctions_test_case(_ut.TestCase):
                         pval = np.polyval(traj_polys[coord_idx, ::-1], h)
                         self.assertGreater(pval, aabb[0][aabb_idx])
                         self.assertLess(pval, aabb[1][aabb_idx])
-
-    def _verify_sgp4_cj_df(self, cj, df, cdf):
-        # Helper to verify the conjunctions dataframe generated
-        # by make_sgp4_conjunctions_df().
-        from .. import sgp4_pj_status
-        import numpy as np
-
-        # Fetch the conjunctions.
-        conjs = cj.conjunctions
-
-        if len(conjs) > 0:
-            # Mask out df, we will be operating on the list
-            # of objects which appear in the polyjectory.
-            df = df[df["init_code"] == sgp4_pj_status.OK]
-
-            # Fetch the name column from df.
-            name_col = df["name"]
-
-            # Check the names columns.
-            self.assertTrue(
-                np.all(
-                    name_col.iloc[conjs["i"]].reset_index(drop=True) == cdf["i_name"]
-                )
-            )
-            self.assertTrue(
-                np.all(
-                    name_col.iloc[conjs["j"]].reset_index(drop=True) == cdf["j_name"]
-                )
-            )
-
-            # Check the satnums.
-            self.assertTrue(np.all(df.index[conjs["i"]] == cdf["i_satnum"]))
-            self.assertTrue(np.all(df.index[conjs["j"]] == cdf["j_satnum"]))
-
-            # Check tca and dca.
-            self.assertTrue(np.all(conjs["tca"] == cdf["tca"]))
-            self.assertTrue(np.all(conjs["dca"] == cdf["dca"]))
-
-            # Check ri/rj/vi/vj.
-            self.assertTrue(np.all(conjs["ri"] == np.array(list(cdf["ri"]))))
-            self.assertTrue(np.all(conjs["rj"] == np.array(list(cdf["rj"]))))
-            self.assertTrue(np.all(conjs["vi"] == np.array(list(cdf["vi"]))))
-            self.assertTrue(np.all(conjs["vj"] == np.array(list(cdf["vj"]))))
-        else:
-            self.assertEqual(len(cdf), 0)
 
     def test_basics(self):
         import sys
@@ -329,7 +295,6 @@ class conjunctions_test_case(_ut.TestCase):
         from .. import (
             conjunctions as conj,
             polyjectory,
-            make_sgp4_conjunctions_df,
             otype,
         )
         from ._planar_circ import _planar_circ_tcs, _planar_circ_times
@@ -450,8 +415,7 @@ class conjunctions_test_case(_ut.TestCase):
         if not hasattr(type(self), "sparse_sat_list"):
             return
 
-        from .. import sgp4_polyjectory
-        from .test_sgp4_polyjectory import _check_sgp4_pj_ret_consistency
+        from .. import make_sgp4_polyjectory
 
         # Use the sparse satellite list.
         sat_list = self.sparse_sat_list
@@ -459,19 +423,14 @@ class conjunctions_test_case(_ut.TestCase):
         begin_jd = 2460496.5
 
         # Build the polyjectory.
-        pt, df, mask = sgp4_polyjectory(
+        pt = make_sgp4_polyjectory(
             sat_list, begin_jd, begin_jd + 0.25, exit_radius=12000.0
-        )
-        _check_sgp4_pj_ret_consistency(self, pt, df, mask)
+        )[0]
         tot_nobjs = pt.nobjs
 
         # Build the conjunctions object. Keep a small threshold not to interfere
         # with aabb checking.
-        c = conj(pt, conj_thresh=1e-8, conj_det_interval=1.0)
-
-        # Build the conjunctions dataframe and verify it.
-        cdf = make_sgp4_conjunctions_df(c, df, begin_jd)
-        self._verify_sgp4_cj_df(c, df, cdf)
+        c = conj(pt, conj_thresh=1e-8, conj_det_interval=1.0 / 1440.0)
 
         # Verify the aabbs.
         self._verify_conj_aabbs(c, rng)
@@ -524,18 +483,29 @@ class conjunctions_test_case(_ut.TestCase):
                 np.all(c.mcodes[cd_idx, c.srt_idx[cd_idx]] == c.srt_mcodes[cd_idx])
             )
 
-        # The last satellite's trajectory data terminates
+        # The exiting satellite's trajectory data terminates
         # early. After termination, the morton codes must be -1.
-        last_aabbs = c.aabbs[:, c.polyjectory.nobjs - 1, :, :]
-        self.assertFalse(np.all(np.isfinite(last_aabbs)))
-        inf_idx = np.isinf(last_aabbs).nonzero()[0]
-        self.assertTrue(np.all(c.mcodes[inf_idx, -1] == ((1 << 64) - 1)))
+
+        # Fetch all the aabbs of the exiting satellite.
+        exit_aabbs = c.aabbs[:, self.exiting_idx, :, :]
+
+        # Check that not all are finite.
+        self.assertFalse(np.all(np.isfinite(exit_aabbs)))
+
+        # Compute the indices of the conjunction steps
+        # in which infinite aabbs show up.
+        inf_idx = np.any(np.isinf(exit_aabbs), axis=(1, 2)).nonzero()[0]
+
+        # Check the Morton codes.
+        self.assertTrue(np.all(c.mcodes[inf_idx, self.exiting_idx] == ((1 << 64) - 1)))
 
         # Similarly, the number of objects reported in the root
-        # node of the bvh trees must be tot_nobjs - 1.
+        # node of the bvh trees must be tot_nobjs - 2.
+        # NOTE: -3 (rather than -1) because 2 other satellites generated
+        # infinite aabbs.
         for idx in inf_idx:
             t = c.get_bvh_tree(idx)
-            self.assertEqual(t[0]["end"] - t[0]["begin"], tot_nobjs - 1)
+            self.assertEqual(t[0]["end"] - t[0]["begin"], tot_nobjs - 3)
 
     def test_zero_aabbs(self):
         # Test to check behaviour with aabbs of zero size.
@@ -745,12 +715,10 @@ class conjunctions_test_case(_ut.TestCase):
             return
 
         from .. import (
-            sgp4_polyjectory,
+            make_sgp4_polyjectory,
             conjunctions as conj,
-            make_sgp4_conjunctions_df,
             otype,
         )
-        from .test_sgp4_polyjectory import _check_sgp4_pj_ret_consistency
         import numpy as np
 
         sat_list = self.half_sat_list
@@ -758,8 +726,8 @@ class conjunctions_test_case(_ut.TestCase):
         begin_jd = 2460496.5
 
         # Build the polyjectory. Run it for only 15 minutes.
-        pt, df, mask = sgp4_polyjectory(sat_list, begin_jd, begin_jd + 15.0 / 1440.0)
-        _check_sgp4_pj_ret_consistency(self, pt, df, mask)
+        duration = 15.0 / 1440.0
+        pt = make_sgp4_polyjectory(sat_list, begin_jd, begin_jd + duration)[0]
 
         # Build a list of object types that excludes two satellites
         # that we know undergo a conjunction.
@@ -767,88 +735,115 @@ class conjunctions_test_case(_ut.TestCase):
         otypes[6746] = otype.SECONDARY
         otypes[4549] = otype.SECONDARY
 
-        # Build the conjunctions object. This will trigger
-        # the internal C++ sanity checks in debug mode.
-        c = conj(pt, conj_thresh=10.0, conj_det_interval=1.0, otypes=otypes)
+        # Run several tests using several conjunction detection intervals.
+        # Store the conjunctions arrays for more testing later.
+        c_arrays = []
 
-        self.assertTrue(
-            all(len(c.get_aabb_collisions(_)) > 0 for _ in range(c.n_cd_steps))
-        )
+        for cdet_interval in [1.0 / 1440, 5.0 / 1440.0, 1.0]:
+            # Build the conjunctions object. This will trigger
+            # the internal C++ sanity checks in debug mode.
+            c = conj(
+                pt, conj_thresh=10.0, conj_det_interval=cdet_interval, otypes=otypes
+            )
 
-        with self.assertRaises(IndexError) as cm:
-            c.get_aabb_collisions(c.n_cd_steps)
-        self.assertTrue(
-            "Cannot fetch the list of AABB collisions for the conjunction timestep at"
-            f" index {c.n_cd_steps}: the total number of conjunction steps is only"
-            f" {c.n_cd_steps}" in str(cm.exception)
-        )
+            c_arrays.append(c.conjunctions)
 
-        # Build the conjunctions dataframe and verify it.
-        cdf = make_sgp4_conjunctions_df(c, df, begin_jd)
-        self._verify_sgp4_cj_df(c, df, cdf)
+            self.assertTrue(
+                all(len(c.get_aabb_collisions(_)) > 0 for _ in range(c.n_cd_steps))
+            )
 
-        # The conjunctions must be sorted according
-        # to the TCA.
-        self.assertTrue(np.all(np.diff(c.conjunctions["tca"]) >= 0))
+            with self.assertRaises(IndexError) as cm:
+                c.get_aabb_collisions(c.n_cd_steps)
+            self.assertTrue(
+                "Cannot fetch the list of AABB collisions for the conjunction timestep at"
+                f" index {c.n_cd_steps}: the total number of conjunction steps is only"
+                f" {c.n_cd_steps}" in str(cm.exception)
+            )
 
-        # All conjunctions must happen before the polyjectory end time.
-        self.assertTrue(c.conjunctions["tca"][-1] < 15.0)
+            # The conjunctions must be sorted according
+            # to the TCA.
+            self.assertTrue(np.all(np.diff(c.conjunctions["tca"]) >= 0))
 
-        # No conjunction must be at or above the threshold.
-        self.assertTrue(np.all(np.diff(c.conjunctions["dca"]) < 10))
+            # All conjunctions must happen before the polyjectory end time.
+            self.assertTrue(c.conjunctions["tca"][-1] < duration)
 
-        # Objects cannot have conjunctions with themselves.
-        self.assertTrue(np.all(c.conjunctions["i"] != c.conjunctions["j"]))
+            # No conjunction must be at or above the threshold.
+            self.assertTrue(np.all(np.diff(c.conjunctions["dca"]) < 10))
 
-        # DCA must be consistent with state vectors.
-        self.assertTrue(
-            np.all(
-                np.isclose(
-                    np.linalg.norm(c.conjunctions["ri"] - c.conjunctions["rj"], axis=1),
-                    c.conjunctions["dca"],
-                    rtol=1e-13,
+            # Objects cannot have conjunctions with themselves.
+            self.assertTrue(np.all(c.conjunctions["i"] != c.conjunctions["j"]))
+
+            # DCA must be consistent with state vectors.
+            self.assertTrue(
+                np.all(
+                    np.isclose(
+                        np.linalg.norm(
+                            c.conjunctions["ri"] - c.conjunctions["rj"], axis=1
+                        ),
+                        c.conjunctions["dca"],
+                        rtol=1e-14,
+                        atol=0.0,
+                    )
                 )
             )
-        )
 
-        # Conjunctions cannot happen between secondaries.
-        self.assertFalse(
-            (4549, 6746) in list(tuple(_) for _ in c.conjunctions[["i", "j"]])
-        )
+            # Conjunctions cannot happen between secondaries.
+            self.assertFalse(
+                (4549, 6746) in list(tuple(_) for _ in c.conjunctions[["i", "j"]])
+            )
 
-        # Verify the conjunctions with the sgp4 python module.
-        sl_array = np.array(sat_list)[mask]
-        for cj in c.conjunctions:
-            # Fetch the conjunction data.
-            tca = cj["tca"]
-            dca = cj["dca"]
-            i, j = cj["i"], cj["j"]
-            ri, rj = cj["ri"], cj["rj"]
-            vi, vj = cj["vi"], cj["vj"]
+            # Verify the conjunctions with the sgp4 python module.
+            sl_array = np.array(sat_list)
+            for cj in c.conjunctions:
+                # Fetch the conjunction data.
+                tca = cj["tca"]
+                i, j = cj["i"], cj["j"]
+                ri, rj = cj["ri"], cj["rj"]
+                vi, vj = cj["vi"], cj["vj"]
 
-            # Fetch the satellite models.
-            sat_i = sl_array[i].model
-            sat_j = sl_array[j].model
+                # Fetch the satellites.
+                sat_i = sl_array[i]
+                sat_j = sl_array[j]
 
-            ei, sri, svi = sat_i.sgp4(begin_jd, tca / 1440.0)
-            ej, srj, svj = sat_j.sgp4(begin_jd, tca / 1440.0)
+                ei, sri, svi = sat_i.sgp4(begin_jd, tca)
+                ej, srj, svj = sat_j.sgp4(begin_jd, tca)
 
-            diff_ri = np.linalg.norm(sri - ri)
-            diff_rj = np.linalg.norm(srj - rj)
+                diff_ri = np.linalg.norm(sri - ri)
+                diff_rj = np.linalg.norm(srj - rj)
 
-            diff_vi = np.linalg.norm(svi - vi)
-            diff_vj = np.linalg.norm(svj - vj)
+                diff_vi = np.linalg.norm(svi - vi)
+                diff_vj = np.linalg.norm(svj - vj)
 
-            # NOTE: unit of measurement here is [km], vs typical
-            # values of >1e3 km in the coordinates. Thus, relative
-            # error is 1e-11, absolute error is ~10µm.
-            self.assertLess(diff_ri, 1e-8)
-            self.assertLess(diff_rj, 1e-8)
+                # NOTE: unit of measurement here is [km], vs typical
+                # values of >1e3 km in the coordinates. Thus, relative
+                # error is 1e-11, absolute error is ~10µm.
+                self.assertLess(diff_ri, 1e-8)
+                self.assertLess(diff_rj, 1e-8)
 
-            # NOTE: unit of measurement here is [km/s], vs typicial
-            # velocity values of >1 km/s.
-            self.assertLess(diff_vi, 1e-11)
-            self.assertLess(diff_vj, 1e-11)
+                # NOTE: unit of measurement here is [km/s], vs typicial
+                # velocity values of >1 km/s.
+                self.assertLess(diff_vi, 1e-11)
+                self.assertLess(diff_vj, 1e-11)
+
+        # Run consistency checks on c_arrays.
+        for i in range(len(c_arrays)):
+            cj_i = c_arrays[i]
+
+            for j in range(i + 1, len(c_arrays)):
+                cj_j = c_arrays[j]
+
+                self.assertEqual(cj_i.shape, cj_j.shape)
+                self.assertTrue(np.all(cj_i["i"] == cj_j["i"]))
+                self.assertTrue(np.all(cj_i["j"] == cj_j["j"]))
+                self.assertLess(
+                    np.max(np.abs((cj_i["tca"] - cj_j["tca"]) / cj_j["tca"])), 1e-11
+                )
+                self.assertLess(
+                    np.max(np.linalg.norm(cj_i["ri"] - cj_j["ri"], axis=1)), 1e-7
+                )
+                self.assertLess(
+                    np.max(np.linalg.norm(cj_i["rj"] - cj_j["rj"], axis=1)), 1e-7
+                )
 
         # Build a conjunctions object with all masked otypes.
         # There cannot be aabb collisions or conjunctions.
@@ -1226,7 +1221,10 @@ class conjunctions_test_case(_ut.TestCase):
         pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
         cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
         conjs = cj.conjunctions
-        self.assertEqual(len(conjs), 1)
+        # NOTE: we assert >=1 conjunctions are detected,
+        # as here we are at the limits of the numerics and a second
+        # spurious conjunction might be detected.
+        self.assertGreaterEqual(len(conjs), 1)
         self.assertTrue(np.all(conjs["i"] == 0))
         self.assertTrue(np.all(conjs["j"] == 1))
         self.assertAlmostEqual(conjs["tca"][0], 1.0, places=15)

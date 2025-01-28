@@ -16,11 +16,11 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import polars as pl
-from typing import Any, Tuple
 
 
 def _common_validate_gpes(gpes: pl.DataFrame, unique_norad_id: bool = True) -> None:
     # Common logic for the validation of GPEs downloaded from space-track.org or celestrak.org.
+    import polars as pl
 
     # We need all GPEs to have a non-null norad id.
     if not gpes["NORAD_CAT_ID"].is_not_null().all():
@@ -28,7 +28,7 @@ def _common_validate_gpes(gpes: pl.DataFrame, unique_norad_id: bool = True) -> N
 
     # If unique_norad_id is True, check that the norad ids
     # are unique.
-    if unique_norad_id and not gpes["NORAD_CAT_ID"].cast(int).is_unique().all():
+    if unique_norad_id and not gpes["NORAD_CAT_ID"].cast(pl.UInt64).is_unique().all():
         raise ValueError("Non-unique NORAD IDs detected in GPEs")
 
     # Check that all the data used for orbital propagation is present.
@@ -61,17 +61,4 @@ def _common_deduplicate_gpes(gpes: pl.DataFrame) -> pl.DataFrame:
     return gpes.unique(subset=gpes.columns[3:12], keep="first")
 
 
-def _eft_add_knuth(a: Any, b: Any) -> Tuple[Any, Any]:
-    # Error-free transformation of the sum of two floating point numbers.
-    # This is Knuth's algorithm. See algorithm 2.1 here:
-    # https://www.researchgate.net/publication/228568591_Error-free_transformations_in_real_and_complex_floating_point_arithmetic
-    x = a + b
-    z = x - a
-    y = (a - (x - z)) + (b - z)
-
-    return x, y
-
-
 del pl
-del Any
-del Tuple

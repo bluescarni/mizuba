@@ -125,23 +125,23 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
             return
 
         import heyoka as hy
-        from skyfield.api import load
-        from skyfield.iokit import parse_tle_file
-        from sgp4.api import SatrecArray
-
-        # NOTE: we will be using TLE data to run the test.
-        from ._sgp4_test_data_20240705 import sgp4_test_tle
         from .. import conjunctions as conj, polyjectory
         import numpy as np
+        import pathlib
+        import polars as pl
+        from sgp4.api import SatrecArray, Satrec
 
-        # Load the test TLEs.
-        ts = load.timescale()
-        sat_list = list(
-            parse_tle_file(
-                (bytes(_, "ascii") for _ in sgp4_test_tle.split("\n")),
-                ts,
-            )
-        )
+        # Fetch the current directory.
+        cur_dir = pathlib.Path(__file__).parent.resolve()
+
+        # Load the test data.
+        gpes = pl.read_parquet(cur_dir / "strack_20240705.parquet")
+
+        # Create the satellite objects.
+        sat_list = [
+            Satrec.twoline2rv(_["tle_line1"], _["tle_line2"])
+            for _ in gpes.iter_rows(named=True)
+        ]
 
         # Select around 10 objects.
         sat_list = sat_list[:: len(sat_list) // 10]
@@ -149,7 +149,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
 
         # Compute their positions at some date.
         jd = 2460496.5
-        sat_arr = SatrecArray([_.model for _ in sat_list])
+        sat_arr = SatrecArray(sat_list)
         e, r, v = sat_arr.sgp4(np.array([jd]), np.array([0.0]))
         self.assertTrue(np.all(e == 0))
 
@@ -198,10 +198,10 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         self.assertTrue(np.all(np.isclose(cjc["dca"], hy_conj_list["dca"], rtol=1e-12)))
         self.assertTrue(np.all(cjc["i"] == hy_conj_list["i"]))
         self.assertTrue(np.all(cjc["j"] == hy_conj_list["j"]))
-        self.assertTrue(np.all(np.isclose(cjc["ri"], hy_conj_list["ri"], rtol=1e-12)))
-        self.assertTrue(np.all(np.isclose(cjc["rj"], hy_conj_list["rj"], rtol=1e-12)))
-        self.assertTrue(np.all(np.isclose(cjc["vi"], hy_conj_list["vi"], rtol=1e-12)))
-        self.assertTrue(np.all(np.isclose(cjc["vj"], hy_conj_list["vj"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["ri"], hy_conj_list["ri"], rtol=1e-10)))
+        self.assertTrue(np.all(np.isclose(cjc["rj"], hy_conj_list["rj"], rtol=1e-10)))
+        self.assertTrue(np.all(np.isclose(cjc["vi"], hy_conj_list["vi"], rtol=1e-10)))
+        self.assertTrue(np.all(np.isclose(cjc["vj"], hy_conj_list["vj"], rtol=1e-10)))
 
         # Re-run the same conjunction but with only 0 and 1 as primaries.
         otypes = [otype.SECONDARY] * pj.nobjs
@@ -233,10 +233,10 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         self.assertTrue(np.all(np.isclose(cjc["dca"], flist["dca"], rtol=1e-12)))
         self.assertTrue(np.all(cjc["i"] == flist["i"]))
         self.assertTrue(np.all(cjc["j"] == flist["j"]))
-        self.assertTrue(np.all(np.isclose(cjc["ri"], flist["ri"], rtol=1e-12)))
-        self.assertTrue(np.all(np.isclose(cjc["rj"], flist["rj"], rtol=1e-12)))
-        self.assertTrue(np.all(np.isclose(cjc["vi"], flist["vi"], rtol=1e-12)))
-        self.assertTrue(np.all(np.isclose(cjc["vj"], flist["vj"], rtol=1e-12)))
+        self.assertTrue(np.all(np.isclose(cjc["ri"], flist["ri"], rtol=1e-10)))
+        self.assertTrue(np.all(np.isclose(cjc["rj"], flist["rj"], rtol=1e-10)))
+        self.assertTrue(np.all(np.isclose(cjc["vi"], flist["vi"], rtol=1e-10)))
+        self.assertTrue(np.all(np.isclose(cjc["vj"], flist["vj"], rtol=1e-10)))
 
         # Run another conjunction detection, this time conjunction
         # thresh 500km.

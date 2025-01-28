@@ -16,113 +16,175 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 # NOTE: this test case uses data downloaded from the celestrak/socrates
-# system on November 1st, 2024. It checks that all collisions identified
+# system on November 1st, 2024. It checks that all conjunctions identified
 # by socrates are identified by mizuba as well.
 
+import polars as pl
+from astropy.time import Time
 import numpy as np
-from pathlib import Path
-from sgp4.api import Satrec
-from skyfield.api import EarthSatellite, load
-from sgp4 import omm
+import pathlib
 import mizuba as mz
-from astropy import time
-import pandas as pd
 
-# Load the TLE data.
-ts = load.timescale()
-sats = []
-with open(Path(".") / "data" / "celestrak_on_orbit_20241101.csv") as datafile:
-    for fields in omm.parse_csv(datafile):
-        sat = Satrec()
-        omm.initialize(sat, fields)
-        sats.append(EarthSatellite.from_satrec(sat, ts))
-sats_arr = np.array(sats)
+# Fetch the current directory.
+cur_dir = pathlib.Path(__file__).parent.resolve()
 
-# Fetch the socrates results.
-soc_df = pd.read_csv(Path(".") / "data" / "socrates_minrange_20241101.csv")
-soc_df["TCA"] = pd.to_datetime(soc_df["TCA"])
-
-# Define begin/end times for the conjunction screening.
-date_begin = time.Time("2024-11-01 00:00:00", format="iso", scale="utc", precision=9)
-date_end = time.Time("2024-11-08 00:00:00", format="iso", scale="utc", precision=9)
-
-# Build the polyjectory.
-pt, df, mask = mz.sgp4_polyjectory(
-    sats, date_begin.jd, date_end.jd, exit_radius=60000.0
+# Load the original Socrates data.
+on_orbit = pl.read_csv(
+    cur_dir / "data" / "celestrak_on_orbit_20241101.csv",
+    schema_overrides={"MEAN_MOTION_DDOT": pl.Float64},
 )
 
-# Detect the conjunctions.
-cj = mz.conjunctions(pt, 5.0, 1.0)
+# Rename the columns.
+rename_map = {
+    "NORAD_CAT_ID": "norad_id",
+    "MEAN_MOTION": "n0",
+    "ECCENTRICITY": "e0",
+    "INCLINATION": "i0",
+    "RA_OF_ASC_NODE": "node0",
+    "ARG_OF_PERICENTER": "omega0",
+    "MEAN_ANOMALY": "m0",
+    "BSTAR": "bstar",
+}
+on_orbit = on_orbit.rename(rename_map)
 
-# Create the conjunctions dataframe.
-cdf = mz.make_sgp4_conjunctions_df(cj, df, date_begin.jd)
-cdfs = cdf.sort_values("dca")
+# Setup the epoch_jd columns.
+utc_dates = Time(on_orbit["EPOCH"], format="isot", scale="utc")
+on_orbit = on_orbit.with_columns(
+    pl.Series(name="epoch_jd1", values=utc_dates.jd1),
+    pl.Series(name="epoch_jd2", values=utc_dates.jd2),
+)
 
+# Change units of measurement.
+deg2rad = 2.0 * np.pi / 360.0
+on_orbit = on_orbit.with_columns(
+    n0=pl.col("n0") * (2.0 * np.pi / 1440.0),
+    i0=pl.col("i0") * deg2rad,
+    node0=pl.col("node0") * deg2rad,
+    omega0=pl.col("omega0") * deg2rad,
+    m0=pl.col("m0") * deg2rad,
+)
 
-def locate_conj(idx):
-    # Helper to locate the socrates conjunction at index
-    # idx into the mizuba results.
-    soc_conj = soc_df.iloc[idx]
-    i, j = soc_conj[["NORAD_CAT_ID_1", "NORAD_CAT_ID_2"]]
+# Setup the propagation period.
+date_begin = Time("2024-11-01 00:00:00", format="iso", scale="utc")
+date_end = Time("2024-11-08 00:00:00", format="iso", scale="utc")
 
-    # NOTE: mizuba reports conjunctions always with i < j.
-    if i > j:
-        i, j = j, i
-    mz_conjs = cdfs.loc[(cdfs["i_satnum"] == i) & (cdfs["j_satnum"] == j)]
+# Build the polyjectory.
+mz.set_logger_level_trace()
+pj, norad_ids = mz.make_sgp4_polyjectory(on_orbit, date_begin.jd, date_end.jd)
 
-    if len(mz_conjs) == 0:
-        # If we do not find mizuba conjunctions, we may be dealing with deep-space
-        # or duplicate objects.
-        if (
-            df.loc[i, "init_code"] == mz.sgp4_pj_status.DEEP_SPACE
-            or df.loc[j, "init_code"] == mz.sgp4_pj_status.DEEP_SPACE
-        ):
-            return 0
-        elif (
-            df.loc[i, "init_code"] == mz.sgp4_pj_status.DUPLICATE
-            or df.loc[j, "init_code"] == mz.sgp4_pj_status.DUPLICATE
-        ):
-            return 1
-        else:
-            raise ValueError(
-                f"The conjunction at index {idx} between objects {i} and {j} at time {soc_conj['TCA']} was not located"
-            )
+# Run conjunction detection.
+cj = mz.conjunctions(pj, 5.0, 2.0 / 1440.0)
 
-    # NOTE: this is code for computing the tca/dca differences between mizuba and socrates.
-    # Not really needed, but let us keep it for reference.
-    mz_closest = mz_conjs.sort_values(
-        by="tca (UTC)", key=lambda tca: abs(tca - soc_conj["TCA"])
-    ).iloc[0]
+# Load the conjunction data from socrates.
+soc_df = pl.read_csv(cur_dir / "data" / "socrates_minrange_20241101.csv")
 
-    diff_tca = abs(mz_closest["tca (UTC)"] - soc_conj["TCA"]).total_seconds()
-    diff_dca = abs(mz_closest["dca"] - soc_conj["TCA_RANGE"])
+# Ensure correct ordering of norad IDs.
+soc_df = soc_df.with_columns(
+    norad_id_i=pl.when(pl.col("NORAD_CAT_ID_1") < pl.col("NORAD_CAT_ID_2"))
+    .then(pl.col("NORAD_CAT_ID_1"))
+    .otherwise(pl.col("NORAD_CAT_ID_2")),
+    norad_id_j=pl.when(pl.col("NORAD_CAT_ID_1") < pl.col("NORAD_CAT_ID_2"))
+    .then(pl.col("NORAD_CAT_ID_2"))
+    .otherwise(pl.col("NORAD_CAT_ID_1")),
+)
 
-    return diff_tca, diff_dca
+# Rename.
+soc_df = soc_df.with_columns(
+    pl.col("TCA").alias("tca"),
+    pl.col("TCA_RANGE").alias("dca"),
+    pl.col("TCA_RELATIVE_SPEED").alias("relative_speed"),
+)
 
+# Transform tca column into datetime.
+soc_df = soc_df.with_columns(
+    pl.col("tca").str.to_datetime(format="%Y-%m-%d %H:%M:%S%.3f").alias("tca")
+)
 
-# Check that all conjunctions detected by socrates are also
-# detected by mizuba. The tca/dca differences will end up
-# stored in res.
-res = []
-N_ds = 0
-N_dup = 0
-for i in range(len(soc_df)):
-    tmp = locate_conj(i)
-    if tmp == 0:
-        N_ds = N_ds + 1
-        res.append((float("nan"), float("nan")))
-    elif tmp == 1:
-        N_dup = N_dup + 1
-        res.append((float("nan"), float("nan")))
-    else:
-        res.append(tmp)
+# Clean up.
+soc_df = soc_df.drop(
+    "NORAD_CAT_ID_1",
+    "NORAD_CAT_ID_2",
+    "OBJECT_NAME_1",
+    "OBJECT_NAME_2",
+    "DSE_1",
+    "DSE_2",
+    "MAX_PROB",
+    "DILUTION",
+    "TCA",
+    "TCA_RANGE",
+    "TCA_RELATIVE_SPEED",
+)
+soc_df = soc_df.cast({"norad_id_i": pl.UInt64, "norad_id_j": pl.UInt64})
 
-if N_ds != 320:
-    raise ValueError(
-        f"320 conjunctions involving deep-space objects were expected, but {N_ds} were found instead"
-    )
+# Start constructing the conjunctions dataframe.
+conj = cj.conjunctions
 
-if N_dup != 6:
-    raise ValueError(
-        f"6 conjunctions involving duplicate objects were expected, but {N_dup} were found instead"
-    )
+# Fetch the norad ids.
+norad_id_i = norad_ids[conj["i"]]
+norad_id_j = norad_ids[conj["j"]]
+
+# Build the tca column, representing it as a ISO UTC
+# string with millisecond resolution.
+pj_epoch1, pj_epoch2 = cj.polyjectory.epoch
+tca = Time(
+    val=pj_epoch1, val2=pj_epoch2 + conj["tca"], format="jd", scale="tai", precision=3
+).utc.iso
+
+# Build the dca column.
+dca = conj["dca"]
+
+# Build the relative speed column.
+rel_speed = np.linalg.norm(conj["vi"] - conj["vj"], axis=1)
+
+# Assemble the dataframe.
+sgp4_cdf = pl.DataFrame(
+    {
+        "norad_id_i": norad_id_i,
+        "norad_id_j": norad_id_j,
+        "tca": tca,
+        "dca": dca,
+        "relative_speed": rel_speed,
+    }
+)
+
+# Transform the tca column into datetime.
+sgp4_cdf = sgp4_cdf.with_columns(
+    pl.col("tca").str.to_datetime(format="%Y-%m-%d %H:%M:%S%.3f").alias("tca")
+)
+
+# NOTE: this is a join operation that, for each row in soc_df, will:
+#
+# - perform a left join with sgp4_cdf on the norad_id_i/j columns, thus selecting the subset
+#   of rows from the sgp4_cdf dataframe containing the same norad_id_i/j values;
+# - within this subset, it will pick the row with the tca nearest to the row in
+#   soc_df being joined.
+#
+# Essentially, for each conjunction in soc_df we are locating in sgp4_cdf the closest conjunction
+# (in terms of tca) that involves the same satellites.
+#
+# NOTE: in order for join_asof() to work, both dataframes need to be sorted wrt tca.
+jdf = soc_df.sort("tca").join_asof(
+    sgp4_cdf.sort("tca"),
+    by=["norad_id_i", "norad_id_j"],
+    on="tca",
+    strategy="nearest",
+    coalesce=False,
+    check_sortedness=True,
+)
+
+# Now we can run the actual checks.
+
+# Every i/j pair in soc_df must be in sgp4_df.
+if jdf["tca_right"].is_null().any():
+    raise ValueError("Not all conjunctions detected by socrates were found")
+
+# The greatest tca difference must be under 1 second.
+if np.max(np.abs((jdf["tca"] - jdf["tca_right"]).to_numpy())) >= 1000:
+    raise ValueError("A TCA difference >= 1 second was detected")
+
+# The greates difference in relative speed must be under 1 m/s.
+if (
+    np.max(np.abs((jdf["relative_speed"] - jdf["relative_speed_right"]).to_numpy()))
+    >= 0.001
+):
+    raise ValueError("A relative speed difference >= 1 m/s was detected")

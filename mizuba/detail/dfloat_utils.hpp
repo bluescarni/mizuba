@@ -39,9 +39,11 @@ inline auto hilo_to_dfloat(double hi, double lo)
 
     // Check the result.
     if (!std::isfinite(hi_norm) || !std::isfinite(lo_norm)) [[unlikely]] {
+        // LCOV_EXCL_START
         throw std::invalid_argument(fmt::format(
             "The normalisation of the double-length number with components ({}, {}) produced a non-finite result", hi,
             lo));
+        // LCOV_EXCL_STOP
     }
 
     // Return the double-length float.

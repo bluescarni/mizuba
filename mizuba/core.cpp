@@ -26,7 +26,6 @@
 #include <optional>
 #include <random>
 #include <ranges>
-#include <span>
 #include <stdexcept>
 #include <unordered_set>
 #include <utility>
@@ -45,14 +44,12 @@
 
 #include <Python.h>
 
-#include <heyoka/mdspan.hpp>
-
 #include "common_utils.hpp"
 #include "conjunctions.hpp"
 #include "logging.hpp"
+#include "make_sgp4_polyjectory.hpp"
 #include "mdspan.hpp"
 #include "polyjectory.hpp"
-#include "sgp4_polyjectory.hpp"
 
 namespace mizuba_py::detail
 {
@@ -80,7 +77,7 @@ namespace
 // should be done every time a new polyjectory is created in C++ before it is
 // wrapped and returned as a py::object.
 //
-// For instance, both the polyjectory __init__() and the sgp4_polyjectory() factory need
+// For instance, both the polyjectory __init__() and the make_sgp4_polyjectory() factory need
 // to register a weak pointer for the new polyjectory they create. OTOH, the
 // 'polyjectory' property getter of a conjunctions object does not, because:
 //
@@ -240,7 +237,6 @@ PYBIND11_MODULE(core, m)
     namespace py = pybind11;
     namespace mz = mizuba;
     namespace mzpy = mizuba_py;
-    namespace hy = heyoka;
 
     using namespace py::literals;
 
@@ -373,103 +369,298 @@ PYBIND11_MODULE(core, m)
             return py::make_tuple(std::move(traj_ret), std::move(time_ret), status);
         },
         "i"_a.noconvert());
-    pt_cl.def(
-        "__call__",
-        [](const mz::polyjectory &self, std::variant<double, py::array_t<double>> time) {
-            return std::visit(
-                [&self]<typename V>(const V &v) {
-                    if constexpr (std::same_as<V, py::array_t<double>>) {
-                        // Check contiguousness/alignment for the time array.
-                        mzpy::check_array_cc_aligned(v, "The time array passed to the call operator of a polyjectory "
-                                                        "must be C contiguous and properly aligned");
 
-                        // Check the number of dimensions for the time array.
+    // Helper to setup the selector in state_(m)eval().
+    // NOTE: it is important that selector is passed in as a const reference, as the
+    // return value may return a reference to it.
+    const auto eval_setup_selector = [](const auto &selector) {
+        std::optional<mz::dspan_1d<const std::size_t>> sel;
+        if (selector) {
+            std::visit(
+                [&sel]<typename V>(const V &v) {
+                    if constexpr (std::same_as<V, std::size_t>) {
+                        // The selector is a single index, wrap it in a 1-element span.
+                        sel.emplace(&v, 1);
+                    } else {
+                        // The selector is an array, check it and wrap it in a span.
+                        mzpy::check_array_cc_aligned(
+                            v, "The selector array passed to state_eval() must be C contiguous and properly aligned");
+
                         if (v.ndim() != 1) [[unlikely]] {
-                            throw std::invalid_argument(fmt::format(
-                                "The time array passed to the call operator of a polyjectory must have 1 dimension, "
-                                "but the number of dimensions is {} instead",
-                                v.ndim()));
+                            throw std::invalid_argument(
+                                fmt::format("The selector array passed to state_eval() must have 1 dimension, but the "
+                                            "number of dimensions is {} instead",
+                                            v.ndim()));
+                        }
+
+                        sel.emplace(v.data(), boost::numeric_cast<std::size_t>(v.shape(0)));
+                    }
+                },
+                *selector);
+        }
+
+        return sel;
+    };
+
+    pt_cl.def(
+        "state_eval",
+        [eval_setup_selector](const mz::polyjectory &self, std::variant<double, py::array_t<double>> tm,
+                              std::optional<py::array_t<double>> out_,
+                              // NOTE: when documenting, we need to point out that in order to avoid
+                              // conversions or copies the numpy type to be used for indexing must be np.uintp.
+                              std::optional<std::variant<std::size_t, py::array_t<std::size_t>>> selector) {
+            // Setup the selector argument.
+            const auto sel = eval_setup_selector(selector);
+
+            // Check or setup the output array.
+            auto out = [&out_, &sel, &self, &tm, &selector]() {
+                if (out_) {
+                    // Output array provided, check it.
+                    auto ret = *out_;
+
+                    mzpy::check_array_cc_aligned(
+                        ret, "The output array passed to state_eval() must be C contiguous and properly aligned");
+
+                    // NOTE: we check the number of dimensions and the size in the second
+                    // dimension. The size in the first dimension is checked within the C++ code.
+                    if (ret.ndim() != 2) [[unlikely]] {
+                        throw std::invalid_argument(
+                            fmt::format("The output array passed to state_eval() must have 2 dimensions, but the "
+                                        "number of dimensions is {} instead",
+                                        ret.ndim()));
+                    }
+                    if (ret.shape(1) != 7) [[unlikely]] {
+                        throw std::invalid_argument(
+                            // LCOV_EXCL_START
+                            fmt::format("The output array passed to state_eval() must have a size of 7 in the second "
+                                        "dimension, but the size in the second dimension is {} instead",
+                                        // LCOV_EXCL_STOP
+                                        ret.shape(1)));
+                    }
+
+                    // If the output array is provided, we must ensure that it does not overlap
+                    // with the time array or the selector. If it did, we may end up concurrently reading from
+                    // and writing to the same memory areas during multithreaded operations.
+                    //
+                    // NOTE: overlaps between the time array and the selector are ok.
+                    if (const auto *tm_arr = std::get_if<py::array_t<double>>(&tm)) {
+                        if (mzpy::may_share_memory(ret, *tm_arr)) [[unlikely]] {
+                            throw std::invalid_argument("Potential memory overlap detected between the output array "
+                                                        "passed to state_eval() and the time array");
                         }
                     }
 
-                    // Cache the total number of objects.
-                    const auto nobjs = self.get_nobjs();
+                    if (selector) {
+                        if (const auto *sel_arr = std::get_if<py::array_t<std::size_t>>(&*selector)) {
+                            if (mzpy::may_share_memory(ret, *sel_arr)) [[unlikely]] {
+                                throw std::invalid_argument(
+                                    "Potential memory overlap detected between the output array "
+                                    "passed to state_eval() and the array of object indices");
+                            }
+                        }
+                    }
 
-                    // Prepare the output array.
-                    py::array_t<double> out(py::array::ShapeContainer{boost::numeric_cast<py::ssize_t>(nobjs),
-                                                                      static_cast<py::ssize_t>(7)});
+                    return ret;
+                } else {
+                    // Create the output array.
+                    return py::array_t<double>(py::array::ShapeContainer{
+                        boost::numeric_cast<py::ssize_t>(sel ? sel->extent(0) : self.get_nobjs()),
+                        static_cast<py::ssize_t>(7)});
+                }
+            }();
 
-                    // Prepare the output span.
-                    const mz::polyjectory::eval_span_t out_span(out.mutable_data(), nobjs);
+            // Prepare the output span.
+            const auto out_span = mz::polyjectory::single_eval_span_t(out.mutable_data(),
+                                                                      boost::numeric_cast<std::size_t>(out.shape(0)));
 
-                    // Prepare the input argument.
-                    const auto in = [&v]() {
+            // Visit on the time argument and run the evaluation.
+            std::visit(
+                [&self, &out_span, &sel]<typename V>(const V &v) {
+                    // Prepare the time argument.
+                    const auto tm_arg = [&v]() {
                         if constexpr (std::same_as<V, py::array_t<double>>) {
+                            // Time provided in array form.
+
+                            // Check contiguousness/alignment for the time array.
+                            mzpy::check_array_cc_aligned(
+                                v, "The time array passed to state_eval() must be C contiguous and properly aligned");
+
+                            // Check the number of dimensions for the time array.
+                            // NOTE: the size in the first dimension will be checked in the C++ code.
+                            if (v.ndim() != 1) [[unlikely]] {
+                                throw std::invalid_argument(
+                                    fmt::format("The time array passed to state_eval() must have 1 dimension, but the "
+                                                "number of dimensions is {} instead",
+                                                v.ndim()));
+                            }
+
+                            // Wrap the time array in a span.
                             return mz::dspan_1d<const double>(v.data(), boost::numeric_cast<std::size_t>(v.shape(0)));
                         } else {
+                            // Time provided as a scalar, just return it.
                             return v;
                         }
                     }();
 
                     // NOTE: release the GIL during evaluation.
-                    {
-                        py::gil_scoped_release release;
-                        self(out_span, in);
+                    py::gil_scoped_release release;
+
+                    self.state_eval(out_span, tm_arg, sel);
+                },
+                tm);
+
+            return out;
+        },
+        "time"_a, "out"_a.noconvert() = py::none{}, "obj_idx"_a = py::none{});
+
+    pt_cl.def(
+        "state_meval",
+        [eval_setup_selector](const mz::polyjectory &self, py::array_t<double> tm,
+                              std::optional<py::array_t<double>> out_,
+                              // NOTE: when documenting, we need to point out that in order to avoid
+                              // conversions or copies the numpy type to be used for indexing must be np.uintp.
+                              std::optional<std::variant<std::size_t, py::array_t<std::size_t>>> selector) {
+            // Setup the selector argument.
+            const auto sel = eval_setup_selector(selector);
+
+            // Check the time array.
+            mzpy::check_array_cc_aligned(
+                tm, "The time array passed to state_meval() must be C contiguous and properly aligned");
+
+            if (tm.ndim() != 1 && tm.ndim() != 2) [[unlikely]] {
+                throw std::invalid_argument(
+                    fmt::format("The time array passed to state_meval() must have either 1 or 2 dimensions, but the "
+                                "number of dimensions is {} instead",
+                                tm.ndim()));
+            }
+
+            // Fetch the number of time evaluations.
+            const auto n_time_evals = (tm.ndim() == 1) ? tm.shape(0) : tm.shape(1);
+
+            // Check or setup the output array.
+            auto out = [&out_, &sel, &self, n_time_evals, &tm, &selector]() {
+                if (out_) {
+                    // Output array provided, check it.
+                    auto ret = *out_;
+
+                    mzpy::check_array_cc_aligned(
+                        ret, "The output array passed to state_meval() must be C contiguous and properly aligned");
+
+                    // NOTE: we check the number of dimensions and the size in the third
+                    // dimension. The sizes in the first and second dimensions are checked within the C++ code.
+                    if (ret.ndim() != 3) [[unlikely]] {
+                        throw std::invalid_argument(
+                            fmt::format("The output array passed to state_meval() must have 3 dimensions, but the "
+                                        "number of dimensions is {} instead",
+                                        ret.ndim()));
+                    }
+                    if (ret.shape(2) != 7) [[unlikely]] {
+                        throw std::invalid_argument(
+                            // LCOV_EXCL_START
+                            fmt::format("The output array passed to state_meval() must have a size of 7 in the third "
+                                        "dimension, but the size in the third dimension is {} instead",
+                                        // LCOV_EXCL_STOP
+                                        ret.shape(2)));
                     }
 
-                    return out;
-                },
-                time);
+                    // If the output array is provided, we must ensure that it does not overlap
+                    // with the time array or the selector. If it did, we may end up concurrently reading from
+                    // and writing to the same memory areas during multithreaded operations.
+                    //
+                    // NOTE: overlaps between the time array and the selector are ok.
+                    if (mzpy::may_share_memory(ret, tm)) [[unlikely]] {
+                        throw std::invalid_argument("Potential memory overlap detected between the output array "
+                                                    "passed to state_meval() and the time array");
+                    }
+
+                    if (selector) {
+                        if (const auto *sel_arr = std::get_if<py::array_t<std::size_t>>(&*selector)) {
+                            if (mzpy::may_share_memory(ret, *sel_arr)) [[unlikely]] {
+                                throw std::invalid_argument(
+                                    "Potential memory overlap detected between the output array "
+                                    "passed to state_meval() and the array of object indices");
+                            }
+                        }
+                    }
+
+                    return ret;
+                } else {
+                    // Create the output array.
+                    return py::array_t<double>(py::array::ShapeContainer{
+                        boost::numeric_cast<py::ssize_t>(sel ? sel->extent(0) : self.get_nobjs()), n_time_evals,
+                        static_cast<py::ssize_t>(7)});
+                }
+            }();
+
+            // Prepare the output span.
+            const auto out_span
+                = mz::polyjectory::multi_eval_span_t(out.mutable_data(), boost::numeric_cast<std::size_t>(out.shape(0)),
+                                                     boost::numeric_cast<std::size_t>(out.shape(1)));
+
+            // Prepare the time array span and evaluate.
+            if (tm.ndim() == 1) {
+                const auto tm_span
+                    = mz::dspan_1d<const double>(tm.data(), boost::numeric_cast<std::size_t>(tm.shape(0)));
+
+                // NOTE: release the GIL during evaluation.
+                py::gil_scoped_release release;
+
+                self.state_meval(out_span, tm_span, sel);
+            } else {
+                const auto tm_span
+                    = mz::dspan_2d<const double>(tm.data(), boost::numeric_cast<std::size_t>(tm.shape(0)),
+                                                 boost::numeric_cast<std::size_t>(tm.shape(1)));
+
+                // NOTE: release the GIL during evaluation.
+                py::gil_scoped_release release;
+
+                self.state_meval(out_span, tm_span, sel);
+            }
+
+            return out;
         },
-        "time"_a.noconvert());
+        "time"_a, "out"_a.noconvert() = py::none{}, "obj_idx"_a = py::none{});
 
     // Expose static getters for the structured types.
     pt_cl.def_property_readonly_static("traj_offset", [](const py::object &) { return py::dtype::of<traj_offset>(); });
 
-    // sgp4 polyjectory.
+    // make_sgp4_polyjectory().
+
+    // Register the GPE dtype.
+    using gpe = mz::gpe;
+    PYBIND11_NUMPY_DTYPE(gpe, norad_id, epoch_jd1, epoch_jd2, n0, e0, i0, node0, omega0, m0, bstar);
+    m.attr("gpe_dtype") = py::dtype::of<gpe>();
+
     m.def(
-        "sgp4_polyjectory",
-        [](py::list sat_list, double jd_begin, double jd_end, double exit_radius, double reentry_radius, double epoch,
-           double epoch2) {
-            // Check for the necessary dependencies.
-            py::module_::import("mizuba").attr("_check_sgp4_deps")();
+        "_make_sgp4_polyjectory",
+        [](py::array_t<gpe> gpes, const double jd_begin, const double jd_end, const double reentry_radius,
+           const double exit_radius) {
+            // Check the number of dimensions for gpes.
+            if (gpes.ndim() != 1) [[unlikely]] {
+                throw std::invalid_argument(fmt::format("The array of gpes passed to make_sgp4_polyjectory() must have "
+                                                        "1 dimension, but the number of dimensions is {} instead",
+                                                        gpes.ndim()));
+            }
 
-            // Check and pre-filter sat_list.
-            py::tuple filter_res = py::module_::import("mizuba").attr("_sgp4_pre_filter_sat_list")(
-                sat_list, jd_begin, exit_radius, reentry_radius);
-            sat_list = filter_res[0];
-            py::object mask = filter_res[1];
-            py::object pd = filter_res[2];
+            // Check that gpes is C-contiguous and properly aligned.
+            mzpy::check_array_cc_aligned(
+                gpes, "The array of gpes passed to make_sgp4_polyjectory() must be C contiguous and properly aligned");
 
-            // Turn sat_list into a data vector.
-            const auto sat_data = mzpy::sat_list_to_vector(sat_list);
-            assert(sat_data.size() % 9u == 0u);
+            // Construct the span over the gpes.
+            const auto gpes_span
+                = mz::dspan_1d<const gpe>{gpes.data(), boost::numeric_cast<std::size_t>(gpes.shape(0))};
 
-            // Create the input span.
-            using span_t = hy::mdspan<const double, hy::extents<std::size_t, 9, std::dynamic_extent>>;
-            const span_t in(sat_data.data(), boost::numeric_cast<std::size_t>(sat_data.size()) / 9u);
+            // NOTE: release the GIL during the creation of the polyjectory.
+            py::gil_scoped_release release;
 
-            auto poly_ret = [in, jd_begin, jd_end, exit_radius, reentry_radius, epoch, epoch2]() {
-                // NOTE: release the GIL during propagation.
-                py::gil_scoped_release release;
-
-                return mz::sgp4_polyjectory(in, jd_begin, jd_end, exit_radius, reentry_radius, epoch, epoch2);
-            }();
+            auto ret = mz::make_sgp4_polyjectory(gpes_span, jd_begin, jd_end, reentry_radius, exit_radius);
 
             // Register the polyjectory implementation in the cleanup machinery.
-            mzpy::detail::add_pj_weak_ptr(mz::detail::fetch_pj_impl(poly_ret));
+            mzpy::detail::add_pj_weak_ptr(mz::detail::fetch_pj_impl(ret));
 
-            // Convert the polyjectory into a Python object.
-            py::object poly_obj = py::cast(std::move(poly_ret));
-
-            // Amend the dataframe with the final statuses from the polyjectory.
-            pd = py::module_::import("mizuba").attr("_sgp4_set_final_status")(poly_obj, pd);
-
-            return py::make_tuple(std::move(poly_obj), std::move(pd), std::move(mask));
+            return ret;
         },
-        "sat_list"_a.noconvert(), "jd_begin"_a.noconvert(), "jd_end"_a.noconvert(),
-        "exit_radius"_a.noconvert() = mz::sgp4_exit_radius, "reentry_radius"_a.noconvert() = mz::sgp4_reentry_radius,
-        "epoch"_a.noconvert() = 0., "epoch2"_a.noconvert() = 0.);
+        "gpes"_a.noconvert(), "jd_begin"_a, "jd_end"_a, "reentry_radius"_a, "exit_radius"_a);
 
     // Register conjunctions::bvh_node as a structured NumPy datatype.
     using bvh_node = mz::conjunctions::bvh_node;

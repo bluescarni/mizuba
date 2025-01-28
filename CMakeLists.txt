@@ -1,4 +1,11 @@
-cmake_minimum_required(VERSION 3.18.0)
+# NOTE: C++23 recognised since 3.20.0.
+cmake_minimum_required(VERSION 3.20.0)
+
+if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.31.0)
+    # NOTE: adopt the new behaviour for this policy:
+    # https://cmake.org/cmake/help/latest/policy/CMP0177.html
+    cmake_policy(SET CMP0177 NEW)
+endif()
 
 # Set default build type to "Release".
 # NOTE: this should be done before the project command since the latter can set
@@ -150,7 +157,9 @@ find_package(Python3 QUIET REQUIRED COMPONENTS ${_MIZUBA_PYTHON3_COMPONENTS})
 
 message(STATUS "Python3 interpreter: ${Python3_EXECUTABLE}")
 message(STATUS "Python3 installation directory: ${Python3_SITEARCH}")
-# NOTE: heyoka.py now requires at least 3.9
+# NOTE: heyoka.py now requires at least 3.9. I think it makes sense
+# (although not strictly required) to bump up the mizuba requirement
+# as well.
 if(${Python3_VERSION_MINOR} LESS 9)
     message(FATAL_ERROR "The minimum supported version of Python is 3.9, but version 3.${Python3_VERSION_MINOR} was found instead")
 endif()

@@ -473,69 +473,417 @@ class polyjectory_test_case(_ut.TestCase):
 
         # Error checking first.
         with self.assertRaises(ValueError) as cm:
-            pj(np.zeros((5,))[::2])
+            pj.state_eval(np.zeros((5,))[::2])
         self.assertTrue(
-            "The time array passed to the call operator of a polyjectory must be C contiguous and properly aligned"
+            "The time array passed to state_eval() must be C contiguous and properly aligned"
             in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
-            pj(np.zeros((5, 5)))
+            pj.state_eval(np.zeros((5, 5)))
         self.assertTrue(
-            "The time array passed to the call operator of a polyjectory must have 1 dimension, but the number of dimensions is 2 instead"
+            "The time array passed to state_eval() must have 1 dimension, but the number of dimensions is 2 instead"
             in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
-            pj(np.zeros((5,)))
+            pj.state_eval(time=np.zeros((5,)))
         self.assertTrue(
-            "Invalid input array passed to the call operator of a polyjectory: the number of objects is 2 but the size of the array is 5 (the two numbers must be equal)"
+            "Invalid time array passed to state_eval(): the number of objects is 2 but the size of the array is 5 (the two numbers must be equal)"
             in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
-            pj(np.full((2,), float("inf")))
+            pj.state_eval(time=np.full((2,), float("inf")))
         self.assertTrue("An non-finite evaluation time of " in str(cm.exception))
 
         with self.assertRaises(ValueError) as cm:
-            pj(float("nan"))
+            pj.state_eval(float("nan"))
         self.assertTrue("An non-finite evaluation time of " in str(cm.exception))
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_eval(time=np.array([0.11, 0.11]), obj_idx=1)
+        self.assertTrue(
+            "Invalid time array passed to state_eval(): the number of selected objects is 1 but the size of the array is 2 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(IndexError) as cm:
+            pj.state_eval(time=0.11, obj_idx=2)
+        self.assertTrue(
+            "Invalid object index 2 specified - the total number of objects in the polyjectory is only 2"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(IndexError) as cm:
+            pj.state_eval(time=0.11, obj_idx=[45])
+        self.assertTrue(
+            "Invalid object index 45 specified - the total number of objects in the polyjectory is only 2"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_eval(
+                time=0.11, obj_idx=np.array([0, 0, 0, 0], dtype=np.uintp)[::2]
+            )
+        self.assertTrue(
+            "The selector array passed to state_eval() must be C contiguous and properly aligned"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_eval(time=0.11, obj_idx=np.zeros((2, 2)))
+        self.assertTrue(
+            "The selector array passed to state_eval() must have 1 dimension, but the number of dimensions is 2 instead"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_eval(time=0.11, out=np.array([1.0, 2.0, 3.0])[::2])
+        self.assertTrue(
+            "The output array passed to state_eval() must be C contiguous and properly aligned"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_eval(time=0.11, out=np.full((1,), 1.0))
+        self.assertTrue(
+            "The output array passed to state_eval() must have 2 dimensions, but the number of dimensions is 1 instead"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_eval(time=0.11, out=np.full((1, 6), 1.0))
+        self.assertTrue(
+            "The output array passed to state_eval() must have a size of 7 in the second dimension, but the size in the second dimension is 6 instead"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_eval(time=0.11, out=np.full((3, 7), 1.0))
+        self.assertTrue(
+            "Invalid output array passed to state_eval(): the number of objects is 2 but the size of the first dimension of the array is 3 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_eval(time=0.11, out=np.full((3, 7), 1.0), obj_idx=[1])
+        self.assertTrue(
+            "Invalid output array passed to state_eval(): the number of objects selected for evaluation is 1 but the size of the first dimension of the array is 3 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_eval(time=[0.11, 0.11], out=np.full((3, 7), 1.0))
+        self.assertTrue(
+            "Invalid output array passed to state_eval(): the number of objects is 2 but the size of the first dimension of the array is 3 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_eval(time=[0.11, 0.11], out=np.full((3, 7), 1.0), obj_idx=[1])
+        self.assertTrue(
+            "Invalid output array passed to state_eval(): the number of objects selected for evaluation is 1 but the size of the first dimension of the array is 3 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        out = np.zeros((2, 7))
+        tm = out[:2]
+        with self.assertRaises(ValueError) as cm:
+            pj.state_eval(time=tm, out=out)
+        self.assertTrue(
+            "Potential memory overlap detected between the output array passed to state_eval() and the time array"
+            in str(cm.exception)
+        )
+
+        if np.dtype(np.uintp).itemsize == np.dtype(np.float64).itemsize:
+            with self.assertRaises(ValueError) as cm:
+                pj.state_eval(
+                    time=[1.1, 1.1], out=out, obj_idx=out[0, :2].view(dtype=np.uintp)
+                )
+            self.assertTrue(
+                "Potential memory overlap detected between the output array passed to state_eval() and the array of object indices"
+                in str(cm.exception)
+            )
+
+        # For state_meval() too.
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=np.array([0.11, 0.11, 0.11, 0.11])[::2])
+        self.assertTrue(
+            "The time array passed to state_meval() must be C contiguous and properly aligned"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=np.zeros((3, 3, 3)))
+        self.assertTrue(
+            "The time array passed to state_meval() must have either 1 or 2 dimensions, but the number of dimensions is 3 instead"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[0.11, 0.11], out=np.array([1.0, 2.0, 0.3, 0.4])[::2])
+        self.assertTrue(
+            "The output array passed to state_meval() must be C contiguous and properly aligned"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[0.11, 0.11], out=np.array([1.0, 2.0, 0.3, 0.4]))
+        self.assertTrue(
+            "The output array passed to state_meval() must have 3 dimensions, but the number of dimensions is 1 instead"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[0.11, 0.11], out=np.zeros((3, 4, 5)))
+        self.assertTrue(
+            "The output array passed to state_meval() must have a size of 7 in the third dimension, but the size in the third dimension is 5 instead"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[0.11, 0.11], out=np.zeros((3, 4, 7)))
+        self.assertTrue(
+            "Invalid output array passed to state_meval(): the number of time evaluations per object is 2 but the size of the second dimension of the array is 4 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[0.11, 0.11], out=np.zeros((2, 2, 7)), obj_idx=[1])
+        self.assertTrue(
+            "Invalid output array passed to state_meval(): the number of selected objects is 1 but the size of the first dimension of the array is 2 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[[0.11, 0.11]], out=np.zeros((2, 2, 7)), obj_idx=[1])
+        self.assertTrue(
+            "Invalid output array passed to state_meval(): the number of selected objects is 1 but the size of the first dimension of the array is 2 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(
+                time=[[0.11, 0.11], [0.11, 0.11]], out=np.zeros((1, 2, 7)), obj_idx=[1]
+            )
+        self.assertTrue(
+            "Invalid time array passed to state_meval(): the number of selected objects is 1 but the size of the first dimension of the array is 2 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[0.11, 0.11], out=np.zeros((3, 2, 7)))
+        self.assertTrue(
+            "Invalid output array passed to state_meval(): the number of objects is 2 but the size of the first dimension of the array is 3 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[[0.11, 0.11]], out=np.zeros((3, 2, 7)))
+        self.assertTrue(
+            "Invalid output array passed to state_meval(): the number of objects is 2 but the size of the first dimension of the array is 3 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=[[0.11, 0.11]], out=np.zeros((2, 2, 7)))
+        self.assertTrue(
+            "Invalid time array passed to state_meval(): the number of objects is 2 but the size of the first dimension of the array is 1 (the two numbers must be equal)"
+            in str(cm.exception)
+        )
+
+        out = np.zeros((2, 2, 7))
+        tm = out[0, 0, :2]
+        with self.assertRaises(ValueError) as cm:
+            pj.state_meval(time=tm, out=out)
+        self.assertTrue(
+            "Potential memory overlap detected between the output array passed to state_meval() and the time array"
+            in str(cm.exception)
+        )
+
+        if np.dtype(np.uintp).itemsize == np.dtype(np.float64).itemsize:
+            with self.assertRaises(ValueError) as cm:
+                pj.state_meval(
+                    time=[1.1, 1.1], out=out, obj_idx=out[0, 0, :2].view(dtype=np.uintp)
+                )
+            self.assertTrue(
+                "Potential memory overlap detected between the output array passed to state_meval() and the array of object indices"
+                in str(cm.exception)
+            )
 
         # NOTE: the first trajectory ends at 0.9, the second trajectory
         # begins at 1.1.
-        tm = np.array([0.1, 0.1])
-        res = pj(time=tm)
+        tm = np.array([0.11, 0.11])
+        res = pj.state_eval(time=tm)
         self.assertTrue(
             np.allclose(
-                res[0], [0.9, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+                res[0], [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
             ),
         )
         self.assertTrue(np.all(np.isnan(res[1])))
 
-        tm = np.array([1.2, 1.2])
-        res = pj(time=tm)
-        self.assertTrue(np.all(np.isnan(res[0])))
+        tm = np.array([0.11, 0.11])
+        out = np.zeros((2, 7))
+        res = pj.state_eval(time=tm, out=out)
         self.assertTrue(
             np.allclose(
-                res[1], [0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+                res[0], [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+            ),
+        )
+        self.assertTrue(np.all(np.isnan(res[1])))
+        self.assertEqual(id(out), id(res))
+
+        tm = np.array([0.11, 0.12])
+        res = pj.state_meval(time=tm)
+        self.assertTrue(
+            np.allclose(
+                res[0],
+                [
+                    [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                    [0.88, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                ],
+                rtol=0.0,
+                atol=1e-15,
+            ),
+        )
+        self.assertTrue(np.all(np.isnan(res[1])))
+
+        tm = np.array([0.11, 0.12])
+        out = np.zeros((2, 2, 7))
+        res = pj.state_meval(out=out, time=tm)
+        self.assertTrue(
+            np.allclose(
+                res[0],
+                [
+                    [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                    [0.88, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                ],
+                rtol=0.0,
+                atol=1e-15,
+            ),
+        )
+        self.assertTrue(np.all(np.isnan(res[1])))
+        self.assertEqual(id(out), id(res))
+
+        tm = np.array([[0.11], [0.12]])
+        res = pj.state_meval(time=tm)
+        self.assertTrue(
+            np.allclose(
+                res[0],
+                [[0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0]],
+                rtol=0.0,
+                atol=1e-15,
+            ),
+        )
+        self.assertTrue(np.all(np.isnan(res[1])))
+
+        tm = np.array([0.11, 0.12] * 1000)
+        res = pj.state_eval(time=tm, obj_idx=[0, 1] * 1000)
+        self.assertTrue(
+            np.allclose(
+                res[::2],
+                [[0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0]] * 1000,
+                rtol=0.0,
+                atol=1e-15,
+            ),
+        )
+        self.assertTrue(np.all(np.isnan(res[1::2])))
+
+        tm = np.array([0.11, 0.12] * 1000)
+        res = pj.state_meval(time=tm, obj_idx=[0, 1] * 1000)
+        self.assertTrue(
+            np.allclose(
+                res[::2],
+                [
+                    [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                    [0.88, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                ]
+                * 1000,
+                rtol=0.0,
+                atol=1e-15,
+            ),
+        )
+        self.assertTrue(np.all(np.isnan(res[1::2])))
+
+        tm = np.array([[0.11, 0.12] * 1000, [1.2, 1.21] * 1000])
+        res = pj.state_meval(time=tm, obj_idx=[0, 1])
+        self.assertTrue(
+            np.allclose(
+                res[0],
+                [
+                    [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                    [0.88, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                ]
+                * 1000,
+                rtol=0.0,
+                atol=1e-15,
+            ),
+        )
+        self.assertTrue(
+            np.allclose(
+                res[1],
+                [
+                    [0.20, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                    [0.21, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                ]
+                * 1000,
+                rtol=0.0,
+                atol=1e-15,
             ),
         )
 
-        tm = np.array([0.1, 1.2])
-        res = pj(time=tm)
+        tm = np.array([[0.11, 0.12] * 1000, [1.2, 1.21] * 1000] * 1000)
+        res = pj.state_meval(time=tm, obj_idx=[0, 1] * 1000)
         self.assertTrue(
             np.allclose(
-                res[0], [0.9, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+                res[::2],
+                [
+                    [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                    [0.88, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                ]
+                * 1000,
+                rtol=0.0,
+                atol=1e-15,
             ),
         )
         self.assertTrue(
             np.allclose(
-                res[1], [0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+                res[1::2],
+                [
+                    [0.20, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                    [0.21, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                ]
+                * 1000,
+                rtol=0.0,
+                atol=1e-15,
+            ),
+        )
+
+        tm = np.array([1.2, 1.21])
+        res = pj.state_eval(time=tm)
+        self.assertTrue(np.all(np.isnan(res[0])))
+        self.assertTrue(
+            np.allclose(
+                res[1], [0.21, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+            ),
+        )
+
+        tm = np.array([0.11, 1.21])
+        res = pj.state_eval(time=tm)
+        self.assertTrue(
+            np.allclose(
+                res[0], [0.89, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+            ),
+        )
+        self.assertTrue(
+            np.allclose(
+                res[1], [0.21, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
             ),
         )
 
         # Scalar overloads too.
-        res = pj(time=0.1)
+        res = pj.state_eval(time=0.1)
         self.assertTrue(
             np.allclose(
                 res[0], [0.9, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
@@ -543,16 +891,32 @@ class polyjectory_test_case(_ut.TestCase):
         )
         self.assertTrue(np.all(np.isnan(res[1])))
 
-        res = pj(time=1.2)
+        res = pj.state_eval(time=1.2)
         self.assertTrue(np.all(np.isnan(res[0])))
         self.assertTrue(
             np.allclose(
                 res[1], [0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], rtol=0.0, atol=1e-15
+            ),
+        )
+
+        # Test single-object evaluations.
+        res = pj.state_eval(time=0.1, obj_idx=0)
+        self.assertEqual(res.shape, (1, 7))
+        self.assertTrue(
+            np.allclose(
+                res, [[0.9, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0]], rtol=0.0, atol=1e-15
+            ),
+        )
+
+        res = pj.state_eval(time=1.2, obj_idx=1)
+        self.assertTrue(
+            np.allclose(
+                res, [[0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]], rtol=0.0, atol=1e-15
             ),
         )
 
         # Also test with a trajectory without data.
         pj = polyjectory([traj_data_0, np.empty((0, 7, 4))], [tm_data_0, []], [0, 0])
         tm = np.array([0.1, 0.1])
-        res = pj(time=tm)
+        res = pj.state_eval(time=tm)
         self.assertTrue(np.all(np.isnan(res[1])))
