@@ -54,16 +54,14 @@ namespace detail
 namespace
 {
 
-// Function to transpose the positional polynomials stored in polys_i/j into the diff_input buffer.
+// Function to transpose the positional polynomials stored in polys_i/j into the diff_input_ptr buffer.
 //
 // polys_i and polys_j contain the polynomial coefficients for the state vectors of i and j stored in
-// row-major format (positions first, then velocities). diff_input is the output buffer.
+// row-major format (positions first, then velocities). diff_input_ptr is the output buffer.
 // 'order' is the order of the polynomials.
-void polys_ij_transpose_pos(const double *polys_i, const double *polys_j, auto &diff_input, std::uint32_t order)
+void polys_ij_transpose_pos(const double *polys_i, const double *polys_j, double *diff_input_ptr, std::uint32_t order)
 {
     namespace hy = heyoka;
-
-    assert(diff_input.size() == (order + 1u) * static_cast<decltype(diff_input.size())>(6));
 
     // Fetch spans over the positional polys.
     const auto pi_span
@@ -71,9 +69,9 @@ void polys_ij_transpose_pos(const double *polys_i, const double *polys_j, auto &
     const auto pj_span
         = hy::mdspan<const double, hy::extents<std::size_t, 3, std::dynamic_extent>>(polys_j, order + 1u);
 
-    // Fetch a span over diff_input.
+    // Fetch a span over diff_input_ptr.
     const auto input_span
-        = hy::mdspan<double, hy::extents<std::size_t, std::dynamic_extent, 6>>(diff_input.data(), order + 1u);
+        = hy::mdspan<double, hy::extents<std::size_t, std::dynamic_extent, 6>>(diff_input_ptr, order + 1u);
 
     // Transpose into input_span.
     for (auto i = 0u; i < 3u; ++i) {
@@ -156,9 +154,6 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
         // Buffer used as temporary storage for the results
         // of operations on polynomials.
         std::vector<double> pbuffer;
-        // Buffer to store the input for the cfunc used to compute
-        // the distance square polynomial.
-        std::vector<double> diff_input;
         // The vector into which detected conjunctions are
         // temporarily written during polynomial root finding.
         // The tuple contains:
@@ -175,19 +170,16 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
 
         // Prepare pbuffer.
         //
-        // NOTE: here we need up to 14 polynomials. In order:
+        // NOTE: here we need up to 20 buffers each of size op1. In order:
         //
         // - 6 + 6 polys for the translations of the state vectors
         //   of the two objects involved in the conjunction,
         // - 1 poly for the representation of the square of the distance
         //   between the two objects involved in the conjunction,
         // - 1 poly for the representation of the derivative of the square of the distance
-        //   between the two objects involved in the conjunction.
-        retval.pbuffer.resize(boost::safe_numerics::safe<decltype(retval.pbuffer.size())>(14) * (order + 1u));
-
-        // Prepare diff_input.
-        using safe_size_t = boost::safe_numerics::safe<decltype(retval.diff_input.size())>;
-        retval.diff_input.resize((order + 1u) * safe_size_t(6));
+        //   between the two objects involved in the conjunction,
+        // - 6 polys to store the result of the transposition of polys_i/j.
+        retval.pbuffer.resize(boost::safe_numerics::safe<decltype(retval.pbuffer.size())>(20) * (order + 1u));
 
         return retval;
     });
@@ -201,13 +193,14 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
             // NOTE: no need to isolate here, as we are not
             // invoking any other TBB primitive from within this
             // scope.
-            auto &[local_conj_vec, r_iso_cache, wlist, isol, pbuffer, diff_input, tmp_conj_vec] = ets.local();
+            auto &[local_conj_vec, r_iso_cache, wlist, isol, pbuffer, tmp_conj_vec] = ets.local();
 
             // Fetch the pointers to the temp polys in pbuffer.
             auto *pti_ptr = pbuffer.data();
             auto *ptj_ptr = pti_ptr + static_cast<std::size_t>(6) * (order + 1u);
             auto *ptd2_ptr = ptj_ptr + static_cast<std::size_t>(6) * (order + 1u);
             auto *ptd2p_ptr = ptd2_ptr + (order + 1u);
+            auto *diff_input_ptr = ptd2p_ptr + (order + 1u);
 
             // Prepare the local conjunction vector.
             local_conj_vec.clear();
@@ -396,15 +389,15 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                         polys_j = ptj_ptr;
                     }
 
-                    // Transpose polys_i and polys_j into diff_input.
-                    detail::polys_ij_transpose_pos(polys_i, polys_j, diff_input, order);
+                    // Transpose polys_i and polys_j into diff_input_ptr.
+                    detail::polys_ij_transpose_pos(polys_i, polys_j, diff_input_ptr, order);
 
                     // Compute the dist2 poly.
                     // NOTE: the distance square can assume rather large numerical
                     // values. If this ever becomes a problem for interpolation, we have
                     // the option of rescaling the interpolating values. The rescaling
                     // factor can be chosen as the maximum interpolating value.
-                    dist2_interp(ptd2_ptr, diff_input.data(), &rf_int, nullptr);
+                    dist2_interp(ptd2_ptr, diff_input_ptr, &rf_int, nullptr);
 
                     // Compute an enclosure for the distance square.
                     cs_enc_func(dist2_ieval.data(), ptd2_ptr, &rf_int, nullptr);
