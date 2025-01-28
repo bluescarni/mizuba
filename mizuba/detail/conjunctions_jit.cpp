@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -28,11 +29,13 @@
 
 #include <boost/math/constants/constants.hpp>
 #include <boost/math/special_functions/binomial.hpp>
+#include <boost/numeric/conversion/cast.hpp>
 #include <boost/safe_numerics/safe_integer.hpp>
 
 #include <heyoka/detail/event_detection.hpp>
 #include <heyoka/detail/llvm_helpers.hpp>
 #include <heyoka/expression.hpp>
+#include <heyoka/kw.hpp>
 #include <heyoka/llvm_state.hpp>
 #include <heyoka/math/pow.hpp>
 #include <heyoka/math/relational.hpp>
@@ -349,12 +352,15 @@ void add_cs_enc_func(heyoka::llvm_state &s, std::uint32_t order_)
     heyoka::add_cfunc<double>(s, "cs_enc", {min, max}, inputs);
 }
 
-// Add a compiled function for the computation of the interpolating polynomial
-// of order 'order' for the distance square between two objects over a time interval.
+// Add a compiled function that will evaluate a batched polynomial at the
+// Chebyshev nodes in the [0, par[0]] range.
 //
-// The evolution in time of the objects' positions is expressed via time-dependent polynomials
-// of order 'order'. The interpolation interval is [0, par[0]].
-void add_dist2_interp(heyoka::llvm_state &s, std::uint32_t order)
+// 'order' is the order of the input polynomials. The number of Chebyshev nodes
+// is order + 1. The batch size is 6.
+//
+// In addition to the polynomial evaluations, the output will also include
+// (at the end) the evaluation points.
+void add_batched_cheby_eval6(heyoka::llvm_state &s, std::uint32_t order)
 {
     namespace hy = heyoka;
     using safe_uint32_t = boost::safe_numerics::safe<std::uint32_t>;
@@ -363,16 +369,12 @@ void add_dist2_interp(heyoka::llvm_state &s, std::uint32_t order)
     const auto op1 = static_cast<std::uint32_t>(safe_uint32_t(order) + 1);
 
     // Create the expressions representing the input polynomial coefficients.
-    // NOTE: the polynomials are expected to be stored in column-major format.
     std::vector<hy::expression> cfs;
     for (std::uint32_t i = 0; i < op1; ++i) {
-        for (const char *fmt : {"c_{}_xi", "c_{}_yi", "c_{}_zi", "c_{}_xj", "c_{}_yj", "c_{}_zj"}) {
-            cfs.emplace_back(fmt::format(fmt::runtime(fmt), i));
-        }
+        cfs.emplace_back(fmt::format("c_{}", i));
     }
 
-    // Create the expressions for the evaluation points. These are the Chebyshev nodes
-    // rescaled to the [0, par[0]] interval.
+    // Create the Cheby nodes in the [0, par[0]] range.
     std::vector<hy::expression> eval_points;
     for (std::uint32_t i = 0; i < op1; ++i) {
         eval_points.push_back(
@@ -380,31 +382,42 @@ void add_dist2_interp(heyoka::llvm_state &s, std::uint32_t order)
              + 1.)
             / 2. * hy::par[0]);
     }
+    // Sort them in ascending order.
+    //
+    // NOTE: for polynomial interpolation with the Bjorck-Pereira algorithm,
+    // it seems like sorting the sampling points in ascending order may improve
+    // numerical stability:
+    //
+    // https://link.springer.com/article/10.1007/BF01408579
+    std::ranges::reverse(eval_points);
 
-    // Compute the distance square at the evaluation points.
-    std::vector<hy::expression> dist2;
-    for (std::uint32_t i = 0; i < op1; ++i) {
-        // Init the array of positions at the current evaluation point.
-        std::array<hy::expression, 6> cur_pos;
+    // The outputs will be the evaluations of the input polynomial at the Cheby nodes. Following Horner's
+    // scheme, we init all evaluations with the highest-order coefficient.
+    std::vector<hy::expression> out;
+    out.insert(out.end(), boost::numeric_cast<decltype(out.size())>(op1), cfs.back());
 
-        // Compute the positions for the current evaluation point.
-        for (std::uint32_t j = 0; j < 6u; ++j) {
-            cur_pos[j] = horner_eval(cfs.data() + j, order, eval_points[i],
-                                     // NOTE: it is important that we cast the stride argument to decltype(cfs.size()),
-                                     // this ensures no overflow when computing indices in horner_eval().
-                                     static_cast<decltype(cfs.size())>(6));
+    // Run the Horner scheme in parallel for all polynomial evaluations.
+    for (std::uint32_t o = 1; o <= order; ++o) {
+        // NOTE: inner iteration on the Cheby nodes.
+        for (std::uint32_t i = 0; i < op1; ++i) {
+            auto &cur_out = out[i];
+            const auto &cur_x = eval_points[i];
+            cur_out = cfs[order - o] + cur_out * cur_x;
         }
-
-        // Add the distance square for the current evaluation point.
-        const auto &[xi, yi, zi, xj, yj, zj] = cur_pos;
-        dist2.push_back(hy::sum({pow(xi - xj, 2.), pow(yi - yj, 2.), pow(zi - zj, 2.)}));
     }
 
-    // Interpolate.
-    const auto interp_res = vm_interp(order, std::move(eval_points), std::move(dist2));
+    // Add the evaluation points to out.
+    out.insert(out.end(), eval_points.begin(), eval_points.end());
 
     // Add the compiled function.
-    heyoka::add_cfunc<double>(s, "dist2_interp", interp_res.second, cfs);
+    heyoka::add_cfunc<double>(s, "batched_cheby_eval6", out, cfs, hy::kw::batch_size = 6u);
+}
+
+// Add a compiled function for the interpolation of a polynomial of order 'order'.
+void add_pinterp(heyoka::llvm_state &s, std::uint32_t order)
+{
+    const auto interp_res = vm_interp(order);
+    heyoka::add_cfunc<double>(s, "pinterp", interp_res.second, interp_res.first);
 }
 
 } // namespace
@@ -421,7 +434,8 @@ conj_jit_data::conj_jit_data(std::uint32_t order)
     hy::detail::llvm_add_poly_rtscc(state, fp_t, order, 1);
     detail::add_aabb_cs_func(state, order);
     detail::add_cs_enc_func(state, order);
-    detail::add_dist2_interp(state, order);
+    detail::add_batched_cheby_eval6(state, order);
+    detail::add_pinterp(state, order);
 
     // Compile.
     state.compile();
@@ -434,7 +448,9 @@ conj_jit_data::conj_jit_data(std::uint32_t order)
     pt1 = reinterpret_cast<decltype(pt1)>(state.jit_lookup("poly_translate_1"));
     aabb_cs_cfunc = reinterpret_cast<decltype(aabb_cs_cfunc)>(state.jit_lookup("aabb_cs"));
     cs_enc_func = reinterpret_cast<decltype(cs_enc_func)>(state.jit_lookup("cs_enc"));
-    dist2_interp_func = reinterpret_cast<decltype(dist2_interp_func)>(state.jit_lookup("dist2_interp"));
+    batched_cheby_eval6_func
+        = reinterpret_cast<decltype(batched_cheby_eval6_func)>(state.jit_lookup("batched_cheby_eval6"));
+    pinterp_func = reinterpret_cast<decltype(pinterp_func)>(state.jit_lookup("pinterp"));
 }
 
 conj_jit_data::~conj_jit_data() = default;

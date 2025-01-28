@@ -82,6 +82,74 @@ void polys_ij_transpose_pos(const double *polys_i, const double *polys_j, double
     }
 }
 
+// Interpolate the square of the distance between two objects i and j within a time interval.
+//
+// The polynomial interpolation order is 'order'. The time interval is [0, rf_int]. diff_input_ptr contains the
+// polynomials of order 'order' interpolating the xyz coordinates of i and j (respectively) in the [0, rf_int] interval,
+// with the coefficients stored in column-major format. batched_cheby_eval6_out_ptr is a buffer of size 12 * (order + 1)
+// that will be used to store the xyz evaluations at the interpolation points and the interpolation points themselves.
+// interp_input_ptr is a buffer used to store the input to the polynomial interpolation function, its size is 2 * (order
+// + 1). ptd2_ptr is the buffer of size order + 1 that will store the polynomial interpolating the distance square.
+// batched_cheby_eval6 is the function used to evaluate the xyz positions of the two objects at the Cheby nodes. pinterp
+// is the polynomial interpolation function.
+void interpolate_dist2_poly(double *batched_cheby_eval6_out_ptr, const double *diff_input_ptr, double *interp_input_ptr,
+                            double *ptd2_ptr, double rf_int, auto *batched_cheby_eval6, auto *pinterp,
+                            std::uint32_t order)
+{
+    namespace hy = heyoka;
+
+    // Compute op1.
+    const std::uint32_t op1 = order + 1u;
+
+    // Splat out rf_int.
+    const std::array<double, 6> rf_int_arr{rf_int, rf_int, rf_int, rf_int, rf_int, rf_int};
+
+    // Evaluate the xyz polynomials of the two objects at the Cheby points.
+    batched_cheby_eval6(batched_cheby_eval6_out_ptr, diff_input_ptr, rf_int_arr.data(), nullptr);
+
+    // Span on the evaluations of the xyz positions. The 3 dimensions here are:
+    //
+    // - the number of evaluation points,
+    // - the number of objects (always 2)
+    // - the number of coordinates for the each object (always 3).
+    const auto xyz_eval_span = hy::mdspan<const double, hy::extents<std::size_t, std::dynamic_extent, 2, 3>>(
+        batched_cheby_eval6_out_ptr, op1);
+
+    // Span on the evaluation points. The 2 dimensions here are:
+    //
+    // - the number of evaluation points,
+    // - 6 copies of the same evaluation point.
+    const auto eval_points_span = hy::mdspan<const double, hy::extents<std::size_t, std::dynamic_extent, 6>>(
+        batched_cheby_eval6_out_ptr + static_cast<std::size_t>(6) * op1, op1);
+
+    // Setup interp_input_ptr, the input for the interpolation.
+    for (std::size_t i = 0; i < op1; ++i) {
+        // Write the current evaluation point.
+        //
+        // NOTE: each row in the evaluation points span
+        // contains the same value splatted out 6 times.
+        interp_input_ptr[i] = eval_points_span[i, 0];
+
+        // Compute and write the distance square.
+        const auto xi = xyz_eval_span[i, 0, 0];
+        const auto yi = xyz_eval_span[i, 0, 1];
+        const auto zi = xyz_eval_span[i, 0, 2];
+
+        const auto xj = xyz_eval_span[i, 1, 0];
+        const auto yj = xyz_eval_span[i, 1, 1];
+        const auto zj = xyz_eval_span[i, 1, 2];
+
+        const auto diff_x = xi - xj;
+        const auto diff_y = yi - yj;
+        const auto diff_z = zi - zj;
+
+        interp_input_ptr[i + op1] = diff_x * diff_x + diff_y * diff_y + diff_z * diff_z;
+    }
+
+    // Interpolate.
+    pinterp(ptd2_ptr, interp_input_ptr, nullptr, nullptr);
+}
+
 } // namespace
 
 } // namespace detail
@@ -107,7 +175,8 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
     auto *rtscc = cjd.rtscc;
     auto *pt1 = cjd.pt1;
     auto *cs_enc_func = cjd.cs_enc_func;
-    auto *dist2_interp = cjd.dist2_interp_func;
+    auto *batched_cheby_eval6 = cjd.batched_cheby_eval6_func;
+    auto *pinterp = cjd.pinterp_func;
 
     // Cache the polynomial order.
     const auto order = pj.get_poly_order();
@@ -170,7 +239,7 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
 
         // Prepare pbuffer.
         //
-        // NOTE: here we need up to 20 buffers each of size op1. In order:
+        // NOTE: here we need up to 34 buffers each of size op1. In order:
         //
         // - 6 + 6 polys for the translations of the state vectors
         //   of the two objects involved in the conjunction,
@@ -178,8 +247,22 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
         //   between the two objects involved in the conjunction,
         // - 1 poly for the representation of the derivative of the square of the distance
         //   between the two objects involved in the conjunction,
-        // - 6 polys to store the result of the transposition of polys_i/j.
-        retval.pbuffer.resize(boost::safe_numerics::safe<decltype(retval.pbuffer.size())>(20) * (order + 1u));
+        // - 6 polys to store the result of the transposition of polys_i/j,
+        // - 12 op1-sized buffers to store the output of batched_cheby_eval6() (these are intermediate
+        //   values to be used in the interpolation of the distance square polynomial),
+        // - 2 op1-sized buffers serving as inputs to the interpolation of the distance square polynomial.
+        retval.pbuffer.resize(boost::safe_numerics::safe<decltype(retval.pbuffer.size())>(34) * (order + 1u));
+
+        // NOTE: make extra sure that we can represent the size as std::size_t, as we need to create
+        // std::size_t-sized spans into pbuffer.
+        try {
+            static_cast<void>(boost::numeric_cast<std::size_t>(retval.pbuffer.size()));
+            // LCOV_EXCL_START
+        } catch (...) {
+            throw std::overflow_error(
+                "Overflow detected when preparing the temporary memory buffers for the narrow phase");
+        }
+        // LCOV_EXCL_STOP
 
         return retval;
     });
@@ -187,20 +270,25 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
     // Iterate over the detected aabbs collisions for this conjunction step.
     oneapi::tbb::parallel_for(
         oneapi::tbb::blocked_range<decltype(cd_bp_collisions.size())>(0, cd_bp_collisions.size()),
-        [&ets, cd_begin, cd_end, &cd_bp_collisions, &pj, pta6_cfunc, fex_check, rtscc, pt1, cs_enc_func, dist2_interp,
-         order, conj_thresh2, &conj_vector, &conj_vector_mutex, &cd_np_rep](const auto &bp_range) {
+        [&ets, cd_begin, cd_end, &cd_bp_collisions, &pj, pta6_cfunc, fex_check, rtscc, pt1, cs_enc_func,
+         batched_cheby_eval6, pinterp, order, conj_thresh2, &conj_vector, &conj_vector_mutex,
+         &cd_np_rep](const auto &bp_range) {
             // Fetch the thread-local data.
             // NOTE: no need to isolate here, as we are not
             // invoking any other TBB primitive from within this
             // scope.
             auto &[local_conj_vec, r_iso_cache, wlist, isol, pbuffer, tmp_conj_vec] = ets.local();
 
-            // Fetch the pointers to the temp polys in pbuffer.
+            // Fetch the pointers to the temp buffers in pbuffer.
+            // NOTE: static casts to std::size_t here are ok, we checked for overflow upon construction
+            // of pbuffer.
             auto *pti_ptr = pbuffer.data();
             auto *ptj_ptr = pti_ptr + static_cast<std::size_t>(6) * (order + 1u);
             auto *ptd2_ptr = ptj_ptr + static_cast<std::size_t>(6) * (order + 1u);
             auto *ptd2p_ptr = ptd2_ptr + (order + 1u);
             auto *diff_input_ptr = ptd2p_ptr + (order + 1u);
+            auto *batched_cheby_eval6_out_ptr = diff_input_ptr + static_cast<std::size_t>(6) * (order + 1u);
+            auto *interp_input_ptr = batched_cheby_eval6_out_ptr + static_cast<std::size_t>(12) * (order + 1u);
 
             // Prepare the local conjunction vector.
             local_conj_vec.clear();
@@ -392,12 +480,13 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                     // Transpose polys_i and polys_j into diff_input_ptr.
                     detail::polys_ij_transpose_pos(polys_i, polys_j, diff_input_ptr, order);
 
-                    // Compute the dist2 poly.
+                    // Compute the dist2 poly via interpolation.
                     // NOTE: the distance square can assume rather large numerical
                     // values. If this ever becomes a problem for interpolation, we have
                     // the option of rescaling the interpolating values. The rescaling
                     // factor can be chosen as the maximum interpolating value.
-                    dist2_interp(ptd2_ptr, diff_input_ptr, &rf_int, nullptr);
+                    detail::interpolate_dist2_poly(batched_cheby_eval6_out_ptr, diff_input_ptr, interp_input_ptr,
+                                                   ptd2_ptr, rf_int, batched_cheby_eval6, pinterp, order);
 
                     // Compute an enclosure for the distance square.
                     cs_enc_func(dist2_ieval.data(), ptd2_ptr, &rf_int, nullptr);
