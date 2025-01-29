@@ -1,4 +1,4 @@
-// Copyright 2024 Francesco Biscani
+// Copyright 2024-2025 Francesco Biscani
 //
 // This file is part of the mizuba library.
 //
