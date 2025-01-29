@@ -77,7 +77,7 @@ _satrec_fields = [
 ]
 
 
-def _make_satrec_from_dict(d):
+def _make_satrec_from_dict(d: dict) -> Satrec:
     # Helper to construct a Satrec object from
     # GPE values contained in a dictionary.
     from sgp4.api import Satrec, WGS72

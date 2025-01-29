@@ -41,8 +41,9 @@ def download_gpes_celestrak() -> pl.DataFrame:
     with ThreadPoolExecutor() as executor:
         ret = executor.map(_fetch_supgp_celestrak, _supgp_group_names)
 
-    # Concatenate the datasets into a single dataframe.
-    gpes = pl.concat(ret)
+    # Concatenate the datasets into a single dataframe,
+    # skipping any None that may be present.
+    gpes = pl.concat(filter(lambda df: not df is None, ret))
 
     # Pick the GPEs with the lowest rms.
     gpes = _supgp_pick_lowest_rms(gpes)
@@ -94,6 +95,11 @@ def download_all_gpes(
         _supgp_pick_lowest_rms,
     )
 
+    if not isinstance(with_supgp, bool):
+        raise TypeError(
+            f"The with_supgp argument must be a bool, but its type instead is '{type(with_supgp)}'"
+        )
+
     with ThreadPoolExecutor() as executor:
         # Fetch all data asynchronously.
         gpe_st = executor.submit(download_gpes_spacetrack, st_identity, st_password)
@@ -105,8 +111,11 @@ def download_all_gpes(
                 for gname in _supgp_group_names
             ]
 
-            # Concatenate the datasets into a single dataframe.
-            gpe_ct = pl.concat(fut.result() for fut in gpe_ct_list)
+            # Concatenate the datasets into a single dataframe,
+            # skipping any None that may be present.
+            gpe_ct = pl.concat(
+                filter(lambda df: not df is None, (fut.result() for fut in gpe_ct_list))
+            )
 
             # Pick the GPEs with the lowest rms.
             gpe_ct = _supgp_pick_lowest_rms(gpe_ct)

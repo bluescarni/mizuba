@@ -25,11 +25,11 @@ del core
 
 from . import test, data_sources
 from ._sgp4_polyjectory import make_sgp4_polyjectory, sgp4_pj_status
-
 from enum import IntEnum
+from ._logging import _setup_logger
 
 
-def _astropy_trigger_utc_tai():
+def _astropy_trigger_utc_tai() -> None:
     # NOTE: this is a workaround for an issue
     # in erfa, which could in principle lead to
     # crashes in case astropy UTC/TAI conversions
@@ -52,6 +52,11 @@ _astropy_trigger_utc_tai()
 
 del _astropy_trigger_utc_tai
 
+# Setup the logger.
+_setup_logger()
+
+del _setup_logger
+
 
 class otype(IntEnum):
     # NOTE: the numbering here is set up to match the codes
@@ -64,7 +69,7 @@ class otype(IntEnum):
 del IntEnum
 
 
-def _have_sgp4_deps():
+def _have_sgp4_deps() -> bool:
     # Helper to check if we have all the dependencies
     # necessary to support TLE propagation via sgp4.
     try:
@@ -75,7 +80,7 @@ def _have_sgp4_deps():
         return False
 
 
-def _check_sgp4_deps():
+def _check_sgp4_deps() -> None:
     # Throwing variant of the previous function.
     if not _have_sgp4_deps():
         raise ImportError(
@@ -83,7 +88,7 @@ def _check_sgp4_deps():
         )
 
 
-def _have_heyoka_deps():
+def _have_heyoka_deps() -> bool:
     # Helper to check if we have all the dependencies
     # necessary to support propagation via heyoka.
     try:

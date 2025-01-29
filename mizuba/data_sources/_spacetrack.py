@@ -21,26 +21,46 @@ from typing import Optional
 
 
 def _spacetrack_login(identity: Optional[str], password: Optional[str]) -> rq.Session:
-    # Attempt to log into space-track.org. If successful,
-    # an http session will be returned.
+    # Attempt to log into space-track.org. If successful, an http session will be returned.
     import requests as rq
     import os
+    import logging
 
-    if identity is None or password is None:
-        # The user did not pass both identity and password,
+    id_pass_err_msg = (
+        "In order to access the data on space-track.org, you must provide an"
+        " identity and a password, either passing them as arguments or via the"
+        " environment variables MIZUBA_SPACETRACK_IDENTITY and"
+        " MIZUBA_SPACETRACK_PASSWORD"
+    )
+
+    # Either both identity and password must be provided, or neither of them.
+    if (identity is None) != (password is None):
+        raise ValueError(id_pass_err_msg)
+
+    if identity is None:
+        # The user did not pass identity and password,
         # try to fetch them from the environment.
         identity = os.getenv("MIZUBA_SPACETRACK_IDENTITY")
         password = os.getenv("MIZUBA_SPACETRACK_PASSWORD")
         if identity is None or password is None:
-            raise RuntimeError(
-                "In order to access the data on space-track.org, you must provide an"
-                " identity and a password, either passing them as arguments or via the"
-                " environment variables MIZUBA_SPACETRACK_IDENTITY and"
-                " MIZUBA_SPACETRACK_PASSWORD"
+            raise ValueError(id_pass_err_msg)
+    else:
+        # The user provided identity and password,
+        # check their types.
+        if not isinstance(identity, str):
+            raise TypeError(
+                f"The spacetrack identity must be a string, but an object of type '{type(identity)}' was provided instead"
+            )
+        if not isinstance(password, str):
+            raise TypeError(
+                f"The spacetrack password must be a string, but an object of type '{type(password)}' was provided instead"
             )
 
     # Open an http session.
     session = rq.Session()
+
+    logger = logging.getLogger("mizuba")
+    logger.debug("Attempting to log into space-track.org")
 
     # Try to log in.
     login_url = r"https://www.space-track.org/ajaxauth/login"
@@ -55,6 +75,8 @@ def _spacetrack_login(identity: Optional[str], password: Optional[str]) -> rq.Se
         raise RuntimeError(
             f"Unable to log into space-track.org: {login_response.reason}"
         )
+
+    logger.debug("space-track.org login successful")
 
     return session
 
@@ -156,6 +178,10 @@ def _fetch_gpes_spacetrack(session: rq.Session) -> pl.DataFrame:
     from io import StringIO
     import polars as pl
     from ._common import _common_deduplicate_gpes
+    import logging
+
+    logger = logging.getLogger("mizuba")
+    logger.debug("Attempting to download gpes from space-track.org")
 
     # Try to fetch the gpes.
     #
@@ -179,6 +205,8 @@ def _fetch_gpes_spacetrack(session: rq.Session) -> pl.DataFrame:
 
     # Parse the gpes into a polars dataframes.
     gpes = pl.read_json(StringIO(download_response.text))
+
+    logger.debug("gpes from space-track.org downloaded and parsed")
 
     # Validate.
     _validate_gpes_spacetrack(gpes)

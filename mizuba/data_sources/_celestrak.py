@@ -16,6 +16,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import polars as pl
+from typing import Optional
 
 
 def _reformat_supgp_celestrak(gpes: pl.DataFrame) -> pl.DataFrame:
@@ -84,12 +85,18 @@ def _reformat_supgp_celestrak(gpes: pl.DataFrame) -> pl.DataFrame:
     return ret
 
 
-def _fetch_supgp_celestrak(group_name: str) -> pl.DataFrame:
+def _fetch_supgp_celestrak(group_name: str) -> Optional[pl.DataFrame]:
     # Fetch the supgp data for the group group_name from celestrak.
     import requests as rq
     from io import StringIO
     import polars as pl
     from ._common import _common_validate_gpes, _common_deduplicate_gpes
+    import logging
+
+    logger = logging.getLogger("mizuba")
+    logger.debug(
+        f"Attempting to fetch the supgp data for the group '{group_name}' from celestrak"
+    )
 
     download_url = rf"https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?FILE={group_name}&FORMAT=json"
     download_response = rq.get(download_url)
@@ -101,7 +108,22 @@ def _fetch_supgp_celestrak(group_name: str) -> pl.DataFrame:
         )
 
     # Parse the gpes into a polars dataframe.
-    gpes = pl.read_json(StringIO(download_response.text))
+    try:
+        gpes = pl.read_json(StringIO(download_response.text))
+    except Exception as e:
+        # NOTE: in case of an invalid group name, we will get an exception here.
+        # Downgrade the exception to a warning and return None instead. The idea
+        # here is that every now and then there may be additions/removals of supgp
+        # groups on celestrak, and if that happens we do not want to produce
+        # a "hard" error.
+        logger.warning(
+            f'Error parsing the data for the celestrak supgp group "{group_name}"',
+            exc_info=True,
+            stack_info=True,
+        )
+        return None
+
+    logger.debug(f"supgp data for the group '{group_name}' downloaded and parsed")
 
     # Validate.
     # NOTE: supgp data may have duplicate norad ids.
@@ -111,6 +133,8 @@ def _fetch_supgp_celestrak(group_name: str) -> pl.DataFrame:
     gpes = _reformat_supgp_celestrak(gpes)
 
     # Deduplicate.
+    # NOTE: I am not 100% sure this is required for supgp data,
+    # but it sohuld not hurt.
     gpes = _common_deduplicate_gpes(gpes)
 
     # Sort by norad id first, then by epoch. Then return.
@@ -139,6 +163,10 @@ def _fetch_satcat_celestrak() -> pl.DataFrame:
     import requests as rq
     from io import StringIO
     import polars as pl
+    import logging
+
+    logger = logging.getLogger("mizuba")
+    logger.debug("Attempting to fetch the satcat from celestrak")
 
     download_url = "https://celestrak.org/pub/satcat.csv"
     download_response = rq.get(download_url)
@@ -151,6 +179,8 @@ def _fetch_satcat_celestrak() -> pl.DataFrame:
 
     # Parse the satcat into a polars dataframes.
     satcat = pl.read_csv(StringIO(download_response.text))
+
+    logger.debug("celestrak satcat downloaded and parsed")
 
     # Validate.
     _validate_satcat_celestrak(satcat)
@@ -215,4 +245,4 @@ def _supgp_pick_lowest_rms(gpes: pl.DataFrame) -> pl.DataFrame:
     return gpes
 
 
-del pl
+del pl, Optional
