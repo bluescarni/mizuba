@@ -29,7 +29,7 @@ from enum import IntEnum
 from ._logging import _setup_logger
 
 
-def _astropy_trigger_utc_tai():
+def _astropy_trigger_utc_tai() -> None:
     # NOTE: this is a workaround for an issue
     # in erfa, which could in principle lead to
     # crashes in case astropy UTC/TAI conversions
@@ -69,7 +69,7 @@ class otype(IntEnum):
 del IntEnum
 
 
-def _have_sgp4_deps():
+def _have_sgp4_deps() -> bool:
     # Helper to check if we have all the dependencies
     # necessary to support TLE propagation via sgp4.
     try:
@@ -80,7 +80,7 @@ def _have_sgp4_deps():
         return False
 
 
-def _check_sgp4_deps():
+def _check_sgp4_deps() -> None:
     # Throwing variant of the previous function.
     if not _have_sgp4_deps():
         raise ImportError(
@@ -88,7 +88,7 @@ def _check_sgp4_deps():
         )
 
 
-def _have_heyoka_deps():
+def _have_heyoka_deps() -> bool:
     # Helper to check if we have all the dependencies
     # necessary to support propagation via heyoka.
     try:

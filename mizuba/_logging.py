@@ -16,7 +16,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-def _setup_logger():
+def _setup_logger() -> None:
     # Helper for the initial setup of the logger.
     import logging
 

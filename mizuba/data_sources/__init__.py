@@ -95,6 +95,11 @@ def download_all_gpes(
         _supgp_pick_lowest_rms,
     )
 
+    if not isinstance(with_supgp, bool):
+        raise TypeError(
+            f"The with_supgp argument must be a bool, but its type instead is '{type(with_supgp)}'"
+        )
+
     with ThreadPoolExecutor() as executor:
         # Fetch all data asynchronously.
         gpe_st = executor.submit(download_gpes_spacetrack, st_identity, st_password)
