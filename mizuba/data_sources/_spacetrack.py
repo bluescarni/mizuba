@@ -24,6 +24,7 @@ def _spacetrack_login(identity: Optional[str], password: Optional[str]) -> rq.Se
     # Attempt to log into space-track.org. If successful, an http session will be returned.
     import requests as rq
     import os
+    import logging
 
     id_pass_err_msg = (
         "In order to access the data on space-track.org, you must provide an"
@@ -58,6 +59,9 @@ def _spacetrack_login(identity: Optional[str], password: Optional[str]) -> rq.Se
     # Open an http session.
     session = rq.Session()
 
+    logger = logging.getLogger("mizuba")
+    logger.debug("Attempting to log into space-track.org")
+
     # Try to log in.
     login_url = r"https://www.space-track.org/ajaxauth/login"
     login_response = session.post(
@@ -71,6 +75,8 @@ def _spacetrack_login(identity: Optional[str], password: Optional[str]) -> rq.Se
         raise RuntimeError(
             f"Unable to log into space-track.org: {login_response.reason}"
         )
+
+    logger.debug("space-track.org login successful")
 
     return session
 
@@ -172,6 +178,10 @@ def _fetch_gpes_spacetrack(session: rq.Session) -> pl.DataFrame:
     from io import StringIO
     import polars as pl
     from ._common import _common_deduplicate_gpes
+    import logging
+
+    logger = logging.getLogger("mizuba")
+    logger.debug("Attempting to download gpes from space-track.org")
 
     # Try to fetch the gpes.
     #
@@ -195,6 +205,8 @@ def _fetch_gpes_spacetrack(session: rq.Session) -> pl.DataFrame:
 
     # Parse the gpes into a polars dataframes.
     gpes = pl.read_json(StringIO(download_response.text))
+
+    logger.debug("gpes from space-track.org downloaded and parsed")
 
     # Validate.
     _validate_gpes_spacetrack(gpes)

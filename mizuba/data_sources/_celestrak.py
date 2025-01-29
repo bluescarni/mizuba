@@ -93,8 +93,10 @@ def _fetch_supgp_celestrak(group_name: str) -> Optional[pl.DataFrame]:
     from ._common import _common_validate_gpes, _common_deduplicate_gpes
     import logging
 
-    # Fetch the logger.
     logger = logging.getLogger("mizuba")
+    logger.debug(
+        f"Attempting to fetch the supgp data for the group '{group_name}' from celestrak"
+    )
 
     download_url = rf"https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?FILE={group_name}&FORMAT=json"
     download_response = rq.get(download_url)
@@ -120,6 +122,8 @@ def _fetch_supgp_celestrak(group_name: str) -> Optional[pl.DataFrame]:
             stack_info=True,
         )
         return None
+
+    logger.debug(f"supgp data for the group '{group_name}' downloaded and parsed")
 
     # Validate.
     # NOTE: supgp data may have duplicate norad ids.
@@ -157,6 +161,10 @@ def _fetch_satcat_celestrak() -> pl.DataFrame:
     import requests as rq
     from io import StringIO
     import polars as pl
+    import logging
+
+    logger = logging.getLogger("mizuba")
+    logger.debug("Attempting to fetch the satcat from celestrak")
 
     download_url = "https://celestrak.org/pub/satcat.csv"
     download_response = rq.get(download_url)
@@ -169,6 +177,8 @@ def _fetch_satcat_celestrak() -> pl.DataFrame:
 
     # Parse the satcat into a polars dataframes.
     satcat = pl.read_csv(StringIO(download_response.text))
+
+    logger.debug("celestrak satcat downloaded and parsed")
 
     # Validate.
     _validate_satcat_celestrak(satcat)
