@@ -15,35 +15,23 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// NOTE: disable several warnings while compiling SGP4.cpp.
+#ifndef MIZUBA_PY_EXPOSE_POLYJECTORY_HPP
+#define MIZUBA_PY_EXPOSE_POLYJECTORY_HPP
 
-#if defined(__GNUC__)
+#include <memory>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdangling-else"
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
-#pragma GCC diagnostic ignored "-Wformat"
-#pragma GCC diagnostic ignored "-Warray-parameter"
+#include <pybind11/pybind11.h>
 
-#elif defined(_MSC_VER)
+#include "polyjectory.hpp"
 
-#pragma warning(push)
-#pragma warning(disable : 4477)
-#pragma warning(disable : 4828)
+namespace mizuba_py
+{
 
-#endif
+void expose_polyjectory(pybind11::module_ &);
 
-#include "SGP4.cpp"
+void add_pj_weak_ptr(const std::shared_ptr<mizuba::detail::polyjectory_impl> &);
+void cleanup_pj_weak_ptrs();
 
-#if defined(__GNUC__)
-
-#pragma GCC diagnostic pop
-
-#elif defined(_MSC_VER)
-
-#pragma warning(pop)
+} // namespace mizuba_py
 
 #endif

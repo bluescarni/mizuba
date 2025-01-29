@@ -33,6 +33,9 @@ set(MIZUBA_PYTHON_FILES
 # Core module.
 set(_MIZUBA_CORE_SOURCES
     core.cpp
+    expose_polyjectory.cpp
+    expose_conjunctions.cpp
+    expose_make_sgp4_polyjectory.cpp
     common_utils.cpp
     polyjectory.cpp
     conjunctions.cpp

@@ -1,4 +1,4 @@
-// Copyright 2024 Francesco Biscani
+// Copyright 2024-2025 Francesco Biscani
 //
 // This file is part of the mizuba library.
 //
@@ -25,17 +25,17 @@
 namespace mizuba_py
 {
 
-void check_array_cc_aligned(const py::array &arr, const char *msg)
+void check_array_cc_aligned(const pybind11::array &arr, const char *msg)
 {
-    if (!py::cast<bool>(arr.attr("flags").attr("aligned")) || !py::cast<bool>(arr.attr("flags").attr("c_contiguous")))
-        [[unlikely]] {
+    if (!pybind11::cast<bool>(arr.attr("flags").attr("aligned"))
+        || !pybind11::cast<bool>(arr.attr("flags").attr("c_contiguous"))) [[unlikely]] {
         throw std::invalid_argument(msg);
     }
 }
 
-bool may_share_memory(const py::array &a, const py::array &b)
+bool may_share_memory(const pybind11::array &a, const pybind11::array &b)
 {
-    return py::module_::import("numpy").attr("may_share_memory")(a, b).cast<bool>();
+    return pybind11::module_::import("numpy").attr("may_share_memory")(a, b).cast<bool>();
 }
 
 } // namespace mizuba_py
