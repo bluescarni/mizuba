@@ -56,7 +56,12 @@ def _common_deduplicate_gpes(gpes: pl.DataFrame) -> pl.DataFrame:
     # In order to detect duplicates, we consider all the values in the GPEs
     # which affect orbital propagation. We assume that these are contained
     # in the [3, 12) column range of the dataframe.
-    #
+
+    # NOTE: as a heuristic, we first sort by norad id and then we remove
+    # duplicates, keeping the *first* occurrence. Like this, we are picking
+    # the duplicate objects with the lowest norad id.
+    gpes = gpes.sort("norad_id")
+
     # NOTE: unique() will scramble the ordering of the rows.
     return gpes.unique(subset=gpes.columns[3:12], keep="first")
 

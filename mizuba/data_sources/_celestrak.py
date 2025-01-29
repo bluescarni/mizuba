@@ -133,6 +133,8 @@ def _fetch_supgp_celestrak(group_name: str) -> Optional[pl.DataFrame]:
     gpes = _reformat_supgp_celestrak(gpes)
 
     # Deduplicate.
+    # NOTE: I am not 100% sure this is required for supgp data,
+    # but it sohuld not hurt.
     gpes = _common_deduplicate_gpes(gpes)
 
     # Sort by norad id first, then by epoch. Then return.
