@@ -15,27 +15,23 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <stdexcept>
+#ifndef MIZUBA_PY_EXPOSE_POLYJECTORY_HPP
+#define MIZUBA_PY_EXPOSE_POLYJECTORY_HPP
 
-#include <pybind11/numpy.h>
+#include <memory>
+
 #include <pybind11/pybind11.h>
 
-#include "common_utils.hpp"
+#include "polyjectory.hpp"
 
 namespace mizuba_py
 {
 
-void check_array_cc_aligned(const pybind11::array &arr, const char *msg)
-{
-    if (!pybind11::cast<bool>(arr.attr("flags").attr("aligned"))
-        || !pybind11::cast<bool>(arr.attr("flags").attr("c_contiguous"))) [[unlikely]] {
-        throw std::invalid_argument(msg);
-    }
-}
+void expose_polyjectory(pybind11::module_ &);
 
-bool may_share_memory(const pybind11::array &a, const pybind11::array &b)
-{
-    return pybind11::module_::import("numpy").attr("may_share_memory")(a, b).cast<bool>();
-}
+void add_pj_weak_ptr(const std::shared_ptr<mizuba::detail::polyjectory_impl> &);
+void cleanup_pj_weak_ptrs();
 
 } // namespace mizuba_py
+
+#endif
