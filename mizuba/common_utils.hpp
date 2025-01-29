@@ -89,7 +89,8 @@ bool may_share_memory(const pybind11::array &a, const pybind11::array &b, const 
 // Python does not guarantee that all objects are garbage-collected at
 // shutdown. This means that we may find ourselves in a situation where
 // the temporary memory-mapped files used internally by the polyjectory,
-// conjunction, etc. classes are not deleted when the program terminates.
+// conjunction, etc. classes are not deleted when the program terminates
+// because the C++ destructors are never called.
 //
 // In order to avoid this, we adopt the following approach:
 //
@@ -105,19 +106,15 @@ bool may_share_memory(const pybind11::array &a, const pybind11::array &b, const 
 // wrapped and returned as a py::object.
 //
 // For instance, both the polyjectory __init__() and the make_sgp4_polyjectory() factory need
-// to register a weak pointer for the new polyjectory they create. OTOH, the
-// 'polyjectory' property getter of a conjunctions object does not, because:
-//
-// - it is returning a reference to an existing polyjectory and not creating a new one, and
-// - the reference it returns originates from a polyjectory that was originally constructed
-//   on the Python side and then passed to the conjunctions' __init__(), which means a weak pointer
-//   to it had already been registered.
+// to register a weak pointer for the new polyjectory they create.
 //
 // This all sounds unfortunately complicated, let us hope it does not get too messy :/
 //
 // NOTE: we will have to re-examine this approach if/when we implement des11n, as that
 // results in a creation of a new Python-wrapped polyjectory/conjunction/etc. without any weak pointer
 // registration. Probably we will need to enforce the registration at unpickling time?
+// Note also that des11n of, e.g., a conjunctions object will also create a new internal
+// polyjectory object, which will also need to be registered.
 //
 // NOTE: in jupyterlab the cleanup functions registered to run at exit sometimes
 // do not run to completion, thus leaving behind temporary files after shutdown.

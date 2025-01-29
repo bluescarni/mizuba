@@ -118,9 +118,12 @@ void expose_polyjectory(pybind11::module_ &m)
                         arr.ndim()));
                 }
                 if (arr.shape(1) != 7) [[unlikely]] {
-                    throw std::invalid_argument(fmt::format("A trajectory array must have a size of 7 in the second "
-                                                            "dimension, but instead a size of {} was detected",
-                                                            arr.shape(1)));
+                    throw std::invalid_argument(fmt::format(
+                        // LCOV_EXCL_START
+                        "A trajectory array must have a size of 7 in the second "
+                        "dimension, but instead a size of {} was detected",
+                        // LCOV_EXCL_STOP
+                        arr.shape(1)));
                 }
 
                 // Check contiguousness/alignment.
