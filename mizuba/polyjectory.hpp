@@ -63,11 +63,11 @@ public:
     // Span representing a single trajectory. The three dimensions here are, respectively:
     //
     // - the total number of steps,
+    // - the polynomial order + 1,
     // - the total number of state variables (which is always 7, i.e.,
-    //   the Cartesian state vector + radius),
-    // - the polynomial order + 1.
+    //   the Cartesian state vector + radius).
     using traj_span_t
-        = heyoka::mdspan<const double, heyoka::extents<std::size_t, std::dynamic_extent, 7, std::dynamic_extent>>;
+        = heyoka::mdspan<const double, heyoka::extents<std::size_t, std::dynamic_extent, std::dynamic_extent, 7>>;
 
     // Span representing time data for a trajectory. If the trajectory has no steps,
     // then the span will be empty. Otherwise, the first value in the span

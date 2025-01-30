@@ -44,13 +44,13 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         step_end = end_times[i]
         random_times = rng.uniform(0, step_end - step_begin, (5,))
 
-        xvals = np.polyval(cfs[i - 1, 0, ::-1], random_times)
-        yvals = np.polyval(cfs[i - 1, 1, ::-1], random_times)
-        zvals = np.polyval(cfs[i - 1, 2, ::-1], random_times)
-        vxvals = np.polyval(cfs[i - 1, 3, ::-1], random_times)
-        vyvals = np.polyval(cfs[i - 1, 4, ::-1], random_times)
-        vzvals = np.polyval(cfs[i - 1, 5, ::-1], random_times)
-        rvals = np.polyval(cfs[i - 1, 6, ::-1], random_times)
+        xvals = np.polyval(cfs[i - 1, ::-1, 0], random_times)
+        yvals = np.polyval(cfs[i - 1, ::-1, 1], random_times)
+        zvals = np.polyval(cfs[i - 1, ::-1, 2], random_times)
+        vxvals = np.polyval(cfs[i - 1, ::-1, 3], random_times)
+        vyvals = np.polyval(cfs[i - 1, ::-1, 4], random_times)
+        vzvals = np.polyval(cfs[i - 1, ::-1, 5], random_times)
+        rvals = np.polyval(cfs[i - 1, ::-1, 6], random_times)
 
         e, r, v = sat.sgp4_array(np.array([jd_begin] * 5), step_begin + random_times)
 
@@ -409,13 +409,13 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             step_end = end_times[i]
             random_times = rng.uniform(0, step_end - step_begin, (5,))
 
-            xvals = np.polyval(cfs[i - 1, 0, ::-1], random_times)
-            yvals = np.polyval(cfs[i - 1, 1, ::-1], random_times)
-            zvals = np.polyval(cfs[i - 1, 2, ::-1], random_times)
-            vxvals = np.polyval(cfs[i - 1, 3, ::-1], random_times)
-            vyvals = np.polyval(cfs[i - 1, 4, ::-1], random_times)
-            vzvals = np.polyval(cfs[i - 1, 5, ::-1], random_times)
-            rvals = np.polyval(cfs[i - 1, 6, ::-1], random_times)
+            xvals = np.polyval(cfs[i - 1, ::-1, 0], random_times)
+            yvals = np.polyval(cfs[i - 1, ::-1, 1], random_times)
+            zvals = np.polyval(cfs[i - 1, ::-1, 2], random_times)
+            vxvals = np.polyval(cfs[i - 1, ::-1, 3], random_times)
+            vyvals = np.polyval(cfs[i - 1, ::-1, 4], random_times)
+            vzvals = np.polyval(cfs[i - 1, ::-1, 5], random_times)
+            rvals = np.polyval(cfs[i - 1, ::-1, 6], random_times)
 
             # Convert the times to UTC Julian dates.
             utc_jds = Time(

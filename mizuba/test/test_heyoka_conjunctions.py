@@ -174,7 +174,11 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         # Build the polyjectory.
         trajs = []
         for i in range(N):
-            trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
+            trajs.append(
+                np.ascontiguousarray(
+                    c_out.tcs[:, i * 7 : (i + 1) * 7, :].transpose((0, 2, 1))
+                )
+            )
         pj = polyjectory(trajs, [c_out.times] * N, [0] * N)
 
         # Run first a conjunction detection with stupidly large conjunction threshold,
@@ -396,7 +400,11 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
             # Build the polyjectory.
             trajs = []
             for i in range(N):
-                trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
+                trajs.append(
+                    np.ascontiguousarray(
+                        c_out.tcs[:, i * 7 : (i + 1) * 7, :].transpose((0, 2, 1))
+                    )
+                )
             pj = polyjectory(trajs, [c_out.times] * N, [0] * N)
 
             cj = conj(pj, 1e-4, 0.1)
@@ -481,7 +489,11 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
             # Build the polyjectory.
             trajs = []
             for i in range(N):
-                trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
+                trajs.append(
+                    np.ascontiguousarray(
+                        c_out.tcs[:, i * 7 : (i + 1) * 7, :].transpose((0, 2, 1))
+                    )
+                )
             pj = polyjectory(trajs, [c_out.times] * N, [0] * N)
 
             cj = conj(pj, 1e-4, 0.1)
@@ -536,7 +548,11 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
             # Build the polyjectory.
             trajs = []
             for i in range(N):
-                trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
+                trajs.append(
+                    np.ascontiguousarray(
+                        c_out.tcs[:, i * 7 : (i + 1) * 7, :].transpose((0, 2, 1))
+                    )
+                )
             pj = polyjectory(trajs, [c_out.times] * N, [0] * N)
 
             cj = conj(pj, 1e4, 0.1)
@@ -587,7 +603,11 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         # Build the polyjectory.
         trajs = []
         for i in range(N):
-            trajs.append(np.ascontiguousarray(c_out.tcs[:, i * 7 : (i + 1) * 7, :]))
+            trajs.append(
+                np.ascontiguousarray(
+                    c_out.tcs[:, i * 7 : (i + 1) * 7, :].transpose((0, 2, 1))
+                )
+            )
         pj = polyjectory(trajs, [c_out.times] * N, [0] * N)
 
         # Run conjunction detection with a very large threshold.
@@ -626,9 +646,9 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         # Build the trajectory data.
         trajs = []
         # Circular orbit.
-        trajs.append(np.ascontiguousarray(new_c_out.tcs[:, :7, :]))
+        trajs.append(np.ascontiguousarray(new_c_out.tcs[:, :7, :].transpose((0, 2, 1))))
         # Elliptic orbit.
-        trajs.append(np.ascontiguousarray(c_out.tcs[:, 7:14, :]))
+        trajs.append(np.ascontiguousarray(c_out.tcs[:, 7:14, :].transpose((0, 2, 1))))
 
         # Build the time data.
         times = []

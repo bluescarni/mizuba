@@ -364,6 +364,7 @@ std::variant<double, int> eval_interp_error2(const double *cf_ptr, auto &interp_
         for (auto j = 0u; j < 3u; ++j) {
             // NOTE: a stride type of std::uint32_t here is ok, as we know that
             // cf_ptr is coming from a buffer whose size fits std::uint32_t.
+            // NOTE: can this be vectorised?
             cur_xyz[j] = horner_eval(cf_ptr + j, op1 - 1u, eval_tm, static_cast<std::uint32_t>(7));
         }
     }
@@ -639,8 +640,8 @@ int gpe_interpolate_with_bisection(const double init_step_begin, const double in
         // Add the polynomial coefficients to poly_cf_buf.
         const auto cf_span
             = hy::mdspan<const double, hy::extents<std::size_t, std::dynamic_extent, 7>>(poly.v.data(), op1);
-        for (auto j = 0u; j < 7u; ++j) {
-            for (std::size_t i = 0; i < op1; ++i) {
+        for (std::size_t i = 0; i < op1; ++i) {
+            for (auto j = 0u; j < 7u; ++j) {
                 poly_cf_buf.push_back(cf_span[i, j]);
             }
         }

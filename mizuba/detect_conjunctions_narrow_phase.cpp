@@ -54,30 +54,30 @@ namespace detail
 namespace
 {
 
-// Function to transpose the positional polynomials stored in polys_i/j into the diff_input_ptr buffer.
+// Function to copy the positional polynomials stored in polys_i/j into the diff_input_ptr buffer.
 //
 // polys_i and polys_j contain the polynomial coefficients for the state vectors of i and j stored in
-// row-major format (positions first, then velocities). diff_input_ptr is the output buffer.
+// column-major format (positions, velocities, radius). diff_input_ptr is the output buffer.
 // 'order' is the order of the polynomials.
-void polys_ij_transpose_pos(const double *polys_i, const double *polys_j, double *diff_input_ptr, std::uint32_t order)
+void polys_ij_copy(const double *polys_i, const double *polys_j, double *diff_input_ptr, std::uint32_t order)
 {
     namespace hy = heyoka;
 
     // Fetch spans over the positional polys.
     const auto pi_span
-        = hy::mdspan<const double, hy::extents<std::size_t, 3, std::dynamic_extent>>(polys_i, order + 1u);
+        = hy::mdspan<const double, hy::extents<std::size_t, std::dynamic_extent, 7>>(polys_i, order + 1u);
     const auto pj_span
-        = hy::mdspan<const double, hy::extents<std::size_t, 3, std::dynamic_extent>>(polys_j, order + 1u);
+        = hy::mdspan<const double, hy::extents<std::size_t, std::dynamic_extent, 7>>(polys_j, order + 1u);
 
     // Fetch a span over diff_input_ptr.
     const auto input_span
         = hy::mdspan<double, hy::extents<std::size_t, std::dynamic_extent, 6>>(diff_input_ptr, order + 1u);
 
-    // Transpose into input_span.
-    for (auto i = 0u; i < 3u; ++i) {
-        for (std::uint32_t j = 0; j <= order; ++j) {
-            input_span(j, i) = pi_span(i, j);
-            input_span(j, i + 3u) = pj_span(i, j);
+    // Copy into input_span.
+    for (std::uint32_t i = 0; i <= order; ++i) {
+        for (auto j = 0u; j < 3u; ++j) {
+            input_span(i, j) = pi_span(i, j);
+            input_span(i, j + 3u) = pj_span(i, j);
         }
     }
 }
@@ -170,7 +170,7 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                                                double conj_det_interval, std::size_t n_cd_steps, np_report &np_rep)
 {
     // Fetch the compiled functions.
-    auto *pta6_cfunc = cjd.pta6_cfunc;
+    auto *pta7_cfunc = cjd.pta7_cfunc;
     auto *fex_check = cjd.fex_check;
     auto *rtscc = cjd.rtscc;
     auto *pt1 = cjd.pt1;
@@ -239,9 +239,9 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
 
         // Prepare pbuffer.
         //
-        // NOTE: here we need up to 34 buffers each of size op1. In order:
+        // NOTE: here we need up to 36 buffers each of size op1. In order:
         //
-        // - 6 + 6 polys for the translations of the state vectors
+        // - 7 + 7 polys for the translations of the state vectors
         //   of the two objects involved in the conjunction,
         // - 1 poly for the representation of the square of the distance
         //   between the two objects involved in the conjunction,
@@ -251,7 +251,7 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
         // - 12 op1-sized buffers to store the output of batched_cheby_eval6() (these are intermediate
         //   values to be used in the interpolation of the distance square polynomial),
         // - 2 op1-sized buffers serving as inputs to the interpolation of the distance square polynomial.
-        retval.pbuffer.resize(boost::safe_numerics::safe<decltype(retval.pbuffer.size())>(34) * (order + 1u));
+        retval.pbuffer.resize(boost::safe_numerics::safe<decltype(retval.pbuffer.size())>(36) * (order + 1u));
 
         // NOTE: make extra sure that we can represent the size as std::size_t, as we need to create
         // std::size_t-sized spans into pbuffer.
@@ -270,7 +270,7 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
     // Iterate over the detected aabbs collisions for this conjunction step.
     oneapi::tbb::parallel_for(
         oneapi::tbb::blocked_range<decltype(cd_bp_collisions.size())>(0, cd_bp_collisions.size()),
-        [&ets, cd_begin, cd_end, &cd_bp_collisions, &pj, pta6_cfunc, fex_check, rtscc, pt1, cs_enc_func,
+        [&ets, cd_begin, cd_end, &cd_bp_collisions, &pj, pta7_cfunc, fex_check, rtscc, pt1, cs_enc_func,
          batched_cheby_eval6, pinterp, order, conj_thresh2, &conj_vector, &conj_vector_mutex,
          &cd_np_rep](const auto &bp_range) {
             // Fetch the thread-local data.
@@ -283,8 +283,8 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
             // NOTE: static casts to std::size_t here are ok, we checked for overflow upon construction
             // of pbuffer.
             auto *pti_ptr = pbuffer.data();
-            auto *ptj_ptr = pti_ptr + static_cast<std::size_t>(6) * (order + 1u);
-            auto *ptd2_ptr = ptj_ptr + static_cast<std::size_t>(6) * (order + 1u);
+            auto *ptj_ptr = pti_ptr + static_cast<std::size_t>(7) * (order + 1u);
+            auto *ptd2_ptr = ptj_ptr + static_cast<std::size_t>(7) * (order + 1u);
             auto *ptd2p_ptr = ptd2_ptr + (order + 1u);
             auto *diff_input_ptr = ptd2p_ptr + (order + 1u);
             auto *batched_cheby_eval6_out_ptr = diff_input_ptr + static_cast<std::size_t>(6) * (order + 1u);
@@ -468,17 +468,25 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                     // translation happens, otherwise we can keep the pointer
                     // to the original polynomials.
                     if (delta_i != 0) {
-                        pta6_cfunc(pti_ptr, polys_i, &delta_i, nullptr);
+                        // Splat out delta_i.
+                        const std::array<double, 7> delta_i_arr
+                            = {{delta_i, delta_i, delta_i, delta_i, delta_i, delta_i, delta_i}};
+
+                        pta7_cfunc(pti_ptr, polys_i, delta_i_arr.data(), nullptr);
                         polys_i = pti_ptr;
                     }
 
                     if (delta_j != 0) {
-                        pta6_cfunc(ptj_ptr, polys_j, &delta_j, nullptr);
+                        // Splat out delta_j.
+                        const std::array<double, 7> delta_j_arr
+                            = {{delta_j, delta_j, delta_j, delta_j, delta_j, delta_j, delta_j}};
+
+                        pta7_cfunc(ptj_ptr, polys_j, delta_j_arr.data(), nullptr);
                         polys_j = ptj_ptr;
                     }
 
-                    // Transpose polys_i and polys_j into diff_input_ptr.
-                    detail::polys_ij_transpose_pos(polys_i, polys_j, diff_input_ptr, order);
+                    // Copy polys_i and polys_j into diff_input_ptr.
+                    detail::polys_ij_copy(polys_i, polys_j, diff_input_ptr, order);
 
                     // Compute the dist2 poly via interpolation.
                     // NOTE: the distance square can assume rather large numerical
@@ -529,49 +537,40 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
 
                         // Helper to add to local_conj_vec a detected conjunction occurring at time conj_tm with
                         // conjunction distance square of conj_dist2.
-                        const auto add_conjunction
-                            = [order, &local_conj_vec, lb_rf, polys_i, polys_j, i, j](double conj_tm) {
-                                  // Compute the state vector for the two objects.
-                                  // NOTE: this is quite ugly, perhaps consider replacing it with a single JITted
-                                  // implementation. If not for performance, at least for clarity.
-                                  const std::array<double, 3> ri
-                                      = {detail::horner_eval(polys_i, order, conj_tm),
-                                         detail::horner_eval(polys_i + (order + 1u), order, conj_tm),
-                                         detail::horner_eval(polys_i + static_cast<std::size_t>(2) * (order + 1u),
-                                                             order, conj_tm)},
-                                      vi = {detail::horner_eval(polys_i + static_cast<std::size_t>(3) * (order + 1u),
-                                                                order, conj_tm),
-                                            detail::horner_eval(polys_i + static_cast<std::size_t>(4) * (order + 1u),
-                                                                order, conj_tm),
-                                            detail::horner_eval(polys_i + static_cast<std::size_t>(5) * (order + 1u),
-                                                                order, conj_tm)};
+                        const auto add_conjunction = [order, &local_conj_vec, lb_rf, polys_i, polys_j, i,
+                                                      j](double conj_tm) {
+                            // Compute the state vector for the two objects.
+                            // NOTE: this is quite ugly, perhaps consider replacing it with a single JITted
+                            // implementation. If not for performance, at least for clarity.
+                            const auto stride = static_cast<std::size_t>(7);
+                            const std::array<double, 3> ri = {detail::horner_eval(polys_i, order, conj_tm, stride),
+                                                              detail::horner_eval(polys_i + 1, order, conj_tm, stride),
+                                                              detail::horner_eval(polys_i + 2, order, conj_tm, stride)},
+                                                        vi = {detail::horner_eval(polys_i + 3, order, conj_tm, stride),
+                                                              detail::horner_eval(polys_i + 4, order, conj_tm, stride),
+                                                              detail::horner_eval(polys_i + 5, order, conj_tm, stride)};
 
-                                  const std::array<double, 3> rj
-                                      = {detail::horner_eval(polys_j, order, conj_tm),
-                                         detail::horner_eval(polys_j + (order + 1u), order, conj_tm),
-                                         detail::horner_eval(polys_j + static_cast<std::size_t>(2) * (order + 1u),
-                                                             order, conj_tm)},
-                                      vj = {detail::horner_eval(polys_j + static_cast<std::size_t>(3) * (order + 1u),
-                                                                order, conj_tm),
-                                            detail::horner_eval(polys_j + static_cast<std::size_t>(4) * (order + 1u),
-                                                                order, conj_tm),
-                                            detail::horner_eval(polys_j + static_cast<std::size_t>(5) * (order + 1u),
-                                                                order, conj_tm)};
+                            const std::array<double, 3> rj = {detail::horner_eval(polys_j, order, conj_tm, stride),
+                                                              detail::horner_eval(polys_j + 1, order, conj_tm, stride),
+                                                              detail::horner_eval(polys_j + 2, order, conj_tm, stride)},
+                                                        vj = {detail::horner_eval(polys_j + 3, order, conj_tm, stride),
+                                                              detail::horner_eval(polys_j + 4, order, conj_tm, stride),
+                                                              detail::horner_eval(polys_j + 5, order, conj_tm, stride)};
 
-                                  // Compute the conjunction distance.
-                                  const auto diff_x = ri[0] - rj[0];
-                                  const auto diff_y = ri[1] - rj[1];
-                                  const auto diff_z = ri[2] - rj[2];
-                                  const auto conj_dist = std::sqrt(diff_x * diff_x + diff_y * diff_y + diff_z * diff_z);
+                            // Compute the conjunction distance.
+                            const auto diff_x = ri[0] - rj[0];
+                            const auto diff_y = ri[1] - rj[1];
+                            const auto diff_z = ri[2] - rj[2];
+                            const auto conj_dist = std::sqrt(diff_x * diff_x + diff_y * diff_y + diff_z * diff_z);
 
-                                  local_conj_vec.emplace_back(i, j,
-                                                              // NOTE: we want to store here the absolute
-                                                              // time coordinate of the conjunction. conj_tm
-                                                              // is a time coordinate relative to the root
-                                                              // finding interval, so we need to transform it
-                                                              // into an absolute time within the polyjectory.
-                                                              lb_rf + conj_tm, conj_dist, ri, vi, rj, vj);
-                              };
+                            local_conj_vec.emplace_back(i, j,
+                                                        // NOTE: we want to store here the absolute
+                                                        // time coordinate of the conjunction. conj_tm
+                                                        // is a time coordinate relative to the root
+                                                        // finding interval, so we need to transform it
+                                                        // into an absolute time within the polyjectory.
+                                                        lb_rf + conj_tm, conj_dist, ri, vi, rj, vj);
+                        };
 
                         // For each detected conjunction, we need to:
                         // - verify that indeed the conjunction happens below
