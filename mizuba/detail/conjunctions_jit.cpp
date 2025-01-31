@@ -270,7 +270,7 @@ auto cs_enclosure(const std::vector<heyoka::expression> &cfs, const heyoka::expr
 // via the Cargo-Shisha algorithm within a time interval.
 //
 // The batch size is 7, i.e., the computation is batched over the entire
-// state vector of the object. The lower/upper bounds are par[0]/par[1].
+// state vector of the object. The lower/upper time bounds are par[0]/par[1].
 // The conjunction radius is par[2].
 void add_aabb_cs_func(heyoka::llvm_state &s, std::uint32_t order_)
 {
@@ -292,8 +292,8 @@ void add_aabb_cs_func(heyoka::llvm_state &s, std::uint32_t order_)
     const auto conj_radius = hy::par[2];
 
     // Construct the outputs.
-    const auto cs_out = cs_enclosure(inputs, lb, ub);
-    const std::vector outputs{cs_out.first - conj_radius, cs_out.second + conj_radius};
+    const auto [enc_min, enc_max] = cs_enclosure(inputs, lb, ub);
+    const std::vector outputs{enc_min - conj_radius, enc_max + conj_radius};
 
     // Add the compiled function.
     heyoka::add_cfunc<double>(s, "aabb_cs", outputs, inputs, hy::kw::batch_size = 7u);

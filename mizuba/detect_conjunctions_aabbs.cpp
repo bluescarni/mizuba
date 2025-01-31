@@ -108,7 +108,7 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
     // Compute the conjunction radius.
     const auto conj_radius = conj_thresh / 2;
 
-    // Prepare the output and the parameters array for the compiled function.
+    // Prepare the output and the parameters arrays for the compiled function.
     std::array<double, 14> cs_out{};
     std::array<double, 21> cs_pars{};
 

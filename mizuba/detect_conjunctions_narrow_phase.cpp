@@ -57,7 +57,7 @@ namespace
 // Function to copy the positional polynomials stored in polys_i/j into the diff_input_ptr buffer.
 //
 // polys_i and polys_j contain the polynomial coefficients for the state vectors of i and j stored in
-// column-major format (positions, velocities, radius). diff_input_ptr is the output buffer.
+// column-major format (positions, velocities, radial distance). diff_input_ptr is the output buffer.
 // 'order' is the order of the polynomials.
 void polys_ij_copy(const double *polys_i, const double *polys_j, double *diff_input_ptr, std::uint32_t order)
 {
@@ -76,8 +76,8 @@ void polys_ij_copy(const double *polys_i, const double *polys_j, double *diff_in
     // Copy into input_span.
     for (std::uint32_t i = 0; i <= order; ++i) {
         for (auto j = 0u; j < 3u; ++j) {
-            input_span(i, j) = pi_span(i, j);
-            input_span(i, j + 3u) = pj_span(i, j);
+            input_span[i, j] = pi_span[i, j];
+            input_span[i, j + 3u] = pj_span[i, j];
         }
     }
 }

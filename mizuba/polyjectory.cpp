@@ -853,7 +853,7 @@ void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, do
 
     // Run the polynomial evaluations and write the results into the output span.
     for (auto i = 0u; i < 7u; ++i) {
-        // NOTE: this can be easily vectorised.
+        // NOTE: this can easily be vectorised.
         out_ptr[i] = detail::horner_eval(&traj_span[step_idx, 0, i], order, h, static_cast<std::size_t>(7));
     }
 }
