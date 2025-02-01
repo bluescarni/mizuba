@@ -272,17 +272,14 @@ auto cs_enclosure(const std::vector<heyoka::expression> &cfs, const heyoka::expr
 // The batch size is 7, i.e., the computation is batched over the entire
 // state vector of the object. The lower/upper time bounds are par[0]/par[1].
 // The conjunction radius is par[2].
-void add_aabb_cs_func(heyoka::llvm_state &s, std::uint32_t order_)
+void add_aabb_cs_func(heyoka::llvm_state &s, std::uint32_t order)
 {
     namespace hy = heyoka;
-    using safe_uint32_t = boost::safe_numerics::safe<std::uint32_t>;
-
-    const auto order = safe_uint32_t(order_);
 
     // Create variables representing the batched poly coefficients.
     std::vector<hy::expression> inputs;
-    for (safe_uint32_t i = 0; i <= order; ++i) {
-        inputs.emplace_back(fmt::format("c_{}", static_cast<std::uint32_t>(i)));
+    for (std::uint32_t i = 0; i <= order; ++i) {
+        inputs.emplace_back(fmt::format("c_{}", i));
     }
 
     // The lower and upper bounds for the evaluation are implemented as
@@ -293,6 +290,7 @@ void add_aabb_cs_func(heyoka::llvm_state &s, std::uint32_t order_)
 
     // Construct the outputs.
     const auto [enc_min, enc_max] = cs_enclosure(inputs, lb, ub);
+    // NOTE: adjust the outputs with the conjunction radius.
     const std::vector outputs{enc_min - conj_radius, enc_max + conj_radius};
 
     // Add the compiled function.
@@ -301,19 +299,15 @@ void add_aabb_cs_func(heyoka::llvm_state &s, std::uint32_t order_)
 
 // Add a compiled function for the computation of the enclosure of a polynomial
 // via the Cargo-Shisha algorithm. The evaluation interval is [0, par[0]].
-void add_cs_enc_func(heyoka::llvm_state &s, std::uint32_t order_)
+void add_cs_enc_func(heyoka::llvm_state &s, std::uint32_t order)
 {
     namespace hy = heyoka;
     using namespace hy::literals;
-    using safe_uint32_t = boost::safe_numerics::safe<std::uint32_t>;
-
-    const auto order = safe_uint32_t(order_);
 
     // The inputs of the function are the polynomial coefficients.
     std::vector<hy::expression> inputs;
-    inputs.reserve(order + 1);
-    for (safe_uint32_t i = 0; i <= order; ++i) {
-        inputs.emplace_back(fmt::format("cf_{}", static_cast<std::uint32_t>(i)));
+    for (std::uint32_t i = 0; i <= order; ++i) {
+        inputs.emplace_back(fmt::format("cf_{}", i));
     }
 
     // Init the upper bound of the evaluation interval.
@@ -338,10 +332,9 @@ void add_cs_enc_func(heyoka::llvm_state &s, std::uint32_t order_)
 void add_batched_cheby_eval6(heyoka::llvm_state &s, std::uint32_t order)
 {
     namespace hy = heyoka;
-    using safe_uint32_t = boost::safe_numerics::safe<std::uint32_t>;
 
-    // Safely compute order + 1.
-    const auto op1 = static_cast<std::uint32_t>(safe_uint32_t(order) + 1);
+    // Compute order + 1.
+    const auto op1 = static_cast<std::uint32_t>(order + 1u);
 
     // Create the expressions representing the input polynomial coefficients.
     std::vector<hy::expression> cfs;
@@ -352,10 +345,8 @@ void add_batched_cheby_eval6(heyoka::llvm_state &s, std::uint32_t order)
     // Create the Cheby nodes in the [0, par[0]] range.
     std::vector<hy::expression> eval_points;
     for (std::uint32_t i = 0; i < op1; ++i) {
-        eval_points.push_back(
-            (std::cos((2. * i + 1.) / (2. * static_cast<std::uint32_t>(op1)) * boost::math::constants::pi<double>())
-             + 1.)
-            / 2. * hy::par[0]);
+        eval_points.push_back((std::cos((2. * i + 1.) / (2. * op1) * boost::math::constants::pi<double>()) + 1.) / 2.
+                              * hy::par[0]);
     }
     // Sort them in ascending order.
     //

@@ -196,7 +196,7 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
         // for the 3 velocities. This is still advantageous for performance due to vectorization:
         // on AVX512 (simd size 8) this is optimal, on AVX (simd size 4) this gives a x2
         // throughput increase wrt the scalar computation, on SSE/neon/vsx (simd size 2) it should be
-        // a wash (with potentially slightly better performance due to better ILP).
+        // a wash (with potentially slightly better performance due to increased ILP).
         aabb_cs_cfunc(cs_out.data(), cf_ptr, cs_pars.data(), nullptr);
 
         // A couple of helpers to cast lower/upper bounds from double to float. After
