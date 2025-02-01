@@ -171,7 +171,7 @@ class conjunctions_test_case(_ut.TestCase):
                     # Evaluate the polynomials and check that
                     # the results fit in the aabb.
                     for coord_idx, aabb_idx in zip([0, 1, 2, 6], range(4)):
-                        pval = np.polyval(traj_polys[coord_idx, ::-1], h)
+                        pval = np.polyval(traj_polys[::-1, coord_idx], h)
                         self.assertGreater(pval, aabb[0][aabb_idx])
                         self.assertLess(pval, aabb[1][aabb_idx])
 
@@ -518,6 +518,7 @@ class conjunctions_test_case(_ut.TestCase):
         tdata[:3, 0] = 1.0
         # Set the radius.
         tdata[6, 0] = np.sqrt(3.0)
+        tdata = np.ascontiguousarray(tdata.transpose())
 
         pj = polyjectory([[tdata, tdata, tdata]], [[0.0, 1.0, 2.0, 3.0]], [0])
 
@@ -561,29 +562,29 @@ class conjunctions_test_case(_ut.TestCase):
         # us to verify that missing traj data is placed
         # after tdata7.
         # x.
-        tdata0 = np.zeros((7, 6))
+        tdata0 = np.zeros((6, 7))
         tdata0[0, 0] = 1.0
-        tdata1 = np.zeros((7, 6))
+        tdata1 = np.zeros((6, 7))
         tdata1[0, 0] = -1.0
 
         # y.
-        tdata2 = np.zeros((7, 6))
-        tdata2[1, 0] = 1.0
-        tdata3 = np.zeros((7, 6))
-        tdata3[1, 0] = -1.0
+        tdata2 = np.zeros((6, 7))
+        tdata2[0, 1] = 1.0
+        tdata3 = np.zeros((6, 7))
+        tdata3[0, 1] = -1.0
 
         # z.
-        tdata4 = np.zeros((7, 6))
-        tdata4[2, 0] = 1.0
-        tdata5 = np.zeros((7, 6))
-        tdata5[2, 0] = -1.0
+        tdata4 = np.zeros((6, 7))
+        tdata4[0, 2] = 1.0
+        tdata5 = np.zeros((6, 7))
+        tdata5[0, 2] = -1.0
 
         # Center.
-        tdata6 = np.zeros((7, 6))
+        tdata6 = np.zeros((6, 7))
 
         # All ones.
-        tdata7 = np.zeros((7, 6))
-        tdata7[:, 0] = 1
+        tdata7 = np.zeros((6, 7))
+        tdata7[0:1] = 1
 
         # NOTE: the first 10 objects will have traj
         # data only for the first step, not the second.
@@ -623,8 +624,8 @@ class conjunctions_test_case(_ut.TestCase):
         from .. import conjunctions, polyjectory
 
         # Polyjectory with a single object.
-        tdata = np.zeros((7, 6))
-        tdata[:, 1] = 0.1
+        tdata = np.zeros((6, 7))
+        tdata[1, :] = 0.1
 
         pj = polyjectory([[tdata]], [[0.0, 1.0]], [0])
         conjs = conjunctions(pj, 1e-16, 1.0)
@@ -654,33 +655,33 @@ class conjunctions_test_case(_ut.TestCase):
         # Polyjectory in which the morton codes
         # of two objects differ at the last bit.
         # x.
-        tdata0 = np.zeros((7, 6))
+        tdata0 = np.zeros((6, 7))
         tdata0[0, 0] = 1.0
-        tdata1 = np.zeros((7, 6))
+        tdata1 = np.zeros((6, 7))
         tdata1[0, 0] = -1.0
 
         # y.
-        tdata2 = np.zeros((7, 6))
-        tdata2[1, 0] = 1.0
-        tdata3 = np.zeros((7, 6))
-        tdata3[1, 0] = -1.0
+        tdata2 = np.zeros((6, 7))
+        tdata2[0, 1] = 1.0
+        tdata3 = np.zeros((6, 7))
+        tdata3[0, 1] = -1.0
 
         # z.
-        tdata4 = np.zeros((7, 6))
-        tdata4[2, 0] = 1.0
-        tdata5 = np.zeros((7, 6))
-        tdata5[2, 0] = -1.0
+        tdata4 = np.zeros((6, 7))
+        tdata4[0, 2] = 1.0
+        tdata5 = np.zeros((6, 7))
+        tdata5[0, 2] = -1.0
 
         # Center.
-        tdata6 = np.zeros((7, 6))
+        tdata6 = np.zeros((6, 7))
 
         # All ones.
-        tdata7 = np.zeros((7, 6))
-        tdata7[:, 0] = 1
+        tdata7 = np.zeros((6, 7))
+        tdata7[0, :] = 1
 
         # All ones but last.
-        tdata8 = np.zeros((7, 6))
-        tdata8[:, 0] = 1
+        tdata8 = np.zeros((6, 7))
+        tdata8[0, :] = 1
         tdata8[0, 0] = 1.0 - 2.1 / 2**16
 
         pj = polyjectory(
@@ -1046,6 +1047,7 @@ class conjunctions_test_case(_ut.TestCase):
             tdata[3, 0] = -1.0
 
             traj_data_0.append(tdata)
+        traj_data_0 = np.ascontiguousarray(np.array(traj_data_0).transpose((0, 2, 1)))
 
         # Construct the trajectory data for the second object, moving
         # left to right.
@@ -1057,6 +1059,7 @@ class conjunctions_test_case(_ut.TestCase):
             tdata[3, 0] = 1.0
 
             traj_data_1.append(tdata)
+        traj_data_1 = np.ascontiguousarray(np.array(traj_data_1).transpose((0, 2, 1)))
 
         # Construct the polyjectory.
         pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
@@ -1081,6 +1084,7 @@ class conjunctions_test_case(_ut.TestCase):
             tdata[3, 0] = -1.0
 
             traj_data_0.append(tdata)
+        traj_data_0 = np.ascontiguousarray(np.array(traj_data_0).transpose((0, 2, 1)))
 
         traj_data_1 = []
         for tm in tm_data_1[1:]:
@@ -1090,6 +1094,7 @@ class conjunctions_test_case(_ut.TestCase):
             tdata[3, 0] = 1.0
 
             traj_data_1.append(tdata)
+        traj_data_1 = np.ascontiguousarray(np.array(traj_data_1).transpose((0, 2, 1)))
 
         pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
         cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
@@ -1118,6 +1123,7 @@ class conjunctions_test_case(_ut.TestCase):
             tdata[3, 0] = -1.0
 
             traj_data_0.append(tdata)
+        traj_data_0 = np.ascontiguousarray(np.array(traj_data_0).transpose((0, 2, 1)))
 
         traj_data_1 = []
         for tm in tm_data_1[1:]:
@@ -1127,6 +1133,7 @@ class conjunctions_test_case(_ut.TestCase):
             tdata[3, 0] = 1.0
 
             traj_data_1.append(tdata)
+        traj_data_1 = np.ascontiguousarray(np.array(traj_data_1).transpose((0, 2, 1)))
 
         pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
         cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
@@ -1145,6 +1152,7 @@ class conjunctions_test_case(_ut.TestCase):
             tdata[3, 0] = -1.0
 
             traj_data_0.append(tdata)
+        traj_data_0 = np.ascontiguousarray(np.array(traj_data_0).transpose((0, 2, 1)))
 
         traj_data_1 = []
         for tm in tm_data_1[1:]:
@@ -1154,6 +1162,7 @@ class conjunctions_test_case(_ut.TestCase):
             tdata[3, 0] = 1.0
 
             traj_data_1.append(tdata)
+        traj_data_1 = np.ascontiguousarray(np.array(traj_data_1).transpose((0, 2, 1)))
 
         pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
         cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
@@ -1181,6 +1190,7 @@ class conjunctions_test_case(_ut.TestCase):
             tdata[3, 0] = -1.0
 
             traj_data_0.append(tdata)
+        traj_data_0 = np.ascontiguousarray(np.array(traj_data_0).transpose((0, 2, 1)))
 
         traj_data_1 = []
         for tm in tm_data_1[1:]:
@@ -1190,6 +1200,7 @@ class conjunctions_test_case(_ut.TestCase):
             tdata[3, 0] = 1.0
 
             traj_data_1.append(tdata)
+        traj_data_1 = np.ascontiguousarray(np.array(traj_data_1).transpose((0, 2, 1)))
 
         pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
         cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)
@@ -1208,6 +1219,7 @@ class conjunctions_test_case(_ut.TestCase):
             tdata[3, 0] = -1.0
 
             traj_data_0.append(tdata)
+        traj_data_0 = np.ascontiguousarray(np.array(traj_data_0).transpose((0, 2, 1)))
 
         traj_data_1 = []
         for tm in tm_data_1[1:]:
@@ -1217,6 +1229,7 @@ class conjunctions_test_case(_ut.TestCase):
             tdata[3, 0] = 1.0
 
             traj_data_1.append(tdata)
+        traj_data_1 = np.ascontiguousarray(np.array(traj_data_1).transpose((0, 2, 1)))
 
         pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
         cj = conjunctions(pj=pj, conj_thresh=1e-6, conj_det_interval=2.0 / 3.0)

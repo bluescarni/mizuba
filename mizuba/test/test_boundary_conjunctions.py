@@ -70,8 +70,8 @@ class boundary_conjunctions_test_case(_ut.TestCase):
             tdata_1 = -copy(tdata_0)
 
             if tm <= 0.9:
-                traj_data[0].append(tdata_0)
-            traj_data[1].append(tdata_1)
+                traj_data[0].append(tdata_0.transpose())
+            traj_data[1].append(tdata_1.transpose())
 
         # Construct the polyjectory.
         pj = polyjectory(traj_data, [tm_data_0, tm_data_1], [0, 0])
@@ -146,8 +146,8 @@ class boundary_conjunctions_test_case(_ut.TestCase):
 
             tdata_1 = -copy(tdata_0)
 
-            traj_data[0].append(tdata_0)
-            traj_data[1].append(tdata_1)
+            traj_data[0].append(tdata_0.transpose())
+            traj_data[1].append(tdata_1.transpose())
 
         # Construct the polyjectory.
         pj = polyjectory(traj_data, [tm_data, tm_data], [0, 0])

@@ -227,7 +227,7 @@ polyjectory::polyjectory(ptag,
             const auto cur_traj = traj_spans[i];
 
             // Set/check the order + 1.
-            const auto op1 = cur_traj.extent(2);
+            const auto op1 = cur_traj.extent(1);
             if (i == 0u) {
                 if (op1 < 3u) [[unlikely]] {
                     throw std::invalid_argument("The trajectory polynomial order for the first object "
@@ -243,7 +243,7 @@ polyjectory::polyjectory(ptag,
             }
 
             // Compute the total data size (in number of floating-point values).
-            const auto traj_size = safe_size_t(cur_traj.extent(0)) * cur_traj.extent(1) * op1;
+            const auto traj_size = safe_size_t(cur_traj.extent(0)) * op1 * cur_traj.extent(2);
 
             // Add entry to the offset vector.
             traj_offset_vec.emplace_back(cur_traj_offset, cur_traj.extent(0));
@@ -252,6 +252,7 @@ polyjectory::polyjectory(ptag,
             cur_traj_offset += traj_size;
         }
 
+        // Check that we have some trajectory data.
         if (cur_traj_offset == 0u) [[unlikely]] {
             throw std::invalid_argument(
                 "All the trajectories in a polyjectory have a number of steps equal to zero: this is not allowed");
@@ -338,7 +339,7 @@ polyjectory::polyjectory(ptag,
         // Check and copy over the data from the spans.
         oneapi::tbb::parallel_for(
             oneapi::tbb::blocked_range<decltype(traj_spans.size())>(0, n_objs),
-            [traj_base_ptr, time_base_ptr, poly_op1, &traj_spans, &traj_offset_vec, &time_spans,
+            [traj_base_ptr, time_base_ptr, &traj_spans, &traj_offset_vec, &time_spans,
              &time_offset_vec](const auto &range) {
                 for (auto i = range.begin(); i != range.end(); ++i) {
                     // Trajectory data.
@@ -350,8 +351,8 @@ polyjectory::polyjectory(ptag,
                     // checking first and then doing a bulk copy later.
                     for (std::size_t j = 0; j < cur_traj.extent(0); ++j) {
                         for (std::size_t k = 0; k < cur_traj.extent(1); ++k) {
-                            for (std::size_t l = 0; l < poly_op1; ++l) {
-                                if (!std::isfinite(cur_traj(j, k, l))) [[unlikely]] {
+                            for (std::size_t l = 0; l < cur_traj.extent(2); ++l) {
+                                if (!std::isfinite(cur_traj[j, k, l])) [[unlikely]] {
                                     throw std::invalid_argument(
                                         fmt::format("A non-finite value was found in the trajectory at index {}", i));
                                 }
@@ -360,11 +361,11 @@ polyjectory::polyjectory(ptag,
                     }
 
                     // Compute the total data size (in number of floating-point values).
-                    const auto traj_size = safe_size_t(cur_traj.extent(0)) * cur_traj.extent(1) * poly_op1;
+                    // NOTE: the safety of this computation was checked while building the traj offset vector.
+                    const auto traj_size = cur_traj.size();
 
                     // Copy the data into the file.
-                    std::ranges::copy(cur_traj.data_handle(),
-                                      cur_traj.data_handle() + static_cast<std::size_t>(traj_size),
+                    std::ranges::copy(cur_traj.data_handle(), cur_traj.data_handle() + traj_size,
                                       traj_base_ptr + traj_offset_vec[i].offset);
 
                     // Time data.
@@ -447,7 +448,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         throw std::invalid_argument(
             fmt::format("Invalid polynomial order {} specified during the construction of a polyjectory", order));
     }
-    const auto op1 = order + 1u;
+    const std::uint32_t op1 = order + 1u;
 
     // Initial check on traj_offsets.
     if (traj_offsets.empty()) [[unlikely]] {
@@ -486,6 +487,12 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
     }
     // LCOV_EXCL_STOP
 
+    // Check that the two files are not the same.
+    if (traj_file_path == time_file_path) [[unlikely]] {
+        throw std::invalid_argument("Invalid data file(s) passed to the constructor of a polyjectory: the trajectory "
+                                    "data file and the time data file are the same file");
+    }
+
     // Iterate over the trajectory offsets, sanity-checking them and computing
     // the total number of floating-point values expected in the files.
     safe_size_t tot_num_traj_values = 0, tot_num_time_values = 0;
@@ -516,7 +523,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                                 i));
             }
 
-            if (offset - prev_offset != safe_size_t(prev_n_steps) * 7u * op1) [[unlikely]] {
+            if (offset - prev_offset != safe_size_t(prev_n_steps) * op1 * 7u) [[unlikely]] {
                 throw std::invalid_argument(fmt::format(
                     "Inconsistent data detected in the trajectory offsets vector passed to the constructor of "
                     "a polyjectory: the offset of the object at index {} is inconsistent with the offset and "
@@ -526,13 +533,14 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         }
 
         // Update tot_num_traj_values and tot_num_time_values.
-        tot_num_traj_values += safe_size_t(n_steps) * 7u * op1;
+        tot_num_traj_values += safe_size_t(n_steps) * op1 * 7u;
         // NOTE: the total number of time values for the current trajectory is zero if n_steps == 0,
         // otherwise it is n_steps + 1. n_steps + 1 is safe to compute as we computed n_steps * 7
         // the line before.
         tot_num_time_values += n_steps + static_cast<unsigned>(n_steps != 0u);
     }
 
+    // Check that we have some trajectory data.
     if (tot_num_traj_values == 0u) [[unlikely]] {
         throw std::invalid_argument(
             "All the trajectories in a polyjectory have a number of steps equal to zero: this is not allowed");
@@ -627,8 +635,8 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                     // Check for non-finite trajectory data.
                     for (std::size_t j = 0; j < cur_traj.extent(0); ++j) {
                         for (std::size_t k = 0; k < cur_traj.extent(1); ++k) {
-                            for (std::size_t l = 0; l < op1; ++l) {
-                                if (!std::isfinite(cur_traj(j, k, l))) [[unlikely]] {
+                            for (std::size_t l = 0; l < cur_traj.extent(2); ++l) {
+                                if (!std::isfinite(cur_traj[j, k, l])) [[unlikely]] {
                                     throw std::invalid_argument(
                                         fmt::format("A non-finite value was found in the trajectory at index {}", i));
                                 }
@@ -845,7 +853,8 @@ void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, do
 
     // Run the polynomial evaluations and write the results into the output span.
     for (auto i = 0u; i < 7u; ++i) {
-        out_ptr[i] = detail::horner_eval(&traj_span(step_idx, i, 0), order, h);
+        // NOTE: this can easily be vectorised.
+        out_ptr[i] = detail::horner_eval(&traj_span[step_idx, 0, i], order, h, static_cast<std::size_t>(7));
     }
 }
 

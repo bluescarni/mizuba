@@ -323,16 +323,16 @@ int gpe_eval_heyoka(auto &interp_buffer, auto &sgp4_prop, const auto &sample_poi
 // produced by the interpolating polynomials are compared to the positions produced by the sgp4
 // propagators, and the maximum squared positional difference is returned.
 //
-// cf_ptr contains the interpolating polynomials' coefficients. interp_buffer is the evaluation/interpolation
-// buffer, which is assumed to contain in the first chunk the Cheby nodes which were used to produce the
-// interpolating polynomials (thus, these are cheby nodes measured in days since the beginning of the
-// interpolation step). Similarly, sample_points is assumed to contain the same Cheby nodes but measured
-// in minutes since the satellite's epoch (for use in the sgp4 propagators). xyz_eval is a buffer that will store the
-// evaluations of the interpolating polynomials. step_begin_sat_epoch represents the step's begin time measured in days
-// since the satellite's epoch. is_deep_space signals whether the satellite is a deep-space one or not. satrec is the
-// initialised satellite object for computations with the official C++ code. sgp4_prop is the initialised heyoka sgp4
-// propagator. cfunc_r is the jit-compiled function to compute the satellite's radial coordinate from its xyz
-// coordinates.
+// cf_ptr contains the interpolating polynomials' coefficients for the entire state vector, stored in column-major
+// format. interp_buffer is the evaluation/interpolation buffer, which is assumed to contain in the first chunk the
+// Cheby nodes which were used to produce the interpolating polynomials (thus, these are cheby nodes measured in days
+// since the beginning of the interpolation step). Similarly, sample_points is assumed to contain the same Cheby nodes
+// but measured in minutes since the satellite's epoch (for use in the sgp4 propagators). xyz_eval is a buffer that will
+// store the evaluations of the interpolating polynomials. step_begin_sat_epoch represents the step's begin time
+// measured in days since the satellite's epoch. is_deep_space signals whether the satellite is a deep-space one or not.
+// satrec is the initialised satellite object for computations with the official C++ code. sgp4_prop is the initialised
+// heyoka sgp4 propagator. cfunc_r is the jit-compiled function to compute the satellite's radial coordinate from its
+// xyz coordinates.
 //
 // An error code will be returned if either sgp4 propagation produces an error or if non-finite values
 // are detected during the computations.
@@ -364,6 +364,12 @@ std::variant<double, int> eval_interp_error2(const double *cf_ptr, auto &interp_
         for (auto j = 0u; j < 3u; ++j) {
             // NOTE: a stride type of std::uint32_t here is ok, as we know that
             // cf_ptr is coming from a buffer whose size fits std::uint32_t.
+            //
+            // NOTE: this could be vectorised via a strided cfunc, since we are only
+            // interested in the evaluation of the xyz polys. However, the overall cost of Horner
+            // evaluation should be quite small compared to the SGP4 propagations
+            // we will be performing shortly. Thus, the performance benefit may be
+            // quite minimal.
             cur_xyz[j] = horner_eval(cf_ptr + j, op1 - 1u, eval_tm, static_cast<std::uint32_t>(7));
         }
     }
@@ -639,8 +645,8 @@ int gpe_interpolate_with_bisection(const double init_step_begin, const double in
         // Add the polynomial coefficients to poly_cf_buf.
         const auto cf_span
             = hy::mdspan<const double, hy::extents<std::size_t, std::dynamic_extent, 7>>(poly.v.data(), op1);
-        for (auto j = 0u; j < 7u; ++j) {
-            for (std::size_t i = 0; i < op1; ++i) {
+        for (std::size_t i = 0; i < op1; ++i) {
+            for (auto j = 0u; j < 7u; ++j) {
                 poly_cf_buf.push_back(cf_span[i, j]);
             }
         }

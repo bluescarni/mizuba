@@ -114,21 +114,18 @@ auto poly_translate(const std::vector<heyoka::expression> &cfs, const heyoka::ex
     return out;
 }
 
-// Add a compiled function for the computation of the translations of 6 polynomials.
-// The translation amount is par[0]. The coefficients of the 6 polynomials are assumed
-// to be stored contiguously in row-major format (that is, the coefficients of the first
-// poly, followed by the coefficients of the second poly, and so on).
-void add_poly_translator_a6(heyoka::llvm_state &s, std::uint32_t order)
+// Add a compiled function for the computation of the translation of a batched polynomial.
+//
+// The translation amount is par[0]. The batch size is 7.
+void add_poly_translator_a7(heyoka::llvm_state &s, std::uint32_t order)
 {
     namespace hy = heyoka;
 
     // The original polynomial coefficients are the
     // input variables for the compiled function.
     std::vector<hy::expression> cfs;
-    for (auto i = 0u; i < 6u; ++i) {
-        for (std::uint32_t j = 0; j <= order; ++j) {
-            cfs.emplace_back(fmt::format("c_{}_{}", i, j));
-        }
+    for (std::uint32_t i = 0; i <= order; ++i) {
+        cfs.emplace_back(fmt::format("c_{}", i));
     }
 
     // The translation amount 'a' is implemented as the
@@ -136,14 +133,10 @@ void add_poly_translator_a6(heyoka::llvm_state &s, std::uint32_t order)
     const auto a = hy::par[0];
 
     // Create the expressions for the translation of the coefficients.
-    std::vector<hy::expression> out;
-    for (decltype(cfs.size()) i = 0u; i < 6u; ++i) {
-        auto tmp = poly_translate(std::vector(cfs.data() + i * (order + 1u), cfs.data() + (i + 1u) * (order + 1u)), a);
-        out.insert(out.end(), tmp.begin(), tmp.end());
-    }
+    const auto out = poly_translate(cfs, a);
 
     // Add the compiled function.
-    hy::add_cfunc<double>(s, "pta6_cfunc", out, cfs);
+    hy::add_cfunc<double>(s, "pta7_cfunc", out, cfs, hy::kw::batch_size = 7u);
 }
 
 // Utilities for the implementation of the Cargo-Shisha algorithm.
@@ -273,72 +266,48 @@ auto cs_enclosure(const std::vector<heyoka::expression> &cfs, const heyoka::expr
     return std::make_pair(std::move(min_b), std::move(max_b));
 }
 
-// Add a compiled function for the computation of the aabb of an object
-// via the Cargo-Shisha algorithm.
-void add_aabb_cs_func(heyoka::llvm_state &s, std::uint32_t order_)
+// Add a compiled function for the batched computation of the aabb of an object
+// via the Cargo-Shisha algorithm within a time interval.
+//
+// The batch size is 7, i.e., the computation is batched over the entire
+// state vector of the object. The lower/upper time bounds are par[0]/par[1].
+// The conjunction radius is par[2].
+void add_aabb_cs_func(heyoka::llvm_state &s, std::uint32_t order)
 {
     namespace hy = heyoka;
-    using safe_uint32_t = boost::safe_numerics::safe<std::uint32_t>;
 
-    const auto order = safe_uint32_t(order_);
-
-    // Create variables representing the poly coefficients for x/y/z,
-    // vx/vy/vz and r. We never read anything from vx/vy/vz, but we need
-    // them to be present due to the buffer layout requirements for cfuncs.
+    // Create variables representing the batched poly coefficients.
     std::vector<hy::expression> inputs;
-    inputs.reserve((order + 1) * 7);
-    for (const auto *name : {"x", "y", "z", "vx", "vy", "vz", "r"}) {
-        for (safe_uint32_t i = 0; i <= order; ++i) {
-            inputs.emplace_back(fmt::format("{}_{}", name, static_cast<std::uint32_t>(i)));
-        }
+    for (std::uint32_t i = 0; i <= order; ++i) {
+        inputs.emplace_back(fmt::format("c_{}", i));
     }
 
-    // The lower and upper bound for the evaluation are implemented as
+    // The lower and upper bounds for the evaluation are implemented as
     // par[0] and par[1] respectively. The conjunction radius is par[2].
     const auto lb = hy::par[0];
     const auto ub = hy::par[1];
     const auto conj_radius = hy::par[2];
 
-    // Init the outputs.
-    std::vector<hy::expression> outputs;
-    outputs.reserve(8);
-    using osize_t = decltype(outputs.size());
-    // Add the outputs for x/y/z.
-    for (auto i = 0u; i < 3u; ++i) {
-        const auto [cur_min, cur_max]
-            = cs_enclosure(std::vector(inputs.data() + static_cast<osize_t>(order + 1) * i,
-                                       inputs.data() + static_cast<osize_t>(order + 1) * (i + 1u)),
-                           lb, ub);
-        outputs.push_back(cur_min - conj_radius);
-        outputs.push_back(cur_max + conj_radius);
-    }
-
-    // Add the outputs for r.
-    const auto [cur_min, cur_max] = cs_enclosure(std::vector(inputs.data() + static_cast<osize_t>(order + 1) * 6,
-                                                             inputs.data() + static_cast<osize_t>(order + 1) * 7),
-                                                 lb, ub);
-    outputs.push_back(cur_min - conj_radius);
-    outputs.push_back(cur_max + conj_radius);
+    // Construct the outputs.
+    const auto [enc_min, enc_max] = cs_enclosure(inputs, lb, ub);
+    // NOTE: adjust the outputs with the conjunction radius.
+    const std::vector outputs{enc_min - conj_radius, enc_max + conj_radius};
 
     // Add the compiled function.
-    heyoka::add_cfunc<double>(s, "aabb_cs", outputs, inputs);
+    heyoka::add_cfunc<double>(s, "aabb_cs", outputs, inputs, hy::kw::batch_size = 7u);
 }
 
 // Add a compiled function for the computation of the enclosure of a polynomial
 // via the Cargo-Shisha algorithm. The evaluation interval is [0, par[0]].
-void add_cs_enc_func(heyoka::llvm_state &s, std::uint32_t order_)
+void add_cs_enc_func(heyoka::llvm_state &s, std::uint32_t order)
 {
     namespace hy = heyoka;
     using namespace hy::literals;
-    using safe_uint32_t = boost::safe_numerics::safe<std::uint32_t>;
-
-    const auto order = safe_uint32_t(order_);
 
     // The inputs of the function are the polynomial coefficients.
     std::vector<hy::expression> inputs;
-    inputs.reserve(order + 1);
-    for (safe_uint32_t i = 0; i <= order; ++i) {
-        inputs.emplace_back(fmt::format("cf_{}", static_cast<std::uint32_t>(i)));
+    for (std::uint32_t i = 0; i <= order; ++i) {
+        inputs.emplace_back(fmt::format("cf_{}", i));
     }
 
     // Init the upper bound of the evaluation interval.
@@ -363,10 +332,9 @@ void add_cs_enc_func(heyoka::llvm_state &s, std::uint32_t order_)
 void add_batched_cheby_eval6(heyoka::llvm_state &s, std::uint32_t order)
 {
     namespace hy = heyoka;
-    using safe_uint32_t = boost::safe_numerics::safe<std::uint32_t>;
 
-    // Safely compute order + 1.
-    const auto op1 = static_cast<std::uint32_t>(safe_uint32_t(order) + 1);
+    // Compute order + 1.
+    const auto op1 = static_cast<std::uint32_t>(order + 1u);
 
     // Create the expressions representing the input polynomial coefficients.
     std::vector<hy::expression> cfs;
@@ -377,10 +345,8 @@ void add_batched_cheby_eval6(heyoka::llvm_state &s, std::uint32_t order)
     // Create the Cheby nodes in the [0, par[0]] range.
     std::vector<hy::expression> eval_points;
     for (std::uint32_t i = 0; i < op1; ++i) {
-        eval_points.push_back(
-            (std::cos((2. * i + 1.) / (2. * static_cast<std::uint32_t>(op1)) * boost::math::constants::pi<double>())
-             + 1.)
-            / 2. * hy::par[0]);
+        eval_points.push_back((std::cos((2. * i + 1.) / (2. * op1) * boost::math::constants::pi<double>()) + 1.) / 2.
+                              * hy::par[0]);
     }
     // Sort them in ascending order.
     //
@@ -429,7 +395,7 @@ conj_jit_data::conj_jit_data(std::uint32_t order)
 
     // Add the compiled functions.
     auto *fp_t = hy::detail::to_internal_llvm_type<double>(state);
-    detail::add_poly_translator_a6(state, order);
+    detail::add_poly_translator_a7(state, order);
     hy::detail::llvm_add_fex_check(state, fp_t, order, 1);
     hy::detail::llvm_add_poly_rtscc(state, fp_t, order, 1);
     detail::add_aabb_cs_func(state, order);
@@ -441,7 +407,7 @@ conj_jit_data::conj_jit_data(std::uint32_t order)
     state.compile();
 
     // Lookup.
-    pta6_cfunc = reinterpret_cast<decltype(pta6_cfunc)>(state.jit_lookup("pta6_cfunc"));
+    pta7_cfunc = reinterpret_cast<decltype(pta7_cfunc)>(state.jit_lookup("pta7_cfunc"));
     fex_check = reinterpret_cast<decltype(fex_check)>(state.jit_lookup("fex_check"));
     rtscc = reinterpret_cast<decltype(rtscc)>(state.jit_lookup("poly_rtscc"));
     // NOTE: this is implicitly added by llvm_add_poly_rtscc().

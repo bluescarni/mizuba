@@ -93,10 +93,6 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
     // Fetch the compiled function for the computation of the aabb.
     auto *aabb_cs_cfunc = cjd.aabb_cs_cfunc;
 
-    // Prepare the output and the parameters array for the compiled function.
-    std::array<double, 8> xyzr_int{};
-    std::array<double, 3> cs_pars{};
-
     // Make sure that nsteps + 1 (i.e., the number of time datapoints) is representable as std::ptrdiff_t.
     // This ensures that we can safely calculate pointer subtractions in the time span data,
     // which allows us to determine the index of a trajectory timestep (see the code
@@ -111,6 +107,13 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
 
     // Compute the conjunction radius.
     const auto conj_radius = conj_thresh / 2;
+
+    // Prepare the output and the parameters arrays for the compiled function.
+    std::array<double, 14> cs_out{};
+    std::array<double, 21> cs_pars{};
+
+    // Fill in the third chunk of cs_pars with copies of conj_radius.
+    std::ranges::fill(cs_pars.begin() + 14, cs_pars.end(), conj_radius);
 
     // Fetch begin/end iterators to the time span.
     const auto t_begin = time_span.data_handle();
@@ -173,9 +176,10 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
         const auto *cf_ptr = &traj_span(ss_idx, 0, 0);
 
         // Prepare the parameters array for the invocation of the compiled function.
-        cs_pars[0] = h_int_lb;
-        cs_pars[1] = h_int_ub;
-        cs_pars[2] = conj_radius;
+        // NOTE: conj_radius is setup once right after the construction of cs_pars,
+        // and it never changes.
+        std::ranges::fill(cs_pars.begin(), cs_pars.begin() + 7, h_int_lb);
+        std::ranges::fill(cs_pars.begin() + 7, cs_pars.begin() + 14, h_int_ub);
 
         // Compute the aabb via the Cargo-Shisha algorithm.
         // NOTE: by using the Cargo-Shisha algorithm here, we are producing intervals
@@ -187,7 +191,13 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
         // NOTE: our implementation of the Cargo-Shisha algorithm ensures correct
         // propagation of nan values. If nans are generated, they will be caught by
         // the lb/ub_make_float helpers.
-        aabb_cs_cfunc(xyzr_int.data(), cf_ptr, cs_pars.data(), nullptr);
+        // NOTE: here we are batching the enclosure computation over *all* the 7 elements
+        // of the state vector, meaning that we are also computing (useless) enclosures
+        // for the 3 velocities. This is still advantageous for performance due to vectorization:
+        // on AVX512 (simd size 8) this is optimal, on AVX (simd size 4) this gives a x2
+        // throughput increase wrt the scalar computation, on SSE/neon/vsx (simd size 2) it should be
+        // a wash (with potentially slightly better performance due to increased ILP).
+        aabb_cs_cfunc(cs_out.data(), cf_ptr, cs_pars.data(), nullptr);
 
         // A couple of helpers to cast lower/upper bounds from double to float. After
         // the cast, we will also move slightly the bounds to add a safety margin to account
@@ -222,10 +232,14 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
         // Update the bounding box for the current object.
         // NOTE: min/max is fine: the make_float() helpers check for finiteness,
         // and the other operand is never NaN.
-        for (auto i = 0u; i < 4u; ++i) {
-            lb[i] = std::min(lb[i], lb_make_float(xyzr_int[i * 2u]));
-            ub[i] = std::max(ub[i], ub_make_float(xyzr_int[i * 2u + 1u]));
+        // NOTE: xyz first.
+        for (auto i = 0u; i < 3u; ++i) {
+            lb[i] = std::min(lb[i], lb_make_float(cs_out[i]));
+            ub[i] = std::max(ub[i], ub_make_float(cs_out[i + 7u]));
         }
+        // NOTE: now the radius.
+        lb[3] = std::min(lb[3], lb_make_float(cs_out[6]));
+        ub[3] = std::max(ub[3], ub_make_float(cs_out[13]));
     }
 
     // NOTE: lb/ub must all be finite as we made sure early on that there is an overlap between the

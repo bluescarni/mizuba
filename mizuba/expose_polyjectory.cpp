@@ -117,19 +117,19 @@ void expose_polyjectory(pybind11::module_ &m)
                         "A trajectory array must have 3 dimensions, but instead {} dimension(s) were detected",
                         arr.ndim()));
                 }
-                if (arr.shape(1) != 7) [[unlikely]] {
+                if (arr.shape(2) != 7) [[unlikely]] {
                     // LCOV_EXCL_START
-                    throw std::invalid_argument(fmt::format("A trajectory array must have a size of 7 in the second "
+                    throw std::invalid_argument(fmt::format("A trajectory array must have a size of 7 in the third "
                                                             "dimension, but instead a size of {} was detected",
                                                             // LCOV_EXCL_STOP
-                                                            arr.shape(1)));
+                                                            arr.shape(2)));
                 }
 
                 // Check contiguousness/alignment.
                 check_array_cc_aligned(arr, "All trajectory arrays must be C contiguous and properly aligned");
 
                 return mz::polyjectory::traj_span_t(arr.data(), boost::numeric_cast<std::size_t>(arr.shape(0)),
-                                                    boost::numeric_cast<std::size_t>(arr.shape(2)));
+                                                    boost::numeric_cast<std::size_t>(arr.shape(1)));
             };
 
             auto time_trans = [](const py::array_t<double> &arr) {

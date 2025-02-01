@@ -23,7 +23,6 @@ class polyjectory_test_case(_ut.TestCase):
         import numpy as np
         import sys
         from .. import polyjectory
-        from ._planar_circ import _planar_circ_tcs, _planar_circ_times
 
         with self.assertRaises(ValueError) as cm:
             polyjectory([[]], [], [])
@@ -42,12 +41,12 @@ class polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             polyjectory([[[[]]]], [], [])
         self.assertTrue(
-            "A trajectory array must have a size of 7 in the second dimension, but"
-            " instead a size of 1 was detected" in str(cm.exception)
+            "A trajectory array must have a size of 7 in the third dimension, but"
+            " instead a size of 0 was detected" in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
-            polyjectory([[[[]] * 7]], [1.0], [0])
+            polyjectory([np.zeros((1, 1, 7))], [1.0], [0])
         self.assertTrue(
             "A time array must have 1 dimension, but instead 0 dimension(s) were"
             " detected" in str(cm.exception)
@@ -61,8 +60,7 @@ class polyjectory_test_case(_ut.TestCase):
         )
 
         # Check with non-contiguous arrays.
-        traj_data = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
-        state_data = np.array([[traj_data] * 7])[:, :, ::2]
+        state_data = np.zeros((1, 8, 7))[:, ::2, :]
 
         with self.assertRaises(ValueError) as cm:
             polyjectory([state_data], [[1.0]], [0])
@@ -71,7 +69,7 @@ class polyjectory_test_case(_ut.TestCase):
             in str(cm.exception)
         )
 
-        state_data = np.array([[traj_data] * 7])
+        state_data = np.zeros((1, 8, 7))
         with self.assertRaises(ValueError) as cm:
             polyjectory(
                 [state_data, state_data], [np.array([1.0, 2.0, 3.0, 4.0])[::2]], [0]
@@ -137,7 +135,7 @@ class polyjectory_test_case(_ut.TestCase):
         self.assertEqual(pj.maxT, 1.0)
         self.assertTrue(np.all(pj[0][0] == state_data))
         self.assertTrue(np.all(pj[0][1] == [0.0, 1.0]))
-        self.assertTrue(np.all(pj[1][0] == np.zeros((0, 7, 8), dtype=float)))
+        self.assertTrue(np.all(pj[1][0] == np.zeros((0, 8, 7), dtype=float)))
         self.assertTrue(np.all(pj[1][1] == np.zeros((0,), dtype=float)))
 
         pj = polyjectory(
@@ -146,7 +144,7 @@ class polyjectory_test_case(_ut.TestCase):
             status=np.array([0, 0], dtype=np.int32),
         )
         self.assertEqual(pj.maxT, 1.0)
-        self.assertTrue(np.all(pj[0][0] == np.zeros((0, 7, 8), dtype=float)))
+        self.assertTrue(np.all(pj[0][0] == np.zeros((0, 8, 7), dtype=float)))
         self.assertTrue(np.all(pj[0][1] == np.zeros((0,), dtype=float)))
         self.assertTrue(np.all(pj[1][0] == state_data))
         self.assertTrue(np.all(pj[1][1] == [0.0, 1.0]))
@@ -162,7 +160,7 @@ class polyjectory_test_case(_ut.TestCase):
             " zero: this is not allowed" in str(cm.exception)
         )
 
-        short_state_data = np.array([[traj_data[:2]] * 7])
+        short_state_data = np.zeros((1, 2, 7))
         with self.assertRaises(ValueError) as cm:
             polyjectory(
                 trajs=[short_state_data, short_state_data],
@@ -174,7 +172,7 @@ class polyjectory_test_case(_ut.TestCase):
             " is not allowed" in str(cm.exception)
         )
 
-        short_state_data = np.array([[traj_data[:5]] * 7])
+        short_state_data = np.zeros((1, 4, 7))
         with self.assertRaises(ValueError) as cm:
             polyjectory(
                 trajs=[state_data, short_state_data],
@@ -211,7 +209,7 @@ class polyjectory_test_case(_ut.TestCase):
             in str(cm.exception)
         )
 
-        inf_state_data = np.array([[traj_data] * 7])
+        inf_state_data = np.zeros((1, 8, 7))
         inf_state_data[0, 0, 0] = float("inf")
         with self.assertRaises(ValueError) as cm:
             polyjectory(
@@ -246,7 +244,7 @@ class polyjectory_test_case(_ut.TestCase):
             in str(cm.exception)
         )
 
-        two_state_data = np.array([[traj_data] * 7, [traj_data] * 7])
+        two_state_data = np.zeros((2, 8, 7))
         with self.assertRaises(ValueError) as cm:
             polyjectory(
                 trajs=[two_state_data, two_state_data],
@@ -323,7 +321,7 @@ class polyjectory_test_case(_ut.TestCase):
 
         traj, time, status = pj[0]
         self.assertEqual(sys.getrefcount(pj), rc + 2)
-        self.assertTrue(np.all(traj == traj_data))
+        self.assertTrue(np.all(traj == state_data))
         self.assertTrue(np.all(time == np.array([0.0, 1.0])))
         self.assertEqual(status, 0)
 
@@ -333,11 +331,11 @@ class polyjectory_test_case(_ut.TestCase):
         with self.assertRaises(ValueError) as cm:
             time[:] = 0
 
-        self.assertTrue(np.all(traj == traj_data))
+        self.assertTrue(np.all(traj == state_data))
         self.assertTrue(np.all(time == np.array([0.0, 1.0])))
 
         traj, time, status = pj[1]
-        self.assertTrue(np.all(traj == traj_data))
+        self.assertTrue(np.all(traj == state_data))
         self.assertTrue(np.all(time == np.array([0.0, 3.0])))
         self.assertEqual(status, 1)
 
@@ -352,28 +350,26 @@ class polyjectory_test_case(_ut.TestCase):
         import numpy as np
         from .. import polyjectory
 
-        tdata0 = np.zeros((7, 6))
+        tdata0 = np.zeros((6, 7))
         tdata0[0, 0] = 1.0
-        tdata1 = np.zeros((7, 6))
+        tdata1 = np.zeros((6, 7))
         tdata1[0, 0] = -1.0
 
-        tdata2 = np.zeros((7, 6))
-        tdata2[1, 0] = 1.0
-        tdata3 = np.zeros((7, 6))
-        tdata3[1, 0] = -1.0
+        tdata2 = np.zeros((6, 7))
+        tdata2[0, 1] = 1.0
+        tdata3 = np.zeros((6, 7))
+        tdata3[0, 1] = -1.0
 
-        tdata4 = np.zeros((7, 6))
-        tdata4[2, 0] = 1.0
-        tdata5 = np.zeros((7, 6))
-        tdata5[2, 0] = -1.0
+        tdata4 = np.zeros((6, 7))
+        tdata4[0, 2] = 1.0
+        tdata5 = np.zeros((6, 7))
+        tdata5[0, 2] = -1.0
 
-        tdata6 = np.zeros((7, 6))
+        tdata6 = np.zeros((6, 7))
 
-        tdata7 = np.zeros((7, 6))
-        tdata7[:, 0] = 1
+        tdata7 = np.zeros((6, 7))
+        tdata7[0, :] = 1
 
-        # NOTE: the first 10 objects will have traj
-        # data only for the first step, not the second.
         pj = polyjectory(
             [
                 [tdata0] * 2,
@@ -459,6 +455,7 @@ class polyjectory_test_case(_ut.TestCase):
             tdata[3, 0] = -1.0
 
             traj_data_0.append(tdata)
+        traj_data_0 = np.ascontiguousarray(np.array(traj_data_0).transpose((0, 2, 1)))
 
         traj_data_1 = []
         for tm in tm_data_1[1:]:
@@ -468,6 +465,7 @@ class polyjectory_test_case(_ut.TestCase):
             tdata[3, 0] = 1.0
 
             traj_data_1.append(tdata)
+        traj_data_1 = np.ascontiguousarray(np.array(traj_data_1).transpose((0, 2, 1)))
 
         pj = polyjectory([traj_data_0, traj_data_1], [tm_data_0, tm_data_1], [0, 0])
 
@@ -916,7 +914,7 @@ class polyjectory_test_case(_ut.TestCase):
         )
 
         # Also test with a trajectory without data.
-        pj = polyjectory([traj_data_0, np.empty((0, 7, 4))], [tm_data_0, []], [0, 0])
+        pj = polyjectory([traj_data_0, np.empty((0, 4, 7))], [tm_data_0, []], [0, 0])
         tm = np.array([0.1, 0.1])
         res = pj.state_eval(time=tm)
         self.assertTrue(np.all(np.isnan(res[1])))
