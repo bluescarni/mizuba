@@ -142,6 +142,7 @@ def _reformat_gpes_spacetrack(gpes: pl.DataFrame) -> pl.DataFrame:
             "norad_id": gpes["NORAD_CAT_ID"].cast(pl.UInt64),
             "cospar_id": gpes["OBJECT_ID"].cast(str),
             "name": gpes["OBJECT_NAME"].cast(str),
+            "epoch": apy_tm.iso,
             "epoch_jd1": jd1,
             "epoch_jd2": jd2,
             "n0": gpes["MEAN_MOTION"].cast(float) * (2.0 * np.pi / 1440.0),
