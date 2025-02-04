@@ -64,6 +64,7 @@ gpes_schema = pl.Schema(
         "norad_id": pl.UInt64,
         "cospar_id": pl.String,
         "name": pl.String,
+        "epoch": pl.String,
         "epoch_jd1": pl.Float64,
         "epoch_jd2": pl.Float64,
         "n0": pl.Float64,
