@@ -43,7 +43,7 @@ def download_gpes_celestrak() -> pl.DataFrame:
 
     # Concatenate the datasets into a single dataframe,
     # skipping any None that may be present.
-    gpes = pl.concat(filter(lambda df: not df is None, ret))
+    gpes = pl.concat(filter(lambda df: df is not None, ret))
 
     # Pick the GPEs with the lowest rms.
     gpes = _supgp_pick_lowest_rms(gpes)
@@ -64,6 +64,7 @@ gpes_schema = pl.Schema(
         "norad_id": pl.UInt64,
         "cospar_id": pl.String,
         "name": pl.String,
+        "epoch": pl.String,
         "epoch_jd1": pl.Float64,
         "epoch_jd2": pl.Float64,
         "n0": pl.Float64,
@@ -114,7 +115,7 @@ def download_all_gpes(
             # Concatenate the datasets into a single dataframe,
             # skipping any None that may be present.
             gpe_ct = pl.concat(
-                filter(lambda df: not df is None, (fut.result() for fut in gpe_ct_list))
+                filter(lambda df: df is not None, (fut.result() for fut in gpe_ct_list))
             )
 
             # Pick the GPEs with the lowest rms.

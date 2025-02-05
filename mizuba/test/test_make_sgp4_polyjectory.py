@@ -616,7 +616,6 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         from .. import make_sgp4_polyjectory
         from .._sgp4_polyjectory import _make_satrec_from_dict as make_satrec
         import pathlib
-        from sgp4.api import Satrec
         import polars as pl
         import numpy as np
         from astropy.time import Time
