@@ -76,12 +76,7 @@ def _reformat_supgp_celestrak(gpes: pl.DataFrame) -> pl.DataFrame:
     )
 
     # Then, we can cast.
-    ret = ret.with_columns(
-        pl.when(pl.col("rms").is_null())
-        .then(None)
-        .otherwise(pl.col("rms").cast(float))
-        .alias("rms")
-    )
+    ret = ret.with_columns(pl.col("rms").cast(float).alias("rms"))
 
     return ret
 
