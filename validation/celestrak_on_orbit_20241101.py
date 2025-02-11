@@ -97,7 +97,7 @@ soc_df = soc_df.with_columns(
 
 # Transform tca column into datetime.
 soc_df = soc_df.with_columns(
-    pl.col("tca").str.to_datetime(format="%Y-%m-%d %H:%M:%S%.3f").alias("tca")
+    pl.col("tca").str.to_datetime(format="%Y-%m-%d %H:%M:%S%.3f")
 )
 
 # Clean up.
@@ -149,7 +149,7 @@ sgp4_cdf = pl.DataFrame(
 
 # Transform the tca column into datetime.
 sgp4_cdf = sgp4_cdf.with_columns(
-    pl.col("tca").str.to_datetime(format="%Y-%m-%d %H:%M:%S%.3f").alias("tca")
+    pl.col("tca").str.to_datetime(format="%Y-%m-%d %H:%M:%S%.3f")
 )
 
 # NOTE: this is a join operation that, for each row in soc_df, will:
