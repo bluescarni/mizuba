@@ -25,7 +25,7 @@ def _setup_logger() -> None:
 
     # Set up the formatter.
     formatter = logging.Formatter(
-        fmt=r"%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(message)s",
+        fmt=r"[%(asctime)s.%(msecs)03d] [%(name)s] [%(levelname)s] %(message)s",
         datefmt=r"%Y-%m-%d %H:%M:%S",
     )
 
