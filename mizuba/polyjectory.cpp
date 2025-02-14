@@ -590,7 +590,37 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         boost::filesystem::rename(traj_file_path, traj_path);
         boost::filesystem::rename(time_file_path, time_path);
 
-        // Check the file sizes. Do it now, after moving the files into the private directory.
+        // NOTE: now that we have moved the original files, we run checks on them.
+
+        // The files must be regular files.
+        if (!boost::filesystem::is_regular_file(traj_path)) [[unlikely]] {
+            throw std::invalid_argument("Invalid trajectory data file passed to the constructor of a polyjectory: the "
+                                        "file is not a regular file");
+        }
+        if (!boost::filesystem::is_regular_file(time_path)) [[unlikely]] {
+            throw std::invalid_argument("Invalid time data file passed to the constructor of a polyjectory: the "
+                                        "file is not a regular file");
+        }
+
+        // The hard link count for both files must be zero.
+        // NOTE: the purpose of this check is to make sure that the content of the files
+        // cannot be changed from outside the current dir.
+        const auto traj_hl_count = boost::filesystem::hard_link_count(traj_path);
+        if (traj_hl_count != 1u) [[unlikely]] {
+            throw std::invalid_argument(
+                fmt::format("Invalid trajectory data file passed to the constructor of a polyjectory: the "
+                            "file has a hard link count of {} != 1",
+                            traj_hl_count));
+        }
+        const auto time_hl_count = boost::filesystem::hard_link_count(time_path);
+        if (time_hl_count != 1u) [[unlikely]] {
+            throw std::invalid_argument(
+                fmt::format("Invalid time data file passed to the constructor of a polyjectory: the "
+                            "file has a hard link count of {} != 1",
+                            time_hl_count));
+        }
+
+        // Check the file sizes.
         if (boost::filesystem::file_size(traj_path) != tot_num_traj_values * sizeof(double)) [[unlikely]] {
             throw std::invalid_argument(
                 fmt::format("Invalid trajectory data file passed to the constructor of a polyjectory: the "
