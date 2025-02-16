@@ -202,9 +202,6 @@ polyjectory::polyjectory(ptag,
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the temp dir in case of exceptions.
     try {
-        // Change the permissions so that only the owner has access.
-        boost::filesystem::permissions(tmp_dir_path, boost::filesystem::owner_all);
-
         // Do a first single-threaded pass on the spans to determine:
         // - the offsets of traj and time data,
         // - the polynomial order,
@@ -567,9 +564,6 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the temp dir in case of exceptions.
     try {
-        // Change the permissions so that only the owner has access.
-        boost::filesystem::permissions(tmp_dir_path, boost::filesystem::owner_all);
-
         // Init the storages file paths and check that they do not exist already.
         const auto traj_path = tmp_dir_path / "traj";
         if (boost::filesystem::exists(traj_path)) [[unlikely]] {

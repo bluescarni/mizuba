@@ -1383,9 +1383,6 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
     };
     const tmp_cleaner tmp_clean{tmp_dir_path};
 
-    // Change the permissions so that only the owner has access.
-    boost::filesystem::permissions(tmp_dir_path, boost::filesystem::owner_all);
-
     // Interpolate all satellites.
     sw.reset();
     auto [status, traj_offsets]

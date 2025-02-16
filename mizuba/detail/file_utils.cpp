@@ -55,6 +55,7 @@
 #endif
 
 #include <boost/cstdint.hpp>
+#include <boost/filesystem/directory.hpp>
 #include <boost/filesystem/file_status.hpp>
 #include <boost/filesystem/operations.hpp>
 #include <boost/filesystem/path.hpp>
@@ -72,7 +73,8 @@ namespace mizuba::detail
 // Helper to create a directory with a "unique" name into the
 // system's temporary dir. If the directory to be created exists
 // already, an exception will be thrown, otherwise the path
-// to the newly-created directory will be returned.
+// to the newly-created directory will be returned. The directory
+// will have its permission set to boost::filesystem::owner_all.
 boost::filesystem::path create_temp_dir(const char *tplt)
 {
     // Assemble a "unique" dir path into the system's temp dir.
@@ -90,7 +92,28 @@ boost::filesystem::path create_temp_dir(const char *tplt)
     }
     // LCOV_EXCL_STOP
 
-    return tmp_dir_path;
+    // The directory has now been created. Wrap the rest of the function in a try/catch
+    // block so that, if any error is thrown, we ensure that the directory is cleaned up
+    // before returning.
+    try {
+        // Change the permissions so that only the owner has access.
+        boost::filesystem::permissions(tmp_dir_path, boost::filesystem::owner_all);
+
+        // In the short time span between directory creation and permission setting, another
+        // user may have written into the directory. Make sure to remove the content of the directory
+        // as a precaution.
+        for (const auto &entry : boost::filesystem::directory_iterator(tmp_dir_path)) {
+            boost::filesystem::remove_all(entry.path());
+        }
+
+        return tmp_dir_path;
+
+        // LCOV_EXCL_START
+    } catch (...) {
+        boost::filesystem::remove_all(tmp_dir_path);
+        throw;
+    }
+    // LCOV_EXCL_STOP
 }
 
 // Create a file at the input path with the given size. If the file exists already, an error will be thrown.
