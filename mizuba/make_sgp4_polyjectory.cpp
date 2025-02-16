@@ -902,20 +902,11 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
     global_status.resize(boost::numeric_cast<decltype(global_status.size())>(n_sats));
 
     // Create the traj and time data files.
-    if (boost::filesystem::exists(tmp_dir_path / "traj")) [[unlikely]] {
-        // LCOV_EXCL_START
-        throw std::invalid_argument(fmt::format("Cannot create the storage file '{}': the file exists already",
-                                                (tmp_dir_path / "traj").string()));
-        // LCOV_EXCL_STOP
-    }
+    assert(!boost::filesystem::exists(tmp_dir_path / "traj"));
     std::ofstream traj_file((tmp_dir_path / "traj").string(), std::ios::binary | std::ios::out);
     traj_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
-    if (boost::filesystem::exists(tmp_dir_path / "time")) [[unlikely]] {
-        // LCOV_EXCL_START
-        throw std::invalid_argument(fmt::format("Cannot create the storage file '{}': the file exists already",
-                                                (tmp_dir_path / "time").string()));
-        // LCOV_EXCL_STOP
-    }
+
+    assert(!boost::filesystem::exists(tmp_dir_path / "time"));
     std::ofstream time_file((tmp_dir_path / "time").string(), std::ios::binary | std::ios::out);
     time_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 

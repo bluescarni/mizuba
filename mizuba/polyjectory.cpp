@@ -571,19 +571,10 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
     try {
         // Init the storages file paths and check that they do not exist already.
         const auto traj_path = tmp_dir_path / "traj";
-        if (boost::filesystem::exists(traj_path)) [[unlikely]] {
-            // LCOV_EXCL_START
-            throw std::invalid_argument(
-                fmt::format("Cannot create the storage file '{}': the file exists already", traj_path.string()));
-            // LCOV_EXCL_STOP
-        }
+        assert(!boost::filesystem::exists(traj_path));
+
         const auto time_path = tmp_dir_path / "time";
-        if (boost::filesystem::exists(time_path)) [[unlikely]] {
-            // LCOV_EXCL_START
-            throw std::invalid_argument(
-                fmt::format("Cannot create the storage file '{}': the file exists already", time_path.string()));
-            // LCOV_EXCL_STOP
-        }
+        assert(!boost::filesystem::exists(time_path));
 
         // Move the original files.
         boost::filesystem::rename(traj_file_path, traj_path);
