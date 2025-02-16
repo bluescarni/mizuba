@@ -433,6 +433,11 @@ polyjectory::polyjectory(ptag,
 // The layout of the trajectory data into the data file is described by traj_offsets, from which we
 // also deduce the layout of the time data. 'order' is the polynomial order of the polyjectory,
 // 'status' the vector of object statuses.
+//
+// NOTE: although we try hard here to secure operations against a malicious user, I am not 100%
+// sure that file handling here is completely safe. Thus, in the documentation, we should emphasise that
+// users should not call this constructor on files not owned by them. And, clearly, they are not supposed
+// to write to the files during or after the invocation of the constructor.
 polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                          const std::filesystem::path &orig_time_file_path, std::uint32_t order,
                          std::vector<traj_offset> traj_offsets, std::vector<std::int32_t> status, double epoch,
@@ -597,6 +602,8 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         }
 
         // Mark them as read-only.
+        // NOTE: this also acts as a (partial) check on the ownership of the data files - in general we should
+        // not be able to set them as read-only if we do not own them.
         detail::mark_file_read_only(traj_path);
         detail::mark_file_read_only(time_path);
 
