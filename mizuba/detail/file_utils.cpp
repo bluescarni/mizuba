@@ -169,6 +169,7 @@ void create_sized_file(const boost::filesystem::path &path, std::size_t size)
 }
 
 // Mark the file at the input path as read-only.
+// The input path must refer to a regular file.
 void mark_file_read_only(const boost::filesystem::path &path)
 {
     assert(boost::filesystem::is_regular_file(path));

@@ -484,7 +484,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
     }
     // LCOV_EXCL_STOP
 
-    // Check that the two files are not the same.
+    // Check that the two paths are not the same.
     if (traj_file_path == time_file_path) [[unlikely]] {
         throw std::invalid_argument("Invalid data file(s) passed to the constructor of a polyjectory: the trajectory "
                                     "data file and the time data file are the same file");
@@ -596,23 +596,9 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                                         "file is not a regular file");
         }
 
-        // The hard link count for both files must be zero.
-        // NOTE: the purpose of this check is to make sure that the content of the files
-        // cannot be changed from outside the current dir.
-        const auto traj_hl_count = boost::filesystem::hard_link_count(traj_path);
-        if (traj_hl_count != 1u) [[unlikely]] {
-            throw std::invalid_argument(
-                fmt::format("Invalid trajectory data file passed to the constructor of a polyjectory: the "
-                            "file has a hard link count of {} != 1",
-                            traj_hl_count));
-        }
-        const auto time_hl_count = boost::filesystem::hard_link_count(time_path);
-        if (time_hl_count != 1u) [[unlikely]] {
-            throw std::invalid_argument(
-                fmt::format("Invalid time data file passed to the constructor of a polyjectory: the "
-                            "file has a hard link count of {} != 1",
-                            time_hl_count));
-        }
+        // Mark them as read-only.
+        detail::mark_file_read_only(traj_path);
+        detail::mark_file_read_only(time_path);
 
         // Check the file sizes.
         if (boost::filesystem::file_size(traj_path) != tot_num_traj_values * sizeof(double)) [[unlikely]] {
@@ -711,10 +697,6 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         // Close the storage files.
         traj_file.close();
         time_file.close();
-
-        // Mark them as read-only.
-        detail::mark_file_read_only(traj_path);
-        detail::mark_file_read_only(time_path);
 
         // Construct the implementation.
         m_impl = std::make_shared<detail::polyjectory_impl>(std::move(tmp_dir_path), std::move(traj_offsets),
