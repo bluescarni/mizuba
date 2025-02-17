@@ -793,11 +793,6 @@ namespace
 // pj is the polyjectory, obj_idx the object's index in the polyjectory, tm the evaluation
 // time (measured from the polyjectory's epoch), out_ptr the pointer into which the result of
 // the evaluation will be written.
-//
-// NOTE: in principle this function could be implemented in a jitted vectorised fashion using scatter/gather
-// primitives and masked load/store/arithmetic operations. This would work best on AVX512 and later,
-// but it could possibly be advantageous also on AVX2 and less. Keep it in mind if we need to squeeze
-// out the best performance from this.
 void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, double *out_ptr)
 {
     // Check the desired evaluation time.
