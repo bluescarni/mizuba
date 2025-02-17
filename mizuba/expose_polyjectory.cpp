@@ -199,6 +199,7 @@ void expose_polyjectory(pybind11::module_ &m)
     pt_cl.def_property_readonly("maxT", &mz::polyjectory::get_maxT);
     pt_cl.def_property_readonly("epoch", &mz::polyjectory::get_epoch);
     pt_cl.def_property_readonly("poly_order", &mz::polyjectory::get_poly_order);
+    pt_cl.def_property_readonly("data_dir", &mz::polyjectory::get_data_dir);
     pt_cl.def_property_readonly("status", [](const py::object &self) {
         const auto *p = py::cast<const mz::polyjectory *>(self);
 

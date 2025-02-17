@@ -137,6 +137,7 @@ public:
     [[nodiscard]] double get_maxT() const noexcept;
     [[nodiscard]] std::pair<double, double> get_epoch() const noexcept;
     [[nodiscard]] std::uint32_t get_poly_order() const noexcept;
+    [[nodiscard]] std::filesystem::path get_data_dir() const;
 
     [[nodiscard]] std::tuple<traj_span_t, time_span_t, std::int32_t> operator[](std::size_t) const;
     [[nodiscard]] dspan_1d<const std::int32_t> get_status() const noexcept;

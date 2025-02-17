@@ -775,6 +775,12 @@ std::uint32_t polyjectory::get_poly_order() const noexcept
     return m_impl->m_poly_op1 - 1u;
 }
 
+std::filesystem::path polyjectory::get_data_dir() const
+{
+    // NOTE: we made sure on construction that the dir path is canonicalised.
+    return std::filesystem::path(m_impl->m_temp_dir_path.c_str());
+}
+
 dspan_1d<const std::int32_t> polyjectory::get_status() const noexcept
 {
     // NOTE: static_cast is ok, we know that we can represent the total number of objects
