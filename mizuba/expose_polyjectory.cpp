@@ -191,10 +191,30 @@ void expose_polyjectory(pybind11::module_ &m)
         }),
         "trajs"_a.noconvert(), "times"_a.noconvert(), "status"_a.noconvert(), "epoch"_a.noconvert() = 0.,
         "epoch2"_a.noconvert() = 0.);
-    pt_cl.def(py::init<const std::filesystem::path &, const std::filesystem::path &, std::uint32_t,
-                       std::vector<traj_offset>, std::vector<std::int32_t>, double, double>(),
-              "traj_file"_a.noconvert(), "time_file"_a.noconvert(), "order"_a.noconvert(), "traj_offsets"_a.noconvert(),
-              "status"_a.noconvert(), "epoch"_a.noconvert() = 0., "epoch2"_a.noconvert() = 0.);
+    pt_cl.def_static(
+        "from_datafiles",
+        [](const std::filesystem::path &orig_traj_file_path, const std::filesystem::path &orig_time_file_path,
+           std::uint32_t order, py::array_t<traj_offset> traj_offsets_, std::vector<std::int32_t> status, double epoch,
+           double epoch2) {
+            if (traj_offsets_.ndim() != 1) [[unlikely]] {
+                throw std::invalid_argument(
+                    fmt::format("The array of trajectory offsets passed to 'from_datafiles()' must have 1 dimension, "
+                                "but the number of dimensions is {} instead",
+                                traj_offsets_.ndim()));
+            }
+
+            // Convert the array of trajectory offsets into a std::vector.
+            std::vector<traj_offset> traj_offsets;
+            traj_offsets.reserve(static_cast<decltype(traj_offsets.size())>(traj_offsets_.shape(0)));
+            const auto acc = traj_offsets_.unchecked<1>();
+            for (py::ssize_t i = 0; i < traj_offsets_.shape(0); ++i) {
+                traj_offsets.push_back(acc(i));
+            }
+
+            return mz::polyjectory(orig_traj_file_path, orig_time_file_path, order, std::move(traj_offsets),
+                                   std::move(status), epoch, epoch2);
+        },
+        "traj_file"_a, "time_file"_a, "order"_a, "traj_offsets"_a, "status"_a, "epoch"_a = 0., "epoch2"_a = 0.);
     pt_cl.def_property_readonly("nobjs", &mz::polyjectory::get_nobjs);
     pt_cl.def_property_readonly("maxT", &mz::polyjectory::get_maxT);
     pt_cl.def_property_readonly("epoch", &mz::polyjectory::get_epoch);
