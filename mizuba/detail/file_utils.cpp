@@ -103,7 +103,7 @@ boost::filesystem::path create_temp_dir(const char *tplt)
         // user may have written into the directory. Make sure to remove the content of the directory
         // as a precaution.
         for (const auto &entry : boost::filesystem::directory_iterator(tmp_dir_path)) {
-            boost::filesystem::remove_all(entry.path());
+            boost::filesystem::remove_all(entry.path()); // LCOV_EXCL_LINE
         }
 
         return tmp_dir_path;
