@@ -23,6 +23,7 @@ class polyjectory_test_case(_ut.TestCase):
         import numpy as np
         import sys
         from .. import polyjectory
+        from pathlib import Path
 
         with self.assertRaises(ValueError) as cm:
             polyjectory([[]], [], [])
@@ -316,6 +317,7 @@ class polyjectory_test_case(_ut.TestCase):
         self.assertEqual(pj.maxT, 3)
         self.assertEqual(pj.epoch, (43.0, 0.0))
         self.assertEqual(pj.poly_order, 7)
+        self.assertTrue(isinstance(pj.data_dir, Path))
 
         rc = sys.getrefcount(pj)
 
