@@ -545,6 +545,176 @@ class polyjectory_test_case(_ut.TestCase):
         tmpdir1.cleanup()
         tmpdir2.cleanup()
 
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.zeros((20,), dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            np.zeros((2,), dtype=float).tofile(time_file)
+            time_file.close()
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array([(0, 1)], dtype=polyjectory.traj_offset),
+                    status=[1],
+                )
+            self.assertTrue(
+                "Invalid trajectory data file passed to the constructor of a polyjectory: the expected size in bytes is"
+                in str(cm.exception)
+            )
+
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.zeros((21,), dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            np.zeros((1,), dtype=float).tofile(time_file)
+            time_file.close()
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array([(0, 1)], dtype=polyjectory.traj_offset),
+                    status=[1],
+                )
+            self.assertTrue(
+                "Invalid time data file passed to the constructor of a polyjectory: the expected size in bytes is"
+                in str(cm.exception)
+            )
+
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((21,), float("inf"), dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            np.zeros((2,), dtype=float).tofile(time_file)
+            time_file.close()
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array([(0, 1)], dtype=polyjectory.traj_offset),
+                    status=[1],
+                )
+            self.assertTrue(
+                "A non-finite value was found in the trajectory at index 0"
+                in str(cm.exception)
+            )
+
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((21,), 0.0, dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            np.full((2,), float("nan"), dtype=float).tofile(time_file)
+            time_file.close()
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array([(0, 1)], dtype=polyjectory.traj_offset),
+                    status=[1],
+                )
+            self.assertTrue(
+                "A non-finite time coordinate was found for the object at index 0"
+                in str(cm.exception)
+            )
+
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((21,), 0.0, dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            np.full((2,), -1.0, dtype=float).tofile(time_file)
+            time_file.close()
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array([(0, 1)], dtype=polyjectory.traj_offset),
+                    status=[1],
+                )
+            self.assertTrue(
+                "A negative time coordinate was found for the object at index 0"
+                in str(cm.exception)
+            )
+
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((42,), 0.0, dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            time_data = np.array([0.0, 1.0, 1.0])
+            time_data.tofile(time_file)
+            time_file.close()
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array([(0, 2)], dtype=polyjectory.traj_offset),
+                    status=[1],
+                )
+            self.assertTrue(
+                "The sequence of times for the object at index 0 is not monotonically increasing"
+                in str(cm.exception)
+            )
+
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((42,), 0.0, dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            time_data = np.array([0.0, 1.0, 0.9])
+            time_data.tofile(time_file)
+            time_file.close()
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array([(0, 2)], dtype=polyjectory.traj_offset),
+                    status=[1],
+                )
+            self.assertTrue(
+                "The sequence of times for the object at index 0 is not monotonically increasing"
+                in str(cm.exception)
+            )
+
+            # A simple check with successful construction.
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((42,), 0.0, dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            time_data = np.array([0.0, 1.0, 1.1])
+            time_data.tofile(time_file)
+            time_file.close()
+
+            pj = polyjectory.from_datafiles(
+                traj_file=traj_file.name,
+                time_file=time_file.name,
+                order=2,
+                traj_offsets=np.array([(0, 2)], dtype=polyjectory.traj_offset),
+                status=[1],
+            )
+
+            self.assertEqual(pj.maxT, 1.1)
+
     def test_bug_traj_init(self):
         # This is a test about a bug in the implementation
         # of the polyjectory constructor where we would

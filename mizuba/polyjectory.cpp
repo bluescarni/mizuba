@@ -602,14 +602,14 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         if (boost::filesystem::file_size(traj_path) != tot_num_traj_values * sizeof(double)) [[unlikely]] {
             throw std::invalid_argument(
                 fmt::format("Invalid trajectory data file passed to the constructor of a polyjectory: the "
-                            "expected size in bytes is '{}' but the actual size is {} instead",
+                            "expected size in bytes is {} but the actual size is {} instead",
                             static_cast<std::size_t>(tot_num_traj_values * sizeof(double)),
                             boost::filesystem::file_size(traj_path)));
         }
         if (boost::filesystem::file_size(time_path) != tot_num_time_values * sizeof(double)) [[unlikely]] {
             throw std::invalid_argument(
                 fmt::format("Invalid time data file passed to the constructor of a polyjectory: the "
-                            "expected size in bytes is '{}' but the actual size is {} instead",
+                            "expected size in bytes is {} but the actual size is {} instead",
                             static_cast<std::size_t>(tot_num_time_values * sizeof(double)),
                             boost::filesystem::file_size(time_path)));
         }
