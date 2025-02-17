@@ -303,9 +303,6 @@ conjunctions::conjunctions(polyjectory pj, double conj_thresh, double conj_det_i
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the temp dir in case of exceptions.
     try {
-        // Change the permissions so that only the owner has access.
-        boost::filesystem::permissions(tmp_dir_path, boost::filesystem::owner_all);
-
         // Run conjunction detection.
         auto [cd_end_times, tree_offsets, bp_offsets]
             = detect_conjunctions(tmp_dir_path, pj, n_cd_steps, conj_thresh, conj_det_interval, *otypes, skip_cd);

@@ -16,6 +16,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <atomic>
+#include <cassert>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -23,7 +24,6 @@
 #include <future>
 #include <ios>
 #include <ranges>
-#include <stdexcept>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -111,32 +111,17 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
 
     // Prepare the files whose sizes are not known in advance.
     const auto bvh_file_path = tmp_dir_path / "bvh";
-    if (boost::filesystem::exists(bvh_file_path)) [[unlikely]] {
-        // LCOV_EXCL_START
-        throw std::invalid_argument(
-            fmt::format("Cannot create the storage file '{}': the file exists already", bvh_file_path.string()));
-        // LCOV_EXCL_STOP
-    }
+    assert(!boost::filesystem::exists(bvh_file_path));
     std::ofstream bvh_file(bvh_file_path.string(), std::ios::binary | std::ios::out);
     bvh_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
     const auto bp_file_path = tmp_dir_path / "bp";
-    if (boost::filesystem::exists(bp_file_path)) [[unlikely]] {
-        // LCOV_EXCL_START
-        throw std::invalid_argument(
-            fmt::format("Cannot create the storage file '{}': the file exists already", bp_file_path.string()));
-        // LCOV_EXCL_STOP
-    }
+    assert(!boost::filesystem::exists(bp_file_path));
     std::ofstream bp_file(bp_file_path.string(), std::ios::binary | std::ios::out);
     bp_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
     const auto conj_file_path = tmp_dir_path / "conjunctions";
-    if (boost::filesystem::exists(conj_file_path)) [[unlikely]] {
-        // LCOV_EXCL_START
-        throw std::invalid_argument(
-            fmt::format("Cannot create the storage file '{}': the file exists already", conj_file_path.string()));
-        // LCOV_EXCL_STOP
-    }
+    assert(!boost::filesystem::exists(conj_file_path));
     std::ofstream conj_file(conj_file_path.string(), std::ios::binary | std::ios::out);
     conj_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 

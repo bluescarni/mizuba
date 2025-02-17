@@ -23,6 +23,7 @@ class polyjectory_test_case(_ut.TestCase):
         import numpy as np
         import sys
         from .. import polyjectory
+        from pathlib import Path
 
         with self.assertRaises(ValueError) as cm:
             polyjectory([[]], [], [])
@@ -316,6 +317,7 @@ class polyjectory_test_case(_ut.TestCase):
         self.assertEqual(pj.maxT, 3)
         self.assertEqual(pj.epoch, (43.0, 0.0))
         self.assertEqual(pj.poly_order, 7)
+        self.assertTrue(isinstance(pj.data_dir, Path))
 
         rc = sys.getrefcount(pj)
 
@@ -341,6 +343,379 @@ class polyjectory_test_case(_ut.TestCase):
 
         with self.assertRaises(IndexError) as cm:
             pj[2]
+
+    def test_from_datafiles(self):
+        import tempfile
+        from .. import polyjectory
+        import numpy as np
+        from pathlib import Path
+
+        # NOTE: several error handling tests which do not
+        # involve moving files.
+        with (
+            tempfile.NamedTemporaryFile() as traj_file,
+            tempfile.NamedTemporaryFile() as time_file,
+        ):
+            for order in [0, 1]:
+                with self.assertRaises(ValueError) as cm:
+                    polyjectory.from_datafiles(
+                        traj_file=traj_file.name,
+                        time_file=time_file.name,
+                        order=order,
+                        traj_offsets=[],
+                        status=[],
+                    )
+                self.assertTrue(
+                    f"Invalid polynomial order {order} specified during the construction of a polyjectory"
+                    in str(cm.exception)
+                )
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=[],
+                    status=[],
+                )
+            self.assertTrue(
+                "Invalid trajectory offsets vector passed to the constructor of a polyjectory: the vector cannot be empty"
+                in str(cm.exception)
+            )
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.zeros((1, 1), dtype=polyjectory.traj_offset),
+                    status=[],
+                )
+            self.assertTrue(
+                "The array of trajectory offsets passed to 'from_datafiles()' must have 1 dimension, but the number of dimensions is 2 instead"
+                in str(cm.exception)
+            )
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.zeros((1,), dtype=polyjectory.traj_offset),
+                    status=[],
+                )
+            self.assertTrue(
+                "Invalid status vector passed to the constructor of a polyjectory: the expected size is 1, but the actual size is 0"
+                in str(cm.exception)
+            )
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.zeros((1,), dtype=polyjectory.traj_offset),
+                    status=[1],
+                    epoch=float("inf"),
+                )
+            self.assertTrue(
+                "The initial epoch of a polyjectory must be finite, but instead a value of"
+                in str(cm.exception)
+            )
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.zeros((1,), dtype=polyjectory.traj_offset),
+                    status=[1],
+                    epoch=1.0,
+                    epoch2=float("inf"),
+                )
+            self.assertTrue(
+                "The second component of the initial epoch of a polyjectory must be finite, but instead a value of"
+                in str(cm.exception)
+            )
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=traj_file.name,
+                    order=2,
+                    traj_offsets=np.zeros((1,), dtype=polyjectory.traj_offset),
+                    status=[1],
+                )
+            self.assertTrue(
+                "Invalid data file(s) passed to the constructor of a polyjectory: the trajectory data file and the time data file are the same file"
+                in str(cm.exception)
+            )
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array([(1, 1)], dtype=polyjectory.traj_offset),
+                    status=[1],
+                )
+            self.assertTrue(
+                "Invalid trajectory offsets vector passed to the constructor of a polyjectory: the initial offset value must be zero but it is 1 instead"
+                in str(cm.exception)
+            )
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array(
+                        [(0, 1), (21, 1), (0, 2)], dtype=polyjectory.traj_offset
+                    ),
+                    status=[1, 3, 4],
+                )
+            self.assertTrue(
+                "Invalid trajectory offsets vector passed to the constructor of a polyjectory: the offset of the object at index 2 is less than the offset of the previous object"
+                in str(cm.exception)
+            )
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array(
+                        [(0, 1), (2, 1)], dtype=polyjectory.traj_offset
+                    ),
+                    status=[1, 3],
+                )
+            self.assertTrue(
+                "Inconsistent data detected in the trajectory offsets vector passed to the constructor of a polyjectory: the offset of the object at index 1 is inconsistent with the offset and number of steps of the previous object"
+                in str(cm.exception)
+            )
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.zeros((1,), dtype=polyjectory.traj_offset),
+                    status=[1],
+                )
+            self.assertTrue(
+                "All the trajectories in a polyjectory have a number of steps equal to zero: this is not allowed"
+                in str(cm.exception)
+            )
+
+        # The following error checking tests do involve
+        # moving files, so we have a bit more complicated setup.
+        tmpdir1 = tempfile.TemporaryDirectory()
+        tmpdir2 = tempfile.TemporaryDirectory()
+        time_file = open(Path(tmpdir1.name) / "time", "wb")
+        time_file.close()
+        with self.assertRaises(ValueError) as cm:
+            polyjectory.from_datafiles(
+                traj_file=tmpdir2.name,
+                time_file=Path(tmpdir1.name) / "time",
+                order=2,
+                traj_offsets=np.array([(0, 1)], dtype=polyjectory.traj_offset),
+                status=[1],
+            )
+        self.assertTrue(
+            "Invalid trajectory data file passed to the constructor of a polyjectory: the file is not a regular file"
+            in str(cm.exception)
+        )
+        tmpdir1.cleanup()
+        tmpdir2.cleanup()
+
+        tmpdir1 = tempfile.TemporaryDirectory()
+        tmpdir2 = tempfile.TemporaryDirectory()
+        traj_file = open(Path(tmpdir1.name) / "traj", "wb")
+        traj_file.close()
+        with self.assertRaises(ValueError) as cm:
+            polyjectory.from_datafiles(
+                traj_file=Path(tmpdir1.name) / "traj",
+                time_file=tmpdir2.name,
+                order=2,
+                traj_offsets=np.array([(0, 1)], dtype=polyjectory.traj_offset),
+                status=[1],
+            )
+        self.assertTrue(
+            "Invalid time data file passed to the constructor of a polyjectory: the file is not a regular file"
+            in str(cm.exception)
+        )
+        tmpdir1.cleanup()
+        tmpdir2.cleanup()
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.zeros((20,), dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            np.zeros((2,), dtype=float).tofile(time_file)
+            time_file.close()
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array([(0, 1)], dtype=polyjectory.traj_offset),
+                    status=[1],
+                )
+            self.assertTrue(
+                "Invalid trajectory data file passed to the constructor of a polyjectory: the expected size in bytes is"
+                in str(cm.exception)
+            )
+
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.zeros((21,), dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            np.zeros((1,), dtype=float).tofile(time_file)
+            time_file.close()
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array([(0, 1)], dtype=polyjectory.traj_offset),
+                    status=[1],
+                )
+            self.assertTrue(
+                "Invalid time data file passed to the constructor of a polyjectory: the expected size in bytes is"
+                in str(cm.exception)
+            )
+
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((21,), float("inf"), dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            np.zeros((2,), dtype=float).tofile(time_file)
+            time_file.close()
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array([(0, 1)], dtype=polyjectory.traj_offset),
+                    status=[1],
+                )
+            self.assertTrue(
+                "A non-finite value was found in the trajectory at index 0"
+                in str(cm.exception)
+            )
+
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((21,), 0.0, dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            np.full((2,), float("nan"), dtype=float).tofile(time_file)
+            time_file.close()
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array([(0, 1)], dtype=polyjectory.traj_offset),
+                    status=[1],
+                )
+            self.assertTrue(
+                "A non-finite time coordinate was found for the object at index 0"
+                in str(cm.exception)
+            )
+
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((21,), 0.0, dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            np.full((2,), -1.0, dtype=float).tofile(time_file)
+            time_file.close()
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array([(0, 1)], dtype=polyjectory.traj_offset),
+                    status=[1],
+                )
+            self.assertTrue(
+                "A negative time coordinate was found for the object at index 0"
+                in str(cm.exception)
+            )
+
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((42,), 0.0, dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            time_data = np.array([0.0, 1.0, 1.0])
+            time_data.tofile(time_file)
+            time_file.close()
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array([(0, 2)], dtype=polyjectory.traj_offset),
+                    status=[1],
+                )
+            self.assertTrue(
+                "The sequence of times for the object at index 0 is not monotonically increasing"
+                in str(cm.exception)
+            )
+
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((42,), 0.0, dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            time_data = np.array([0.0, 1.0, 0.9])
+            time_data.tofile(time_file)
+            time_file.close()
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array([(0, 2)], dtype=polyjectory.traj_offset),
+                    status=[1],
+                )
+            self.assertTrue(
+                "The sequence of times for the object at index 0 is not monotonically increasing"
+                in str(cm.exception)
+            )
+
+            # A simple check with successful construction.
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((42,), 0.0, dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            time_data = np.array([0.0, 1.0, 1.1])
+            time_data.tofile(time_file)
+            time_file.close()
+
+            pj = polyjectory.from_datafiles(
+                traj_file=traj_file.name,
+                time_file=time_file.name,
+                order=2,
+                traj_offsets=np.array([(0, 2)], dtype=polyjectory.traj_offset),
+                status=[1],
+            )
+
+            self.assertEqual(pj.maxT, 1.1)
 
     def test_bug_traj_init(self):
         # This is a test about a bug in the implementation

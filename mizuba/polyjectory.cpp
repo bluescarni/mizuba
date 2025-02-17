@@ -202,9 +202,6 @@ polyjectory::polyjectory(ptag,
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the temp dir in case of exceptions.
     try {
-        // Change the permissions so that only the owner has access.
-        boost::filesystem::permissions(tmp_dir_path, boost::filesystem::owner_all);
-
         // Do a first single-threaded pass on the spans to determine:
         // - the offsets of traj and time data,
         // - the polynomial order,
@@ -436,6 +433,11 @@ polyjectory::polyjectory(ptag,
 // The layout of the trajectory data into the data file is described by traj_offsets, from which we
 // also deduce the layout of the time data. 'order' is the polynomial order of the polyjectory,
 // 'status' the vector of object statuses.
+//
+// NOTE: although we try hard here to secure operations against a malicious user, I am not 100%
+// sure that file handling here is completely safe. Thus, in the documentation, we should emphasise that
+// users should not call this constructor on files not owned by them. And, clearly, they are not supposed
+// to write to the files during or after the invocation of the constructor.
 polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                          const std::filesystem::path &orig_time_file_path, std::uint32_t order,
                          std::vector<traj_offset> traj_offsets, std::vector<std::int32_t> status, double epoch,
@@ -487,7 +489,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
     }
     // LCOV_EXCL_STOP
 
-    // Check that the two files are not the same.
+    // Check that the two paths are not the same.
     if (traj_file_path == time_file_path) [[unlikely]] {
         throw std::invalid_argument("Invalid data file(s) passed to the constructor of a polyjectory: the trajectory "
                                     "data file and the time data file are the same file");
@@ -567,41 +569,47 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the temp dir in case of exceptions.
     try {
-        // Change the permissions so that only the owner has access.
-        boost::filesystem::permissions(tmp_dir_path, boost::filesystem::owner_all);
-
         // Init the storages file paths and check that they do not exist already.
         const auto traj_path = tmp_dir_path / "traj";
-        if (boost::filesystem::exists(traj_path)) [[unlikely]] {
-            // LCOV_EXCL_START
-            throw std::invalid_argument(
-                fmt::format("Cannot create the storage file '{}': the file exists already", traj_path.string()));
-            // LCOV_EXCL_STOP
-        }
+        assert(!boost::filesystem::exists(traj_path));
+
         const auto time_path = tmp_dir_path / "time";
-        if (boost::filesystem::exists(time_path)) [[unlikely]] {
-            // LCOV_EXCL_START
-            throw std::invalid_argument(
-                fmt::format("Cannot create the storage file '{}': the file exists already", time_path.string()));
-            // LCOV_EXCL_STOP
-        }
+        assert(!boost::filesystem::exists(time_path));
 
         // Move the original files.
         boost::filesystem::rename(traj_file_path, traj_path);
         boost::filesystem::rename(time_file_path, time_path);
 
-        // Check the file sizes. Do it now, after moving the files into the private directory.
+        // NOTE: now that we have moved the original files, we run checks on them.
+
+        // The files must be regular files.
+        if (!boost::filesystem::is_regular_file(traj_path)) [[unlikely]] {
+            throw std::invalid_argument("Invalid trajectory data file passed to the constructor of a polyjectory: the "
+                                        "file is not a regular file");
+        }
+        if (!boost::filesystem::is_regular_file(time_path)) [[unlikely]] {
+            throw std::invalid_argument("Invalid time data file passed to the constructor of a polyjectory: the "
+                                        "file is not a regular file");
+        }
+
+        // Mark them as read-only.
+        // NOTE: this also acts as a (partial) check on the ownership of the data files - in general we should
+        // not be able to set them as read-only if we do not own them.
+        detail::mark_file_read_only(traj_path);
+        detail::mark_file_read_only(time_path);
+
+        // Check the file sizes.
         if (boost::filesystem::file_size(traj_path) != tot_num_traj_values * sizeof(double)) [[unlikely]] {
             throw std::invalid_argument(
                 fmt::format("Invalid trajectory data file passed to the constructor of a polyjectory: the "
-                            "expected size in bytes is '{}' but the actual size is {} instead",
+                            "expected size in bytes is {} but the actual size is {} instead",
                             static_cast<std::size_t>(tot_num_traj_values * sizeof(double)),
                             boost::filesystem::file_size(traj_path)));
         }
         if (boost::filesystem::file_size(time_path) != tot_num_time_values * sizeof(double)) [[unlikely]] {
             throw std::invalid_argument(
                 fmt::format("Invalid time data file passed to the constructor of a polyjectory: the "
-                            "expected size in bytes is '{}' but the actual size is {} instead",
+                            "expected size in bytes is {} but the actual size is {} instead",
                             static_cast<std::size_t>(tot_num_time_values * sizeof(double)),
                             boost::filesystem::file_size(time_path)));
         }
@@ -688,10 +696,6 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         traj_file.close();
         time_file.close();
 
-        // Mark them as read-only.
-        detail::mark_file_read_only(traj_path);
-        detail::mark_file_read_only(time_path);
-
         // Construct the implementation.
         m_impl = std::make_shared<detail::polyjectory_impl>(std::move(tmp_dir_path), std::move(traj_offsets),
                                                             std::move(time_offsets), op1, maxT.load(),
@@ -771,6 +775,12 @@ std::uint32_t polyjectory::get_poly_order() const noexcept
     return m_impl->m_poly_op1 - 1u;
 }
 
+std::filesystem::path polyjectory::get_data_dir() const
+{
+    // NOTE: we made sure on construction that the dir path is canonicalised.
+    return std::filesystem::path(m_impl->m_temp_dir_path.c_str());
+}
+
 dspan_1d<const std::int32_t> polyjectory::get_status() const noexcept
 {
     // NOTE: static_cast is ok, we know that we can represent the total number of objects
@@ -789,11 +799,6 @@ namespace
 // pj is the polyjectory, obj_idx the object's index in the polyjectory, tm the evaluation
 // time (measured from the polyjectory's epoch), out_ptr the pointer into which the result of
 // the evaluation will be written.
-//
-// NOTE: in principle this function could be implemented in a jitted vectorised fashion using scatter/gather
-// primitives and masked load/store/arithmetic operations. This would work best on AVX512 and later,
-// but it could possibly be advantageous also on AVX2 and less. Keep it in mind if we need to squeeze
-// out the best performance from this.
 void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, double *out_ptr)
 {
     // Check the desired evaluation time.
