@@ -238,7 +238,7 @@ void dump_vector_to_file(const std::vector<T> &vec, const boost::filesystem::pat
 
 polyjectory::polyjectory(ptag,
                          std::tuple<std::vector<traj_span_t>, std::vector<time_span_t>, std::vector<std::int32_t>> tup,
-                         double epoch, double epoch2)
+                         double epoch, double epoch2, std::optional<std::filesystem::path> data_dir)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
 
@@ -277,8 +277,9 @@ polyjectory::polyjectory(ptag,
     }
     const auto dl_epoch = detail::hilo_to_dfloat(epoch, epoch2);
 
-    // Assemble a "unique" dir path into the system temp dir.
-    auto data_dir_path = detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
+    // Init the data dir path as either the user-provided path or a "unique" dir path into a temp dir.
+    auto data_dir_path = data_dir ? detail::create_dir_0700(boost::filesystem::path(*data_dir))
+                                  : detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
 
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the data dir in case of exceptions.
@@ -526,7 +527,7 @@ polyjectory::polyjectory(ptag,
 polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                          const std::filesystem::path &orig_time_file_path, std::uint32_t order,
                          std::vector<traj_offset> traj_offsets, std::vector<std::int32_t> status, double epoch,
-                         double epoch2)
+                         double epoch2, std::optional<std::filesystem::path> data_dir)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
 
@@ -648,8 +649,9 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         }
     }
 
-    // Assemble a "unique" dir path into the system temp dir.
-    auto data_dir_path = detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
+    // Init the data dir path as either the user-provided path or a "unique" dir path into a temp dir.
+    auto data_dir_path = data_dir ? detail::create_dir_0700(boost::filesystem::path(*data_dir))
+                                  : detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
 
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the data dir in case of exceptions.
@@ -809,11 +811,11 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
 
 // NOTE: the polyjectory class will have shallow copy semantics - this is ok
 // as the public API is immutable and thus there is no point in making deep copies.
-polyjectory::polyjectory(const polyjectory &) = default;
+polyjectory::polyjectory(const polyjectory &) noexcept = default;
 
 polyjectory::polyjectory(polyjectory &&) noexcept = default;
 
-polyjectory &polyjectory::operator=(const polyjectory &) = default;
+polyjectory &polyjectory::operator=(const polyjectory &) noexcept = default;
 
 polyjectory &polyjectory::operator=(polyjectory &&) noexcept = default;
 

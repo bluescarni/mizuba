@@ -22,6 +22,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <filesystem>
 #include <fstream>
 #include <future>
 #include <ios>
@@ -1257,7 +1258,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
 
 polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std::size_t, std::dynamic_extent>> gpes,
                                   const double jd_begin, const double jd_end, const double reentry_radius,
-                                  const double exit_radius)
+                                  const double exit_radius, std::optional<std::filesystem::path> data_dir)
 {
     namespace hy = heyoka;
     using dfloat = hy::detail::dfloat<double>;
@@ -1384,7 +1385,7 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
     // Build and return the polyjectory.
     return polyjectory(std::filesystem::path((tmp_dir_path / "traj").string()),
                        std::filesystem::path((tmp_dir_path / "time").string()), ta_kepler_tplt->get_order(),
-                       std::move(traj_offsets), std::move(status), epoch_tai.hi, epoch_tai.lo);
+                       std::move(traj_offsets), std::move(status), epoch_tai.hi, epoch_tai.lo, std::move(data_dir));
 }
 
 } // namespace mizuba

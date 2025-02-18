@@ -811,3 +811,30 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             max_err = np.max(diff[~np.isnan(diff)])
 
             self.assertLess(max_err, 1e-6)
+
+    def test_custom_data_dir(self):
+        # Simple test with a single gpe.
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
+            return
+
+        from .. import make_sgp4_polyjectory
+        import pathlib
+        import tempfile
+        import polars as pl
+
+        # Fetch the current directory.
+        cur_dir = pathlib.Path(__file__).parent.resolve()
+
+        # Load the test data.
+        gpes = pl.read_parquet(cur_dir / "single_gpe.parquet")
+
+        # Build the polyjectory.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            data_dir = pathlib.Path(tmpdirname) / "data_dir"
+            jd_begin = 2460669.0
+            pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1, data_dir=data_dir)[
+                0
+            ]
+            self.assertEqual(data_dir, pj.data_dir)

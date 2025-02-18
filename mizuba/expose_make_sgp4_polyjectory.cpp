@@ -16,7 +16,10 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <cstddef>
+#include <filesystem>
+#include <optional>
 #include <stdexcept>
+#include <utility>
 
 #include <boost/numeric/conversion/cast.hpp>
 
@@ -24,6 +27,8 @@
 
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+#include <pybind11/stl/filesystem.h>
 
 #include "common_utils.hpp"
 #include "expose_make_sgp4_polyjectory.hpp"
@@ -48,7 +53,7 @@ void expose_make_sgp4_polyjectory(pybind11::module_ &m)
     m.def(
         "_make_sgp4_polyjectory",
         [](py::array_t<gpe> gpes, const double jd_begin, const double jd_end, const double reentry_radius,
-           const double exit_radius) {
+           const double exit_radius, std::optional<std::filesystem::path> data_dir) {
             // Check the number of dimensions for gpes.
             if (gpes.ndim() != 1) [[unlikely]] {
                 throw std::invalid_argument(fmt::format("The array of gpes passed to make_sgp4_polyjectory() must have "
@@ -67,14 +72,15 @@ void expose_make_sgp4_polyjectory(pybind11::module_ &m)
             // NOTE: release the GIL during the creation of the polyjectory.
             py::gil_scoped_release release;
 
-            auto ret = mz::make_sgp4_polyjectory(gpes_span, jd_begin, jd_end, reentry_radius, exit_radius);
+            auto ret = mz::make_sgp4_polyjectory(gpes_span, jd_begin, jd_end, reentry_radius, exit_radius,
+                                                 std::move(data_dir));
 
             // Register the polyjectory implementation in the cleanup machinery.
             add_pj_weak_ptr(mz::detail::fetch_pj_impl(ret));
 
             return ret;
         },
-        "gpes"_a.noconvert(), "jd_begin"_a, "jd_end"_a, "reentry_radius"_a, "exit_radius"_a);
+        "gpes"_a.noconvert(), "jd_begin"_a, "jd_end"_a, "reentry_radius"_a, "exit_radius"_a, "data_dir"_a);
 }
 
 } // namespace mizuba_py
