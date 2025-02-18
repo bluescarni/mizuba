@@ -96,8 +96,8 @@ struct polyjectory_impl {
     };
     static_assert(std::is_trivially_copyable_v<descriptor>);
 
-    // The path to the temp dir containing the polyjectory data.
-    boost::filesystem::path m_temp_dir_path;
+    // The path to the dir containing the polyjectory data.
+    boost::filesystem::path m_data_dir_path;
 
     // The memory-mapped files.
     //
@@ -122,12 +122,12 @@ struct polyjectory_impl {
     const double *m_time_ptr = nullptr;
     const std::int32_t *m_status_ptr = nullptr;
 
-    explicit polyjectory_impl(boost::filesystem::path temp_dir_path, std::size_t n_objs, std::uint32_t poly_op1,
+    explicit polyjectory_impl(boost::filesystem::path data_dir_path, std::size_t n_objs, std::uint32_t poly_op1,
                               double maxT, double epoch, double epoch2)
-        : m_temp_dir_path(std::move(temp_dir_path)), m_traj_offsets_file((m_temp_dir_path / "traj_offsets").string()),
-          m_time_offsets_file((m_temp_dir_path / "time_offsets").string()),
-          m_traj_file((m_temp_dir_path / "traj").string()), m_time_file((m_temp_dir_path / "time").string()),
-          m_status_file((m_temp_dir_path / "status").string())
+        : m_data_dir_path(std::move(data_dir_path)), m_traj_offsets_file((m_data_dir_path / "traj_offsets").string()),
+          m_time_offsets_file((m_data_dir_path / "time_offsets").string()),
+          m_traj_file((m_data_dir_path / "traj").string()), m_time_file((m_data_dir_path / "time").string()),
+          m_status_file((m_data_dir_path / "status").string())
     {
         // Build the descriptor and dump it to file.
         {
@@ -135,7 +135,7 @@ struct polyjectory_impl {
                 .n_objs = n_objs, .poly_op1 = poly_op1, .maxT = maxT, .epoch = epoch, .epoch2 = epoch2};
 
             // Create the file.
-            const auto file_path = m_temp_dir_path / "desc";
+            const auto file_path = m_data_dir_path / "desc";
             assert(!boost::filesystem::exists(file_path));
             std::ofstream file(file_path.string(), std::ios::binary | std::ios::out);
 
@@ -148,7 +148,7 @@ struct polyjectory_impl {
         }
 
         // Memory-map the descriptor file.
-        m_desc_file.open((m_temp_dir_path / "desc").string());
+        m_desc_file.open((m_data_dir_path / "desc").string());
 
         // Assign the pointers to the memory-mapped data.
         // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
@@ -180,8 +180,8 @@ struct polyjectory_impl {
         m_time_file.close();
         m_status_file.close();
 
-        // Remove the temp dir and everything within.
-        boost::filesystem::remove_all(m_temp_dir_path);
+        // Remove the data dir and everything within.
+        boost::filesystem::remove_all(m_data_dir_path);
     }
 
     polyjectory_impl(polyjectory_impl &&) noexcept = delete;
@@ -278,10 +278,10 @@ polyjectory::polyjectory(ptag,
     const auto dl_epoch = detail::hilo_to_dfloat(epoch, epoch2);
 
     // Assemble a "unique" dir path into the system temp dir.
-    auto tmp_dir_path = detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
+    auto data_dir_path = detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
 
     // From now on, we have to wrap everything in a try/catch in order to ensure
-    // proper cleanup of the temp dir in case of exceptions.
+    // proper cleanup of the data dir in case of exceptions.
     try {
         // Do a first single-threaded pass on the spans to determine:
         // - the offsets of traj and time data,
@@ -397,21 +397,21 @@ polyjectory::polyjectory(ptag,
         // Concurrently fill in the data files and the offsets/status files.
         oneapi::tbb::parallel_invoke(
             // Trajectory offsets.
-            [&tmp_dir_path, &traj_offset_vec]() {
-                detail::dump_vector_to_file(traj_offset_vec, tmp_dir_path / "traj_offsets");
+            [&data_dir_path, &traj_offset_vec]() {
+                detail::dump_vector_to_file(traj_offset_vec, data_dir_path / "traj_offsets");
             },
             // Time offsets.
-            [&tmp_dir_path, &time_offset_vec]() {
-                detail::dump_vector_to_file(time_offset_vec, tmp_dir_path / "time_offsets");
+            [&data_dir_path, &time_offset_vec]() {
+                detail::dump_vector_to_file(time_offset_vec, data_dir_path / "time_offsets");
             },
             // Statuses.
-            [&tmp_dir_path, &status]() { detail::dump_vector_to_file(status, tmp_dir_path / "status"); },
+            [&data_dir_path, &status]() { detail::dump_vector_to_file(status, data_dir_path / "status"); },
             // Data files.
-            [n_objs, &traj_spans, &traj_offset_vec, &time_spans, &time_offset_vec, &tmp_dir_path, cur_traj_offset,
+            [n_objs, &traj_spans, &traj_offset_vec, &time_spans, &time_offset_vec, &data_dir_path, cur_traj_offset,
              cur_time_offset]() {
                 // Init the storage data files.
-                const auto traj_path = tmp_dir_path / "traj";
-                const auto time_path = tmp_dir_path / "time";
+                const auto traj_path = data_dir_path / "traj";
+                const auto time_path = data_dir_path / "time";
                 detail::create_sized_file(traj_path, cur_traj_offset * sizeof(double));
                 detail::create_sized_file(time_path, cur_time_offset * sizeof(double));
 
@@ -499,15 +499,15 @@ polyjectory::polyjectory(ptag,
 
         // Create the impl.
         // NOTE: here make_shared() first allocates, and then constructs. If there are no exceptions, the assignment
-        // to m_impl is noexcept and the dtor of impl takes charge of cleaning up the tmp_dir_path upon destruction.
+        // to m_impl is noexcept and the dtor of impl takes charge of cleaning up the data_dir_path upon destruction.
         // If an exception is thrown (e.g., from memory allocation or from the impl ctor throwing), the impl has not
-        // been fully constructed and thus its dtor will not be invoked, and the cleanup of tmp_dir_path will be
+        // been fully constructed and thus its dtor will not be invoked, and the cleanup of data_dir_path will be
         // performed in the catch block below.
-        m_impl = std::make_shared<detail::polyjectory_impl>(std::move(tmp_dir_path),
+        m_impl = std::make_shared<detail::polyjectory_impl>(std::move(data_dir_path),
                                                             boost::numeric_cast<std::size_t>(n_objs), poly_op1, maxT,
                                                             dl_epoch.hi, dl_epoch.lo);
     } catch (...) {
-        boost::filesystem::remove_all(tmp_dir_path);
+        boost::filesystem::remove_all(data_dir_path);
         throw;
     }
 }
@@ -649,10 +649,10 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
     }
 
     // Assemble a "unique" dir path into the system temp dir.
-    auto tmp_dir_path = detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
+    auto data_dir_path = detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
 
     // From now on, we have to wrap everything in a try/catch in order to ensure
-    // proper cleanup of the temp dir in case of exceptions.
+    // proper cleanup of the data dir in case of exceptions.
     try {
         // Atomic variable to compute maxT.
         std::atomic maxT = -std::numeric_limits<double>::infinity();
@@ -660,21 +660,21 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         // Concurrently move/check the data files and dump the offsets/status files.
         oneapi::tbb::parallel_invoke(
             // Trajectory offsets.
-            [&tmp_dir_path, &traj_offsets]() {
-                detail::dump_vector_to_file(traj_offsets, tmp_dir_path / "traj_offsets");
+            [&data_dir_path, &traj_offsets]() {
+                detail::dump_vector_to_file(traj_offsets, data_dir_path / "traj_offsets");
             },
             // Time offsets.
-            [&tmp_dir_path, &time_offsets]() {
-                detail::dump_vector_to_file(time_offsets, tmp_dir_path / "time_offsets");
+            [&data_dir_path, &time_offsets]() {
+                detail::dump_vector_to_file(time_offsets, data_dir_path / "time_offsets");
             },
             // Statuses.
-            [&tmp_dir_path, &status]() { detail::dump_vector_to_file(status, tmp_dir_path / "status"); },
-            [&tmp_dir_path, &traj_file_path, &time_file_path, tot_num_traj_values, tot_num_time_values, &maxT,
+            [&data_dir_path, &status]() { detail::dump_vector_to_file(status, data_dir_path / "status"); },
+            [&data_dir_path, &traj_file_path, &time_file_path, tot_num_traj_values, tot_num_time_values, &maxT,
              &traj_offsets, &time_offsets, op1]() {
                 // Init the data file paths.
-                const auto traj_path = tmp_dir_path / "traj";
+                const auto traj_path = data_dir_path / "traj";
                 assert(!boost::filesystem::exists(traj_path));
-                const auto time_path = tmp_dir_path / "time";
+                const auto time_path = data_dir_path / "time";
                 assert(!boost::filesystem::exists(time_path));
 
                 // Move the original files.
@@ -798,11 +798,11 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         assert(maxT.load() > 0);
 
         // Construct the implementation.
-        m_impl = std::make_shared<detail::polyjectory_impl>(std::move(tmp_dir_path),
+        m_impl = std::make_shared<detail::polyjectory_impl>(std::move(data_dir_path),
                                                             boost::numeric_cast<std::size_t>(traj_offsets.size()), op1,
                                                             maxT.load(), dl_epoch.hi, dl_epoch.lo);
     } catch (...) {
-        boost::filesystem::remove_all(tmp_dir_path);
+        boost::filesystem::remove_all(data_dir_path);
         throw;
     }
 }
@@ -873,7 +873,7 @@ std::uint32_t polyjectory::get_poly_order() const noexcept
 std::filesystem::path polyjectory::get_data_dir() const
 {
     // NOTE: we made sure on construction that the dir path is canonicalised.
-    return std::filesystem::path(m_impl->m_temp_dir_path.c_str());
+    return std::filesystem::path(m_impl->m_data_dir_path.c_str());
 }
 
 dspan_1d<const std::int32_t> polyjectory::get_status() const noexcept
