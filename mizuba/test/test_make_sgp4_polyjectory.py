@@ -823,6 +823,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         import pathlib
         import tempfile
         import polars as pl
+        import gc
 
         # Fetch the current directory.
         cur_dir = pathlib.Path(__file__).parent.resolve()
@@ -832,9 +833,14 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         # Build the polyjectory.
         with tempfile.TemporaryDirectory() as tmpdirname:
-            data_dir = pathlib.Path(tmpdirname) / "data_dir"
+            data_dir = (pathlib.Path(tmpdirname) / "data_dir").resolve()
             jd_begin = 2460669.0
             pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1, data_dir=data_dir)[
                 0
             ]
             self.assertEqual(data_dir, pj.data_dir)
+
+            # NOTE: here the purpose is to destroy the polyjectory before
+            # the temp dir.
+            del pj
+            gc.collect()

@@ -1300,6 +1300,7 @@ class polyjectory_test_case(_ut.TestCase):
         from pathlib import Path
         import tempfile
         import numpy as np
+        import gc
 
         state_data = np.zeros((1, 8, 7))
 
@@ -1319,7 +1320,7 @@ class polyjectory_test_case(_ut.TestCase):
 
         # Check proper creation and usage of custom data dir.
         with tempfile.TemporaryDirectory() as tmpdirname:
-            data_dir = Path(tmpdirname) / "data_dir"
+            data_dir = (Path(tmpdirname) / "data_dir").resolve()
 
             pj = polyjectory(
                 trajs=[state_data, state_data[1:]],
@@ -1328,6 +1329,11 @@ class polyjectory_test_case(_ut.TestCase):
                 data_dir=data_dir,
             )
             self.assertEqual(data_dir, pj.data_dir)
+
+            # NOTE: here the purpose is to destroy the polyjectory before
+            # the temp dir.
+            del pj
+            gc.collect()
 
         # Check the ctor from datafiles too.
         with tempfile.TemporaryDirectory() as tmpdirname:
@@ -1340,7 +1346,7 @@ class polyjectory_test_case(_ut.TestCase):
             time_data.tofile(time_file)
             time_file.close()
 
-            data_dir = Path(tmpdirname) / "data_dir"
+            data_dir = (Path(tmpdirname) / "data_dir").resolve()
 
             pj = polyjectory.from_datafiles(
                 traj_file=traj_file.name,
@@ -1351,3 +1357,8 @@ class polyjectory_test_case(_ut.TestCase):
                 data_dir=data_dir,
             )
             self.assertEqual(data_dir, pj.data_dir)
+
+            # NOTE: here the purpose is to destroy the polyjectory before
+            # the temp dir.
+            del pj
+            gc.collect()
