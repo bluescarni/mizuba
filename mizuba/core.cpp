@@ -73,6 +73,8 @@ PYBIND11_MODULE(core, m)
     // Logging utils.
     m.def("set_logger_level_info", &mz::set_logger_level_info);
     m.def("set_logger_level_trace", &mz::set_logger_level_trace);
+    m.def("set_logger_level_debug", &mz::set_logger_level_debug);
+    m.def("set_logger_level_warning", &mz::set_logger_level_warning);
 
     // Register the polyjectory/conjunctions cleanup machinery on the Python side.
     auto atexit = py::module_::import("atexit");

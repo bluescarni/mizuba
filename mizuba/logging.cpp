@@ -53,6 +53,16 @@ void log_trace_impl(const std::string &msg)
     get_logger()->trace(msg);
 }
 
+void log_debug_impl(const std::string &msg)
+{
+    get_logger()->debug(msg);
+}
+
+void log_warning_impl(const std::string &msg)
+{
+    get_logger()->warn(msg);
+}
+
 } // namespace detail
 
 void set_logger_level_info()
@@ -63,6 +73,16 @@ void set_logger_level_info()
 void set_logger_level_trace()
 {
     detail::get_logger()->set_level(spdlog::level::trace);
+}
+
+void set_logger_level_debug()
+{
+    detail::get_logger()->set_level(spdlog::level::debug);
+}
+
+void set_logger_level_warning()
+{
+    detail::get_logger()->set_level(spdlog::level::warn);
 }
 
 stopwatch::stopwatch() : m_start_tp{clock::now()} {}

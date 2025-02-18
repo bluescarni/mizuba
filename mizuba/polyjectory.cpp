@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -174,23 +175,35 @@ struct polyjectory_impl {
 
     void close() noexcept
     {
-        // NOTE: a polyjectory is not supposed to be closed
-        // more than once.
-        assert(is_open());
+        try {
+            // NOTE: a polyjectory is not supposed to be closed
+            // more than once.
+            assert(is_open());
 
-        // Close all memory-mapped files.
-        m_desc_file.close();
-        m_traj_offsets_file.close();
-        m_time_offsets_file.close();
-        m_traj_file.close();
-        m_time_file.close();
-        m_status_file.close();
+            // Close all memory-mapped files.
+            // NOTE: these close() calls can in principle throw. If they do, and we are within
+            // a destructor call, the destructor of the mmapped files will eventually
+            // be invoked, ignoring any exception that may be thrown:
+            // https://github.com/boostorg/iostreams/blob/develop/src/mapped_file.cpp#L84
+            m_desc_file.close();
+            m_traj_offsets_file.close();
+            m_time_offsets_file.close();
+            m_traj_file.close();
+            m_time_file.close();
+            m_status_file.close();
 
-        // Remove the data dir and everything within, if we are not persisting
-        // the data dir.
-        if (!m_persist.load()) {
-            boost::filesystem::remove_all(m_data_dir_path);
+            // Remove the data dir and everything within, if we are not persisting
+            // the data dir.
+            if (!m_persist.load()) {
+                boost::filesystem::remove_all(m_data_dir_path);
+            }
+            // LCOV_EXCL_START
+        } catch (const std::exception &e) {
+            log_warning("Exception caught while trying to close a polyjectory: '{}'", e.what());
+        } catch (...) {
+            log_warning("Exception caught while trying to close a polyjectory");
         }
+        // LCOV_EXCL_STOP
     }
 
     polyjectory_impl(polyjectory_impl &&) noexcept = delete;
