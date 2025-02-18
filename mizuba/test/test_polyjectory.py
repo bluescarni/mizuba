@@ -318,6 +318,7 @@ class polyjectory_test_case(_ut.TestCase):
         self.assertEqual(pj.epoch, (43.0, 0.0))
         self.assertEqual(pj.poly_order, 7)
         self.assertTrue(isinstance(pj.data_dir, Path))
+        self.assertFalse(pj.persist)
 
         rc = sys.getrefcount(pj)
 
@@ -1362,3 +1363,37 @@ class polyjectory_test_case(_ut.TestCase):
             # the temp dir.
             del pj
             gc.collect()
+            self.assertFalse(data_dir.exists())
+
+    def test_persist(self):
+        from .. import polyjectory
+        import numpy as np
+        import gc
+        from pathlib import Path
+        import tempfile
+
+        state_data = np.zeros((1, 8, 7))
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            data_dir = (Path(tmpdirname) / "data_dir").resolve()
+
+            pj = polyjectory(
+                trajs=[state_data, state_data[1:]],
+                times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
+                status=np.array([0, 0], dtype=np.int32),
+                data_dir=data_dir,
+            )
+            self.assertTrue(data_dir.is_dir())
+            self.assertTrue(data_dir.exists())
+            self.assertFalse(pj.persist)
+            pj.persist = True
+            self.assertTrue(pj.persist)
+
+            # NOTE: here the purpose is to trigger the destruction
+            # of the polyjectory
+            del pj
+            gc.collect()
+
+            # Check the data dir still exists.
+            self.assertTrue(data_dir.is_dir())
+            self.assertTrue(data_dir.exists())

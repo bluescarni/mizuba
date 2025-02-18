@@ -122,6 +122,12 @@ struct polyjectory_impl {
     const double *m_time_ptr = nullptr;
     const std::int32_t *m_status_ptr = nullptr;
 
+    // The persistence flag. This indicates whether or not the polyjectory
+    // data should persist on disk after the polyjectory is destroyed.
+    // NOTE: this is *always* set to false on construction, it can be changed
+    // in a thread-safe way after construction.
+    mutable std::atomic<bool> m_persist = false;
+
     explicit polyjectory_impl(boost::filesystem::path data_dir_path, std::size_t n_objs, std::uint32_t poly_op1,
                               double maxT, double epoch, double epoch2)
         : m_data_dir_path(std::move(data_dir_path)), m_traj_offsets_file((m_data_dir_path / "traj_offsets").string()),
@@ -180,8 +186,11 @@ struct polyjectory_impl {
         m_time_file.close();
         m_status_file.close();
 
-        // Remove the data dir and everything within.
-        boost::filesystem::remove_all(m_data_dir_path);
+        // Remove the data dir and everything within, if we are not persisting
+        // the data dir.
+        if (!m_persist.load()) {
+            boost::filesystem::remove_all(m_data_dir_path);
+        }
     }
 
     polyjectory_impl(polyjectory_impl &&) noexcept = delete;
@@ -1158,6 +1167,16 @@ void polyjectory::state_meval(multi_eval_span_t out, dspan_2d<const double> tm_a
                               std::optional<dspan_1d<const std::size_t>> selector) const
 {
     state_meval_impl(out, tm_arr, selector);
+}
+
+void polyjectory::set_persist(bool val) const noexcept
+{
+    m_impl->m_persist.store(val);
+}
+
+bool polyjectory::get_persist() const noexcept
+{
+    return m_impl->m_persist.load();
 }
 
 } // namespace mizuba

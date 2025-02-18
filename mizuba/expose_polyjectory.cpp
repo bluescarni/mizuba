@@ -231,6 +231,7 @@ void expose_polyjectory(pybind11::module_ &m)
         // Turn into an array and return.
         return mdspan_to_array(self, status_span);
     });
+    pt_cl.def_property("persist", &mz::polyjectory::get_persist, &mz::polyjectory::set_persist);
     pt_cl.def(
         "__getitem__",
         [](const py::object &self, std::size_t i) {

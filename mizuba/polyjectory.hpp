@@ -144,6 +144,9 @@ public:
     [[nodiscard]] std::tuple<traj_span_t, time_span_t, std::int32_t> operator[](std::size_t) const;
     [[nodiscard]] dspan_1d<const std::int32_t> get_status() const noexcept;
 
+    void set_persist(bool) const noexcept;
+    [[nodiscard]] bool get_persist() const noexcept;
+
     // Span used to store the output of polyjectory evaluation with a *single time* per satellite.
     // The two dimensions are, respectively:
     //
