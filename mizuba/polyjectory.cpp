@@ -170,6 +170,8 @@ struct polyjectory_impl {
 
     [[nodiscard]] bool is_open() noexcept
     {
+        // NOTE: this boils down to a simple pointer check in the Boost
+        // implementation, hence this is trivially noexcept.
         return m_desc_file.is_open();
     }
 
@@ -183,7 +185,8 @@ struct polyjectory_impl {
             // Close all memory-mapped files.
             // NOTE: these close() calls can in principle throw. If they do, and we are within
             // a destructor call, the destructor of the mmapped files will eventually
-            // be invoked, ignoring any exception that may be thrown:
+            // be invoked, ignoring any exception that may be thrown by close():
+            //
             // https://github.com/boostorg/iostreams/blob/develop/src/mapped_file.cpp#L84
             m_desc_file.close();
             m_traj_offsets_file.close();
@@ -199,9 +202,10 @@ struct polyjectory_impl {
             }
             // LCOV_EXCL_START
         } catch (const std::exception &e) {
-            log_warning("Exception caught while trying to close a polyjectory: '{}'", e.what());
+            log_warning("Exception caught while trying to close a polyjectory (data_dir={}): '{}'",
+                        m_data_dir_path.string(), e.what());
         } catch (...) {
-            log_warning("Exception caught while trying to close a polyjectory");
+            log_warning("Exception caught while trying to close a polyjectory (data_dir={})", m_data_dir_path.string());
         }
         // LCOV_EXCL_STOP
     }

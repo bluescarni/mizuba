@@ -24,6 +24,8 @@
 
 #include "logging.hpp"
 
+// LCOV_EXCL_START
+
 namespace mizuba
 
 {
@@ -103,3 +105,5 @@ void stopwatch::reset()
 }
 
 } // namespace mizuba
+
+// LCOV_EXCL_STOP

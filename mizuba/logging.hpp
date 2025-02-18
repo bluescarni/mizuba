@@ -25,6 +25,8 @@
 
 #include <fmt/core.h>
 
+// LCOV_EXCL_START
+
 namespace mizuba
 {
 
@@ -105,5 +107,7 @@ struct formatter<mizuba::stopwatch> : formatter<double> {
 };
 
 } // namespace fmt
+
+// LCOV_EXCL_STOP
 
 #endif
