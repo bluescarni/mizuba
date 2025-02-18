@@ -1293,3 +1293,72 @@ class polyjectory_test_case(_ut.TestCase):
         tm = np.array([0.1, 0.1])
         res = pj.state_eval(time=tm)
         self.assertTrue(np.all(np.isnan(res[1])))
+
+    def test_custom_data_dir(self):
+        from .. import polyjectory
+        import os
+        from pathlib import Path
+        import tempfile
+        import numpy as np
+        import gc
+
+        state_data = np.zeros((1, 8, 7))
+
+        # Test failure with already-existing dir.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            data_dir = Path(tmpdirname) / "data_dir"
+            os.mkdir(data_dir)
+
+            with self.assertRaises(RuntimeError) as cm:
+                polyjectory(
+                    trajs=[state_data, state_data[1:]],
+                    times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
+                    status=np.array([0, 0], dtype=np.int32),
+                    data_dir=data_dir,
+                )
+            self.assertTrue("Error while creating the directory" in str(cm.exception))
+
+        # Check proper creation and usage of custom data dir.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            data_dir = (Path(tmpdirname) / "data_dir").resolve()
+
+            pj = polyjectory(
+                trajs=[state_data, state_data[1:]],
+                times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
+                status=np.array([0, 0], dtype=np.int32),
+                data_dir=data_dir,
+            )
+            self.assertEqual(data_dir, pj.data_dir)
+
+            # NOTE: here the purpose is to destroy the polyjectory before
+            # the temp dir.
+            del pj
+            gc.collect()
+
+        # Check the ctor from datafiles too.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((42,), 0.0, dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            time_data = np.array([0.0, 1.0, 1.1])
+            time_data.tofile(time_file)
+            time_file.close()
+
+            data_dir = (Path(tmpdirname) / "data_dir").resolve()
+
+            pj = polyjectory.from_datafiles(
+                traj_file=traj_file.name,
+                time_file=time_file.name,
+                order=2,
+                traj_offsets=np.array([(0, 2)], dtype=polyjectory.traj_offset),
+                status=[1],
+                data_dir=data_dir,
+            )
+            self.assertEqual(data_dir, pj.data_dir)
+
+            # NOTE: here the purpose is to destroy the polyjectory before
+            # the temp dir.
+            del pj
+            gc.collect()

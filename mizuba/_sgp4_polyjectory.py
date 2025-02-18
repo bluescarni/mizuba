@@ -22,6 +22,7 @@ from typing import Union, Tuple
 import numpy as np
 from enum import IntEnum
 from typing import TYPE_CHECKING
+import os
 
 if TYPE_CHECKING:
     from sgp4.api import Satrec
@@ -127,6 +128,7 @@ def make_sgp4_polyjectory(
     jd_end: float,
     reentry_radius: float = 0.0,
     exit_radius: float = float("inf"),
+    data_dir: Union[os.PathLike, None] = None,
 ) -> Tuple[polyjectory, np.ndarray[np.uint64]]:
     # NOTE: remember to document the ordering requirement on gpes.
     from .core import _make_sgp4_polyjectory, gpe_dtype
@@ -192,7 +194,7 @@ def make_sgp4_polyjectory(
 
     # Invoke the C++ function.
     ret = _make_sgp4_polyjectory(
-        gpes_arr, jd_begin, jd_end, reentry_radius, exit_radius
+        gpes_arr, jd_begin, jd_end, reentry_radius, exit_radius, data_dir
     )
 
     # Prepare the output array of norad ids.
@@ -203,4 +205,15 @@ def make_sgp4_polyjectory(
     return ret, norad_ids
 
 
-del polyjectory, pl, gpe_dtype, Union, np, TYPE_CHECKING, annotations, IntEnum, Tuple
+del (
+    polyjectory,
+    pl,
+    gpe_dtype,
+    Union,
+    np,
+    TYPE_CHECKING,
+    annotations,
+    IntEnum,
+    Tuple,
+    os,
+)

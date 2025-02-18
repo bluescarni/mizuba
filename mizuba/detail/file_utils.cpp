@@ -72,7 +72,7 @@ namespace mizuba::detail
 
 // Helper to create a directory with a "unique" name into the
 // system's temporary dir. If the directory to be created exists
-// already, an exception will be thrown, otherwise the path
+// already, an exception will be thrown, otherwise the canonicalised path
 // to the newly-created directory will be returned. The directory
 // will have its permission set to boost::filesystem::owner_all.
 boost::filesystem::path create_temp_dir(const char *tplt)
@@ -111,6 +111,41 @@ boost::filesystem::path create_temp_dir(const char *tplt)
         // LCOV_EXCL_START
     } catch (...) {
         boost::filesystem::remove_all(tmp_dir_path);
+        throw;
+    }
+    // LCOV_EXCL_STOP
+}
+
+// Utility to create a directory with 0700 permissions (aka boost::filesystem::owner_all).
+// The directory must not exist already. The canonicalised path to the directory is returned.
+boost::filesystem::path create_dir_0700(const boost::filesystem::path &path)
+{
+    // Attempt to create the directory.
+    if (!boost::filesystem::create_directory(path)) [[unlikely]] {
+        throw std::runtime_error(
+            fmt::format("Error while creating the directory '{}': the directory already exists", path.string()));
+    }
+
+    // The directory has now been created. Wrap the rest of the function in a try/catch
+    // block so that, if any error is thrown, we ensure that the directory is cleaned up
+    // before returning.
+    try {
+        // Change the permissions so that only the owner has access.
+        boost::filesystem::permissions(path, boost::filesystem::owner_all);
+
+        // In the short time span between directory creation and permission setting, another
+        // user may have written into the directory. Make sure to remove the content of the directory
+        // as a precaution.
+        for (const auto &entry : boost::filesystem::directory_iterator(path)) {
+            boost::filesystem::remove_all(entry.path()); // LCOV_EXCL_LINE
+        }
+
+        // Canonicalise and return.
+        return boost::filesystem::canonical(path);
+
+        // LCOV_EXCL_START
+    } catch (...) {
+        boost::filesystem::remove_all(path);
         throw;
     }
     // LCOV_EXCL_STOP

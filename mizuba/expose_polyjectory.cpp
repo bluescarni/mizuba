@@ -109,7 +109,8 @@ void expose_polyjectory(pybind11::module_ &m)
 
     py::class_<mz::polyjectory> pt_cl(m, "polyjectory", py::dynamic_attr{});
     pt_cl.def(
-        py::init([](py::iterable trajs_, py::iterable times_, py::iterable status_, double epoch, double epoch2) {
+        py::init([](py::iterable trajs_, py::iterable times_, py::iterable status_, double epoch, double epoch2,
+                    std::optional<std::filesystem::path> data_dir) {
             auto traj_trans = [](const py::array_t<double> &arr) {
                 // Check shape/dimension.
                 if (arr.ndim() != 3) [[unlikely]] {
@@ -180,9 +181,9 @@ void expose_polyjectory(pybind11::module_ &m)
                 times.push_back(o.cast<py::array_t<double>>());
             }
 
-            auto ret
-                = mz::polyjectory(trajs | std::views::transform(traj_trans), times | std::views::transform(time_trans),
-                                  std::ranges::subrange(status_ptr, status_ptr + status.shape(0)), epoch, epoch2);
+            auto ret = mz::polyjectory(
+                trajs | std::views::transform(traj_trans), times | std::views::transform(time_trans),
+                std::ranges::subrange(status_ptr, status_ptr + status.shape(0)), epoch, epoch2, std::move(data_dir));
 
             // Register the polyjectory implementation in the cleanup machinery.
             add_pj_weak_ptr(mz::detail::fetch_pj_impl(ret));
@@ -190,12 +191,12 @@ void expose_polyjectory(pybind11::module_ &m)
             return ret;
         }),
         "trajs"_a.noconvert(), "times"_a.noconvert(), "status"_a.noconvert(), "epoch"_a.noconvert() = 0.,
-        "epoch2"_a.noconvert() = 0.);
+        "epoch2"_a.noconvert() = 0., "data_dir"_a = py::none{});
     pt_cl.def_static(
         "from_datafiles",
         [](const std::filesystem::path &orig_traj_file_path, const std::filesystem::path &orig_time_file_path,
            std::uint32_t order, py::array_t<traj_offset> traj_offsets_, std::vector<std::int32_t> status, double epoch,
-           double epoch2) {
+           double epoch2, std::optional<std::filesystem::path> data_dir) {
             if (traj_offsets_.ndim() != 1) [[unlikely]] {
                 throw std::invalid_argument(
                     fmt::format("The array of trajectory offsets passed to 'from_datafiles()' must have 1 dimension, "
@@ -212,9 +213,10 @@ void expose_polyjectory(pybind11::module_ &m)
             }
 
             return mz::polyjectory(orig_traj_file_path, orig_time_file_path, order, std::move(traj_offsets),
-                                   std::move(status), epoch, epoch2);
+                                   std::move(status), epoch, epoch2, std::move(data_dir));
         },
-        "traj_file"_a, "time_file"_a, "order"_a, "traj_offsets"_a, "status"_a, "epoch"_a = 0., "epoch2"_a = 0.);
+        "traj_file"_a, "time_file"_a, "order"_a, "traj_offsets"_a, "status"_a, "epoch"_a = 0., "epoch2"_a = 0.,
+        "data_dir"_a = py::none{});
     pt_cl.def_property_readonly("nobjs", &mz::polyjectory::get_nobjs);
     pt_cl.def_property_readonly("maxT", &mz::polyjectory::get_maxT);
     pt_cl.def_property_readonly("epoch", &mz::polyjectory::get_epoch);

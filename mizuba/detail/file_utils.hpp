@@ -33,6 +33,8 @@ namespace mizuba::detail
 
 boost::filesystem::path create_temp_dir(const char *);
 
+boost::filesystem::path create_dir_0700(const boost::filesystem::path &);
+
 void create_sized_file(const boost::filesystem::path &, std::size_t);
 
 void mark_file_read_only(const boost::filesystem::path &);
