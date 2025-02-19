@@ -140,7 +140,7 @@ public:
 
     [[nodiscard]] static polyjectory mount(const std::filesystem::path &);
     void detach() noexcept;
-    [[nodisacrd]] bool is_detached() const noexcept;
+    [[nodiscard]] bool is_detached() const noexcept;
 
     [[nodiscard]] std::size_t get_nobjs() const;
     [[nodiscard]] double get_maxT() const;
