@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -84,6 +85,9 @@ struct polyjectory_impl {
     struct descriptor {
         // The version of the polyjectory.
         unsigned version = cur_pj_version;
+        // Flag to signal whether or not the data files
+        // should persist to disk.
+        bool persist = false;
         // The total number of objects.
         std::size_t n_objs = 0;
         // Polynomial order + 1 for the trajectory data.
@@ -95,7 +99,11 @@ struct polyjectory_impl {
         // The second component of the initial epoch.
         double epoch2 = 0;
     };
+    // NOTE: this ensures we can dump the descriptor to file.
     static_assert(std::is_trivially_copyable_v<descriptor>);
+    // NOTE: this ensures that we can load the version member
+    // from a pointer to the beginning of the descriptor data.
+    static_assert(std::is_standard_layout_v<descriptor>);
 
     // The path to the dir containing the polyjectory data.
     boost::filesystem::path m_data_dir_path;
@@ -123,14 +131,11 @@ struct polyjectory_impl {
     const double *m_time_ptr = nullptr;
     const std::int32_t *m_status_ptr = nullptr;
 
-    // The persistence flag. This indicates whether or not the polyjectory
-    // data should persist on disk after the polyjectory is destroyed.
-    // NOTE: this is *always* set to false on construction, it can be changed
-    // in a thread-safe way after construction.
-    mutable std::atomic<bool> m_persist = false;
-
+    // NOTE: this is the "main" constructor, it assumes all the datafiles have been created/moved
+    // into the newly-created data_dir_path directory. The trajectory descriptor is constructed from
+    // several input arguments and then dumped to file.
     explicit polyjectory_impl(boost::filesystem::path data_dir_path, std::size_t n_objs, std::uint32_t poly_op1,
-                              double maxT, double epoch, double epoch2)
+                              double maxT, double epoch, double epoch2, bool persist)
         : m_data_dir_path(std::move(data_dir_path)), m_traj_offsets_file((m_data_dir_path / "traj_offsets").string()),
           m_time_offsets_file((m_data_dir_path / "time_offsets").string()),
           m_traj_file((m_data_dir_path / "traj").string()), m_time_file((m_data_dir_path / "time").string()),
@@ -138,8 +143,12 @@ struct polyjectory_impl {
     {
         // Build the descriptor and dump it to file.
         {
-            const descriptor desc{
-                .n_objs = n_objs, .poly_op1 = poly_op1, .maxT = maxT, .epoch = epoch, .epoch2 = epoch2};
+            const descriptor desc{.persist = persist,
+                                  .n_objs = n_objs,
+                                  .poly_op1 = poly_op1,
+                                  .maxT = maxT,
+                                  .epoch = epoch,
+                                  .epoch2 = epoch2};
 
             // Create the file.
             const auto file_path = m_data_dir_path / "desc";
@@ -168,6 +177,52 @@ struct polyjectory_impl {
         m_status_ptr = reinterpret_cast<const std::int32_t *>(m_status_file.data());
     }
 
+    // NOTE: constructor for the implementation of the mount() functionality.
+    explicit polyjectory_impl(boost::filesystem::path data_dir_path) : m_data_dir_path(std::move(data_dir_path))
+    {
+        // Open the files.
+        m_desc_file.open((m_data_dir_path / "desc").string());
+        m_traj_offsets_file.open((m_data_dir_path / "traj_offsets").string());
+        m_time_offsets_file.open((m_data_dir_path / "time_offsets").string());
+        m_traj_file.open((m_data_dir_path / "traj").string());
+        m_time_file.open((m_data_dir_path / "time").string());
+        m_status_file.open((m_data_dir_path / "status").string());
+
+        // Assign the pointers to the memory-mapped data.
+        m_traj_offsets_ptr = reinterpret_cast<const traj_offset *>(m_traj_offsets_file.data());
+        m_time_offsets_ptr = reinterpret_cast<const std::size_t *>(m_time_offsets_file.data());
+        m_traj_ptr = reinterpret_cast<const double *>(m_traj_file.data());
+        m_time_ptr = reinterpret_cast<const double *>(m_time_file.data());
+        m_status_ptr = reinterpret_cast<const std::int32_t *>(m_status_file.data());
+
+        // Check the version.
+        // NOTE: load the version field manually from the file. The intent here
+        // is to avoid accessing the data in the file as a descriptor instance, since the file
+        // could contain a descriptor with a layout different from what we expect.
+        // I am not 100% sure that this is completely standard-compliant, in the sense
+        // that the standard talks about conversion between pointer to struct and first
+        // member, but we do not have a pointer to struct here. In any case, this should
+        // be practically ok.
+        unsigned version{};
+        std::memcpy(&version, m_desc_file.data(), sizeof(unsigned));
+        if (version != detail::cur_pj_version) [[unlikely]] {
+            throw std::invalid_argument(fmt::format("Version mismatch when trying to mount() a polyjectory: the "
+                                                    "current polyjectory version is {}, while the polyjectory in the "
+                                                    "data dir '{}' has a version number of {}",
+                                                    detail::cur_pj_version, m_data_dir_path.string(), version));
+        }
+
+        // Now that we know that the descriptor has the correct version, assign the pointer to it.
+        m_desc_ptr = reinterpret_cast<const descriptor *>(m_desc_file.data());
+
+        // Check that we are mounting a directory with persistent data.
+        if (!m_desc_ptr->persist) [[unlikely]] {
+            throw std::invalid_argument(
+                fmt::format("Cannot mount() a polyjectory on the the data dir '{}': the data is not persistent",
+                            m_data_dir_path.string()));
+        }
+    }
+
     [[nodiscard]] bool is_open() noexcept
     {
         // NOTE: this boils down to a simple pointer check in the Boost
@@ -182,6 +237,9 @@ struct polyjectory_impl {
             // more than once.
             assert(is_open());
 
+            // Fetch the persist flag before unmapping.
+            const auto persist = m_desc_ptr->persist;
+
             // Close all memory-mapped files.
             // NOTE: these close() calls can in principle throw. If they do, and we are within
             // a destructor call, the destructor of the mmapped files will eventually
@@ -195,9 +253,8 @@ struct polyjectory_impl {
             m_time_file.close();
             m_status_file.close();
 
-            // Remove the data dir and everything within, if we are not persisting
-            // the data dir.
-            if (!m_persist.load()) {
+            // Remove the data dir and everything within, if we are not persisting.
+            if (!persist) {
                 boost::filesystem::remove_all(m_data_dir_path);
             }
             // LCOV_EXCL_START
@@ -262,9 +319,16 @@ void dump_vector_to_file(const std::vector<T> &vec, const boost::filesystem::pat
 
 } // namespace detail
 
+void polyjectory::check_attached() const
+{
+    if (!m_impl) [[unlikely]] {
+        throw std::invalid_argument("Cannot operate on a detached polyjectory");
+    }
+}
+
 polyjectory::polyjectory(ptag,
                          std::tuple<std::vector<traj_span_t>, std::vector<time_span_t>, std::vector<std::int32_t>> tup,
-                         double epoch, double epoch2, std::optional<std::filesystem::path> data_dir)
+                         double epoch, double epoch2, std::optional<std::filesystem::path> data_dir, bool persist)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
 
@@ -532,7 +596,7 @@ polyjectory::polyjectory(ptag,
         // performed in the catch block below.
         m_impl = std::make_shared<detail::polyjectory_impl>(std::move(data_dir_path),
                                                             boost::numeric_cast<std::size_t>(n_objs), poly_op1, maxT,
-                                                            dl_epoch.hi, dl_epoch.lo);
+                                                            dl_epoch.hi, dl_epoch.lo, persist);
     } catch (...) {
         boost::filesystem::remove_all(data_dir_path);
         throw;
@@ -553,7 +617,7 @@ polyjectory::polyjectory(ptag,
 polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                          const std::filesystem::path &orig_time_file_path, std::uint32_t order,
                          std::vector<traj_offset> traj_offsets, std::vector<std::int32_t> status, double epoch,
-                         double epoch2, std::optional<std::filesystem::path> data_dir)
+                         double epoch2, std::optional<std::filesystem::path> data_dir, bool persist)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
 
@@ -828,7 +892,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         // Construct the implementation.
         m_impl = std::make_shared<detail::polyjectory_impl>(std::move(data_dir_path),
                                                             boost::numeric_cast<std::size_t>(traj_offsets.size()), op1,
-                                                            maxT.load(), dl_epoch.hi, dl_epoch.lo);
+                                                            maxT.load(), dl_epoch.hi, dl_epoch.lo, persist);
     } catch (...) {
         boost::filesystem::remove_all(data_dir_path);
         throw;
@@ -847,9 +911,48 @@ polyjectory &polyjectory::operator=(polyjectory &&) noexcept = default;
 
 polyjectory::~polyjectory() = default;
 
+polyjectory::polyjectory(ptag, const std::filesystem::path &data_dir_path)
+{
+    // Canonicalise and convert to boost.
+    // NOTE: canonicalisation also checks existence.
+    boost::filesystem::path path;
+    try {
+        path = std::filesystem::canonical(data_dir_path);
+    } catch (...) {
+        throw std::invalid_argument(fmt::format("Error while trying to mount a polyjectory on path '{}': the path "
+                                                "could not be canonicalised (does it exist?)",
+                                                data_dir_path.string()));
+    }
+
+    // Check that the path is a directory.
+    if (!boost::filesystem::is_directory(path)) [[unlikely]] {
+        throw std::invalid_argument(
+            fmt::format("Cannot mount a polyjectory on path '{}': the path is not a directory", path.string()));
+    }
+
+    m_impl = std::make_shared<detail::polyjectory_impl>(std::move(path));
+}
+
+polyjectory polyjectory::mount(const std::filesystem::path &path)
+{
+    return polyjectory(ptag{}, path);
+}
+
+void polyjectory::detach() noexcept
+{
+    m_impl.reset();
+}
+
+bool polyjectory::is_detached() const noexcept
+{
+    return !m_impl;
+}
+
 std::tuple<polyjectory::traj_span_t, polyjectory::time_span_t, std::int32_t>
 polyjectory::operator[](std::size_t i) const
 {
+    check_attached();
+
     if (i >= get_nobjs()) [[unlikely]] {
         throw std::out_of_range(
             fmt::format("Invalid object index {} specified - the total number of objects in the polyjectory is only {}",
@@ -877,35 +980,47 @@ polyjectory::operator[](std::size_t i) const
             time_span_t{time_ptr, nsteps + static_cast<unsigned>(nsteps != 0u)}, m_impl->m_status_ptr[i]};
 }
 
-std::size_t polyjectory::get_nobjs() const noexcept
+std::size_t polyjectory::get_nobjs() const
 {
+    check_attached();
+
     return m_impl->m_desc_ptr->n_objs;
 }
 
-double polyjectory::get_maxT() const noexcept
+double polyjectory::get_maxT() const
 {
+    check_attached();
+
     return m_impl->m_desc_ptr->maxT;
 }
 
-std::pair<double, double> polyjectory::get_epoch() const noexcept
+std::pair<double, double> polyjectory::get_epoch() const
 {
+    check_attached();
+
     return {m_impl->m_desc_ptr->epoch, m_impl->m_desc_ptr->epoch2};
 }
 
-std::uint32_t polyjectory::get_poly_order() const noexcept
+std::uint32_t polyjectory::get_poly_order() const
 {
+    check_attached();
+
     assert(m_impl->m_desc_ptr->poly_op1 > 0u);
     return m_impl->m_desc_ptr->poly_op1 - 1u;
 }
 
 std::filesystem::path polyjectory::get_data_dir() const
 {
+    check_attached();
+
     // NOTE: we made sure on construction that the dir path is canonicalised.
     return std::filesystem::path(m_impl->m_data_dir_path.c_str());
 }
 
-dspan_1d<const std::int32_t> polyjectory::get_status() const noexcept
+dspan_1d<const std::int32_t> polyjectory::get_status() const
 {
+    check_attached();
+
     return dspan_1d<const std::int32_t>{m_impl->m_status_ptr, get_nobjs()};
 }
 
@@ -1066,12 +1181,16 @@ void polyjectory::state_eval_impl(single_eval_span_t out, Time tm,
 void polyjectory::state_eval(single_eval_span_t out, double tm,
                              std::optional<dspan_1d<const std::size_t>> selector) const
 {
+    check_attached();
+
     state_eval_impl(out, tm, selector);
 }
 
 void polyjectory::state_eval(single_eval_span_t out, dspan_1d<const double> tm_arr,
                              std::optional<dspan_1d<const std::size_t>> selector) const
 {
+    check_attached();
+
     state_eval_impl(out, tm_arr, selector);
 }
 
@@ -1177,23 +1296,24 @@ void polyjectory::state_meval_impl(multi_eval_span_t out, Time tm,
 void polyjectory::state_meval(multi_eval_span_t out, dspan_1d<const double> tm_arr,
                               std::optional<dspan_1d<const std::size_t>> selector) const
 {
+    check_attached();
+
     state_meval_impl(out, tm_arr, selector);
 }
 
 void polyjectory::state_meval(multi_eval_span_t out, dspan_2d<const double> tm_arr,
                               std::optional<dspan_1d<const std::size_t>> selector) const
 {
+    check_attached();
+
     state_meval_impl(out, tm_arr, selector);
 }
 
-void polyjectory::set_persist(bool val) const noexcept
+bool polyjectory::get_persist() const
 {
-    m_impl->m_persist.store(val);
-}
+    check_attached();
 
-bool polyjectory::get_persist() const noexcept
-{
-    return m_impl->m_persist.load();
+    return m_impl->m_desc_ptr->persist;
 }
 
 } // namespace mizuba

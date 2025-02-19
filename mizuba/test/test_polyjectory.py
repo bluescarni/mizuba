@@ -1301,7 +1301,6 @@ class polyjectory_test_case(_ut.TestCase):
         from pathlib import Path
         import tempfile
         import numpy as np
-        import gc
 
         state_data = np.zeros((1, 8, 7))
 
@@ -1331,10 +1330,9 @@ class polyjectory_test_case(_ut.TestCase):
             )
             self.assertEqual(data_dir, pj.data_dir)
 
-            # NOTE: here the purpose is to destroy the polyjectory before
-            # the temp dir.
-            del pj
-            gc.collect()
+            # NOTE: ensure we destroy the polyjectory before the temp dir.
+            pj.detach()
+            self.assertFalse(data_dir.exists())
 
         # Check the ctor from datafiles too.
         with tempfile.TemporaryDirectory() as tmpdirname:
@@ -1359,16 +1357,13 @@ class polyjectory_test_case(_ut.TestCase):
             )
             self.assertEqual(data_dir, pj.data_dir)
 
-            # NOTE: here the purpose is to destroy the polyjectory before
-            # the temp dir.
-            del pj
-            gc.collect()
+            # NOTE: ensure we destroy the polyjectory before the temp dir.
+            pj.detach()
             self.assertFalse(data_dir.exists())
 
     def test_persist(self):
         from .. import polyjectory
         import numpy as np
-        import gc
         from pathlib import Path
         import tempfile
 
@@ -1381,18 +1376,46 @@ class polyjectory_test_case(_ut.TestCase):
                 trajs=[state_data, state_data[1:]],
                 times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
                 status=np.array([0, 0], dtype=np.int32),
+                persist=True,
                 data_dir=data_dir,
             )
             self.assertTrue(data_dir.is_dir())
             self.assertTrue(data_dir.exists())
-            self.assertFalse(pj.persist)
-            pj.persist = True
             self.assertTrue(pj.persist)
 
-            # NOTE: here the purpose is to trigger the destruction
-            # of the polyjectory
-            del pj
-            gc.collect()
+            # NOTE: ensure we destroy the polyjectory.
+            pj.detach()
+
+            # Check the data dir still exists.
+            self.assertTrue(data_dir.is_dir())
+            self.assertTrue(data_dir.exists())
+
+        # Check the ctor from datafiles too.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((42,), 0.0, dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            time_data = np.array([0.0, 1.0, 1.1])
+            time_data.tofile(time_file)
+            time_file.close()
+
+            data_dir = (Path(tmpdirname) / "data_dir").resolve()
+
+            pj = polyjectory.from_datafiles(
+                traj_file=traj_file.name,
+                time_file=time_file.name,
+                order=2,
+                traj_offsets=np.array([(0, 2)], dtype=polyjectory.traj_offset),
+                status=[1],
+                data_dir=data_dir,
+                persist=True,
+            )
+            self.assertEqual(data_dir, pj.data_dir)
+
+            # NOTE: ensure we destroy the polyjectory.
+            pj.detach()
 
             # Check the data dir still exists.
             self.assertTrue(data_dir.is_dir())

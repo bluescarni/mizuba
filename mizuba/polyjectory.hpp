@@ -91,9 +91,10 @@ public:
 private:
     struct ptag {
     };
+    explicit polyjectory(ptag, const std::filesystem::path &);
     explicit polyjectory(ptag,
                          std::tuple<std::vector<traj_span_t>, std::vector<time_span_t>, std::vector<std::int32_t>>,
-                         double, double, std::optional<std::filesystem::path>);
+                         double, double, std::optional<std::filesystem::path>, bool);
 
     template <typename TrajRng, typename TimeRng, typename StatusRng>
     static auto ctor_impl(TrajRng &&traj_rng, TimeRng &&time_rng, StatusRng &&status_rng)
@@ -110,6 +111,8 @@ private:
         return std::make_tuple(std::move(traj_spans), std::move(time_spans), std::move(status));
     }
 
+    void check_attached() const;
+
 public:
     template <typename TrajRng, typename TimeRng, typename StatusRng>
         requires std::ranges::input_range<TrajRng>
@@ -119,33 +122,36 @@ public:
                  && std::ranges::input_range<StatusRng>
                  && std::same_as<std::int32_t, std::remove_cvref_t<std::ranges::range_reference_t<StatusRng>>>
     explicit polyjectory(TrajRng &&traj_rng, TimeRng &&time_rng, StatusRng &&status_rng, double epoch, double epoch2,
-                         std::optional<std::filesystem::path> data_dir)
+                         std::optional<std::filesystem::path> data_dir, bool persist)
         : polyjectory(ptag{},
                       ctor_impl(std::forward<TrajRng>(traj_rng), std::forward<TimeRng>(time_rng),
                                 std::forward<StatusRng>(status_rng)),
-                      epoch, epoch2, std::move(data_dir))
+                      epoch, epoch2, std::move(data_dir), persist)
     {
     }
     explicit polyjectory(const std::filesystem::path &, const std::filesystem::path &, std::uint32_t,
                          std::vector<traj_offset>, std::vector<std::int32_t>, double, double,
-                         std::optional<std::filesystem::path>);
+                         std::optional<std::filesystem::path>, bool);
     polyjectory(const polyjectory &) noexcept;
     polyjectory(polyjectory &&) noexcept;
     polyjectory &operator=(const polyjectory &) noexcept;
     polyjectory &operator=(polyjectory &&) noexcept;
     ~polyjectory();
 
-    [[nodiscard]] std::size_t get_nobjs() const noexcept;
-    [[nodiscard]] double get_maxT() const noexcept;
-    [[nodiscard]] std::pair<double, double> get_epoch() const noexcept;
-    [[nodiscard]] std::uint32_t get_poly_order() const noexcept;
+    [[nodiscard]] static polyjectory mount(const std::filesystem::path &);
+    void detach() noexcept;
+    [[nodisacrd]] bool is_detached() const noexcept;
+
+    [[nodiscard]] std::size_t get_nobjs() const;
+    [[nodiscard]] double get_maxT() const;
+    [[nodiscard]] std::pair<double, double> get_epoch() const;
+    [[nodiscard]] std::uint32_t get_poly_order() const;
     [[nodiscard]] std::filesystem::path get_data_dir() const;
 
     [[nodiscard]] std::tuple<traj_span_t, time_span_t, std::int32_t> operator[](std::size_t) const;
-    [[nodiscard]] dspan_1d<const std::int32_t> get_status() const noexcept;
+    [[nodiscard]] dspan_1d<const std::int32_t> get_status() const;
 
-    void set_persist(bool) const noexcept;
-    [[nodiscard]] bool get_persist() const noexcept;
+    [[nodiscard]] bool get_persist() const;
 
     // Span used to store the output of polyjectory evaluation with a *single time* per satellite.
     // The two dimensions are, respectively:
