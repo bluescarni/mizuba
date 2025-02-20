@@ -64,8 +64,8 @@ struct conjunctions_impl {
     // The path to the temp dir containing all the
     // conjunctions data.
     boost::filesystem::path m_temp_dir_path;
-    // The polyjectory.
-    polyjectory m_pj;
+    // The total number of objects.
+    std::size_t m_n_objs = 0;
     // The conjunction threshold.
     double m_conj_thresh = 0;
     // The conjunction detection interval.
@@ -125,12 +125,12 @@ struct conjunctions_impl {
     // Pointer to the beginning of m_file_conjs, cast to conj.
     const conj *m_conjs_ptr = nullptr;
 
-    explicit conjunctions_impl(boost::filesystem::path temp_dir_path, polyjectory pj, double conj_thresh,
+    explicit conjunctions_impl(boost::filesystem::path temp_dir_path, const polyjectory &pj, double conj_thresh,
                                double conj_det_interval, std::size_t n_cd_steps, std::vector<double> cd_end_times,
                                std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets,
                                std::vector<std::tuple<std::size_t, std::size_t>> bp_offsets,
                                std::vector<std::int32_t> otypes)
-        : m_temp_dir_path(std::move(temp_dir_path)), m_pj(std::move(pj)), m_conj_thresh(conj_thresh),
+        : m_temp_dir_path(std::move(temp_dir_path)), m_n_objs(pj.get_nobjs()), m_conj_thresh(conj_thresh),
           m_conj_det_interval(conj_det_interval), m_n_cd_steps(n_cd_steps), m_cd_end_times(std::move(cd_end_times)),
           m_tree_offsets(std::move(tree_offsets)), m_bp_offsets(std::move(bp_offsets)), m_otypes(std::move(otypes)),
           m_file_aabbs((m_temp_dir_path / "aabbs").string()),
@@ -234,7 +234,7 @@ const std::shared_ptr<conjunctions_impl> &fetch_cj_impl(const conjunctions &cj) 
 
 } // namespace detail
 
-conjunctions::conjunctions(polyjectory pj, double conj_thresh, double conj_det_interval,
+conjunctions::conjunctions(const polyjectory &pj, double conj_thresh, double conj_det_interval,
                            std::optional<std::vector<std::int32_t>> otypes)
 {
     // Check conj_thresh.
@@ -309,7 +309,7 @@ conjunctions::conjunctions(polyjectory pj, double conj_thresh, double conj_det_i
 
         // Create the impl.
         m_impl = std::make_shared<detail::conjunctions_impl>(
-            tmp_dir_path, std::move(pj), conj_thresh, conj_det_interval, n_cd_steps, std::move(cd_end_times),
+            tmp_dir_path, pj, conj_thresh, conj_det_interval, n_cd_steps, std::move(cd_end_times),
             std::move(tree_offsets), std::move(bp_offsets), std::move(*otypes));
 
         // LCOV_EXCL_START
@@ -354,7 +354,7 @@ std::array<double, 2> conjunctions::get_cd_begin_end(double maxT, std::size_t cd
 
 conjunctions::aabbs_span_t conjunctions::get_aabbs() const noexcept
 {
-    return aabbs_span_t{m_impl->m_aabbs_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs() + 1u};
+    return aabbs_span_t{m_impl->m_aabbs_base_ptr, m_impl->m_n_cd_steps, m_impl->m_n_objs + 1u};
 }
 
 dspan_1d<const double> conjunctions::get_cd_end_times() const noexcept
@@ -362,29 +362,24 @@ dspan_1d<const double> conjunctions::get_cd_end_times() const noexcept
     return dspan_1d<const double>{m_impl->m_cd_end_times.data(), m_impl->m_n_cd_steps};
 }
 
-const polyjectory &conjunctions::get_polyjectory() const noexcept
-{
-    return m_impl->m_pj;
-}
-
 conjunctions::aabbs_span_t conjunctions::get_srt_aabbs() const noexcept
 {
-    return aabbs_span_t{m_impl->m_srt_aabbs_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs() + 1u};
+    return aabbs_span_t{m_impl->m_srt_aabbs_base_ptr, m_impl->m_n_cd_steps, m_impl->m_n_objs + 1u};
 }
 
 dspan_2d<const std::uint64_t> conjunctions::get_mcodes() const noexcept
 {
-    return dspan_2d<const std::uint64_t>{m_impl->m_mcodes_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs()};
+    return dspan_2d<const std::uint64_t>{m_impl->m_mcodes_base_ptr, m_impl->m_n_cd_steps, m_impl->m_n_objs};
 }
 
 dspan_2d<const std::uint64_t> conjunctions::get_srt_mcodes() const noexcept
 {
-    return dspan_2d<const std::uint64_t>{m_impl->m_srt_mcodes_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs()};
+    return dspan_2d<const std::uint64_t>{m_impl->m_srt_mcodes_base_ptr, m_impl->m_n_cd_steps, m_impl->m_n_objs};
 }
 
 dspan_2d<const std::uint32_t> conjunctions::get_srt_idx() const noexcept
 {
-    return dspan_2d<const std::uint32_t>{m_impl->m_srt_idx_base_ptr, m_impl->m_n_cd_steps, m_impl->m_pj.get_nobjs()};
+    return dspan_2d<const std::uint32_t>{m_impl->m_srt_idx_base_ptr, m_impl->m_n_cd_steps, m_impl->m_n_objs};
 }
 
 dspan_1d<const conjunctions::bvh_node> conjunctions::get_bvh_tree(std::size_t i) const

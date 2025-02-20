@@ -73,12 +73,12 @@ void expose_conjunctions(pybind11::module_ &m)
 
     // Conjunctions.
     py::class_<mz::conjunctions> conj_cl(m, "conjunctions", py::dynamic_attr{});
-    conj_cl.def(py::init([](mz::polyjectory pj, double conj_thresh, double conj_det_interval,
+    conj_cl.def(py::init([](const mz::polyjectory &pj, double conj_thresh, double conj_det_interval,
                             std::optional<std::vector<std::int32_t>> otypes) {
                     // NOTE: release the GIL during conjunction detection.
                     py::gil_scoped_release release;
 
-                    auto ret = mz::conjunctions(std::move(pj), conj_thresh, conj_det_interval, std::move(otypes));
+                    auto ret = mz::conjunctions(pj, conj_thresh, conj_det_interval, std::move(otypes));
 
                     // Register the conjunctions implementation in the cleanup machinery.
                     detail::add_cj_weak_ptr(mz::detail::fetch_cj_impl(ret));
@@ -106,7 +106,6 @@ void expose_conjunctions(pybind11::module_ &m)
         // Turn into an array and return.
         return mdspan_to_array(self, cd_end_times_span);
     });
-    conj_cl.def_property_readonly("polyjectory", &mz::conjunctions::get_polyjectory);
     conj_cl.def_property_readonly("srt_aabbs", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
 

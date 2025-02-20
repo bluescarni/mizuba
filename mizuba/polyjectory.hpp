@@ -132,9 +132,18 @@ public:
     explicit polyjectory(const std::filesystem::path &, const std::filesystem::path &, std::uint32_t,
                          std::vector<traj_offset>, std::vector<std::int32_t>, double, double,
                          std::optional<std::filesystem::path>, bool);
-    polyjectory(const polyjectory &) noexcept;
+    // NOTE: forbidding copy semantics basically synchs the lifetime of the polyjectory
+    // with the lifetime of the internal shared pointer. This ensures, for instance,
+    // that calling detach() on a non-persistent polyjectory triggers the removal of the
+    // datafiles, which is a nice feature to have for deterministic resource management
+    // in Python.
+    //
+    // One downside is that if we want to implement classes having a polyjectory as data members,
+    // we need to do this via move operations, which are not thread-safe (this is particularly bad
+    // in Python where we do not have 'const' as a proxy for thread-safety).
+    polyjectory(const polyjectory &) = delete;
     polyjectory(polyjectory &&) noexcept;
-    polyjectory &operator=(const polyjectory &) noexcept;
+    polyjectory &operator=(const polyjectory &) = delete;
     polyjectory &operator=(polyjectory &&) noexcept;
     ~polyjectory();
 

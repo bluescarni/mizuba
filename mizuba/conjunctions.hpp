@@ -198,7 +198,7 @@ private:
                                                               std::size_t, np_report &);
 
 public:
-    explicit conjunctions(polyjectory pj, double conj_thresh, double conj_det_interval,
+    explicit conjunctions(const polyjectory &pj, double conj_thresh, double conj_det_interval,
                           std::optional<std::vector<std::int32_t>>);
 
     conjunctions(const conjunctions &);
@@ -220,7 +220,6 @@ public:
         = heyoka::mdspan<const float, heyoka::extents<std::size_t, std::dynamic_extent, std::dynamic_extent, 2, 4>>;
     [[nodiscard]] aabbs_span_t get_aabbs() const noexcept;
     [[nodiscard]] dspan_1d<const double> get_cd_end_times() const noexcept;
-    [[nodiscard]] const polyjectory &get_polyjectory() const noexcept;
     [[nodiscard]] aabbs_span_t get_srt_aabbs() const noexcept;
     [[nodiscard]] dspan_2d<const std::uint64_t> get_mcodes() const noexcept;
     [[nodiscard]] dspan_2d<const std::uint64_t> get_srt_mcodes() const noexcept;
