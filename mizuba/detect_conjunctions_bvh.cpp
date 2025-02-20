@@ -111,7 +111,7 @@ int first_diff_bit(T n1, T n2)
 // srt_mcodes is the list of sorted mcodes, bvh_tree the tree we are checking, aux_data the per-node
 // auxiliary data, cd_srt_aabbs_span the list of sorted aabbs for all collisional timesteps.
 void verify_bvh_tree(const auto &srt_mcodes, const auto &bvh_tree, const auto &aux_data, auto cd_srt_aabbs_span,
-                     auto nobjs)
+                     auto n_objs)
 {
     // Set of object indices. We will use this to verify
     // that all objects appear exactly once in leaf nodes.
@@ -245,11 +245,11 @@ void verify_bvh_tree(const auto &srt_mcodes, const auto &bvh_tree, const auto &a
     }
 
     // Final check on pset.
-    assert(pset.size() == nobjs);
+    assert(pset.size() == n_objs);
     assert(*pset.begin() == 0u);
     auto last_it = pset.end();
     --last_it;
-    assert(*last_it == nobjs - 1u);
+    assert(*last_it == n_objs - 1u);
 }
 
 #endif
@@ -270,12 +270,12 @@ void conjunctions::detect_conjunctions_bvh(std::vector<bvh_node> &tree, std::vec
     using safe_u32_t = boost::safe_numerics::safe<std::uint32_t>;
 
     // Fetch the total number of objects.
-    const auto tot_nobjs = static_cast<std::size_t>(cd_srt_mcodes.size());
-    assert(cd_srt_aabbs.size() == (tot_nobjs + 1u) * 8u);
+    const auto tot_n_objs = static_cast<std::size_t>(cd_srt_mcodes.size());
+    assert(cd_srt_aabbs.size() == (tot_n_objs + 1u) * 8u);
 
     // Create a const span into cd_srt_aabbs.
     using const_aabbs_span_t = heyoka::mdspan<const float, heyoka::extents<std::size_t, std::dynamic_extent, 2, 4>>;
-    const_aabbs_span_t cd_srt_aabbs_span{cd_srt_aabbs.data(), tot_nobjs + 1u};
+    const_aabbs_span_t cd_srt_aabbs_span{cd_srt_aabbs.data(), tot_n_objs + 1u};
 
     // Some objects may have no trajectory data during a conjunction step,
     // and thus they can (and must) not be included in the bvh tree.
@@ -291,10 +291,10 @@ void conjunctions::detect_conjunctions_bvh(std::vector<bvh_node> &tree, std::vec
     // This is a view that transforms the sorted aabbs in the current conjunction
     // step in something like [false, false, ..., false, true, true, ...], where
     // "true" begins with the first infinite aabb.
-    // NOTE: it is important we iota up to tot_nobjs here, even though the aabbs data
-    // goes up to tot_nobjs + 1 - the last slot is the global aabb for the current
+    // NOTE: it is important we iota up to tot_n_objs here, even though the aabbs data
+    // goes up to tot_n_objs + 1 - the last slot is the global aabb for the current
     // conjunction step.
-    const auto isinf_view = std::views::iota(static_cast<std::size_t>(0), tot_nobjs)
+    const auto isinf_view = std::views::iota(static_cast<std::size_t>(0), tot_n_objs)
                             | std::views::transform(
                                 [cd_srt_aabbs_span](std::size_t n) { return std::isinf(cd_srt_aabbs_span(n, 0, 0)); });
     assert(std::ranges::is_sorted(isinf_view));
@@ -302,13 +302,13 @@ void conjunctions::detect_conjunctions_bvh(std::vector<bvh_node> &tree, std::vec
 
     // Overflow checks.
     try {
-        // Make sure the difference type of isinf_view can represent tot_nobjs. We need this in order to be able
+        // Make sure the difference type of isinf_view can represent tot_n_objs. We need this in order to be able
         // to safely subtract isinf_view iterators.
-        static_cast<void>(boost::numeric_cast<std::ranges::range_difference_t<decltype(isinf_view)>>(tot_nobjs));
-        // Make sure that std::ptrdiff_t can represent tot_nobjs. This is required when computing
+        static_cast<void>(boost::numeric_cast<std::ranges::range_difference_t<decltype(isinf_view)>>(tot_n_objs));
+        // Make sure that std::ptrdiff_t can represent tot_n_objs. This is required when computing
         // the nolc property in the bvh_level_data struct during tree contruction (which involves a pointer
         // subtraction).
-        static_cast<void>(boost::numeric_cast<std::ptrdiff_t>(tot_nobjs));
+        static_cast<void>(boost::numeric_cast<std::ptrdiff_t>(tot_n_objs));
         // LCOV_EXCL_START
     } catch (...) {
         throw std::overflow_error("Overflow detected during the computation of the number of effective objects");
@@ -318,7 +318,7 @@ void conjunctions::detect_conjunctions_bvh(std::vector<bvh_node> &tree, std::vec
     // Determine the position of the first infinite aabb.
     const auto it_inf = std::ranges::lower_bound(isinf_view, true);
     // Compute the total number of objects with trajectory data.
-    const auto nobjs = boost::numeric_cast<std::uint32_t>(it_inf - std::ranges::begin(isinf_view));
+    const auto n_objs = boost::numeric_cast<std::uint32_t>(it_inf - std::ranges::begin(isinf_view));
 
     // Clear out the tree.
     // NOTE: no need to clear out l_buffer as it is appropriately
@@ -327,13 +327,13 @@ void conjunctions::detect_conjunctions_bvh(std::vector<bvh_node> &tree, std::vec
 
     // Nothing to do if we do not have any object with trajectory data. The tree will be empty
     // and broad-phase (and then narrow-phase) conjunction detection will be skipped altogether.
-    if (nobjs == 0u) {
+    if (n_objs == 0u) {
         return;
     }
 
     // Insert the root node.
     // NOTE: this is inited as a leaf node without a parent.
-    tree.emplace_back(0, nobjs, -1, -1, detail::default_lb, detail::default_ub);
+    tree.emplace_back(0, n_objs, -1, -1, detail::default_lb, detail::default_ub);
 
     // Init the aux data for the root node.
     // NOTE: nn_level is inited to zero, even if we already know it will be set
@@ -486,7 +486,7 @@ void conjunctions::detect_conjunctions_bvh(std::vector<bvh_node> &tree, std::vec
                     // NOTE: if we are here, it means that is_leaf_node is false,
                     // which implies that split_ptr was written to at least once.
                     // NOTE: the subtraction does not overflow, as we guaranteed
-                    // earlier that std::ptrdiff_t can represent tot_nobjs.
+                    // earlier that std::ptrdiff_t can represent tot_n_objs.
                     l_buffer[node_idx - n_begin].nolc = boost::numeric_cast<std::uint32_t>(split_ptr - mcodes_begin);
                 }
             }
@@ -691,7 +691,7 @@ void conjunctions::detect_conjunctions_bvh(std::vector<bvh_node> &tree, std::vec
 #if !defined(NDEBUG)
 
     // Verify the tree.
-    detail::verify_bvh_tree(cd_srt_mcodes, tree, aux_data, cd_srt_aabbs_span, nobjs);
+    detail::verify_bvh_tree(cd_srt_mcodes, tree, aux_data, cd_srt_aabbs_span, n_objs);
 
 #endif
 }

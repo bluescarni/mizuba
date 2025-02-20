@@ -130,7 +130,7 @@ struct conjunctions_impl {
                                std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets,
                                std::vector<std::tuple<std::size_t, std::size_t>> bp_offsets,
                                std::vector<std::int32_t> otypes)
-        : m_temp_dir_path(std::move(temp_dir_path)), m_n_objs(pj.get_nobjs()), m_conj_thresh(conj_thresh),
+        : m_temp_dir_path(std::move(temp_dir_path)), m_n_objs(pj.get_n_objs()), m_conj_thresh(conj_thresh),
           m_conj_det_interval(conj_det_interval), m_n_cd_steps(n_cd_steps), m_cd_end_times(std::move(cd_end_times)),
           m_tree_offsets(std::move(tree_offsets)), m_bp_offsets(std::move(bp_offsets)), m_otypes(std::move(otypes)),
           m_file_aabbs((m_temp_dir_path / "aabbs").string()),
@@ -258,7 +258,7 @@ conjunctions::conjunctions(const polyjectory &pj, double conj_thresh, double con
     }
 
     // Cache the total number of objects in the polyjectory.
-    const auto nobjs = pj.get_nobjs();
+    const auto n_objs = pj.get_n_objs();
 
     // Validation/setup of otypes.
     // NOTE: the skip_cd flag will be set to true if all the objects are either
@@ -267,11 +267,11 @@ conjunctions::conjunctions(const polyjectory &pj, double conj_thresh, double con
     bool skip_cd = true;
     if (otypes) {
         // Check the size of otypes.
-        if (otypes->size() != nobjs) [[unlikely]] {
+        if (otypes->size() != n_objs) [[unlikely]] {
             throw std::invalid_argument(
                 fmt::format("Invalid array of object types passed to the constructor of a conjunctions objects: the "
                             "expected size is {}, but the actual size is {} instead",
-                            nobjs, otypes->size()));
+                            n_objs, otypes->size()));
         }
 
         // Check the values in otypes.
@@ -288,7 +288,7 @@ conjunctions::conjunctions(const polyjectory &pj, double conj_thresh, double con
     } else {
         // otypes was not provided, mark all objects as primaries.
         otypes.emplace();
-        otypes->resize(boost::numeric_cast<decltype(otypes->size())>(nobjs), 1);
+        otypes->resize(boost::numeric_cast<decltype(otypes->size())>(n_objs), 1);
 
         skip_cd = false;
     }
@@ -442,7 +442,7 @@ dspan_1d<const conjunctions::conj> conjunctions::get_conjunctions() const noexce
 dspan_1d<const std::int32_t> conjunctions::get_otypes() const noexcept
 {
     // NOTE: the static cast is ok because we ensured on construction
-    // that the size of m_impl->m_otypes is equal to nobjs, which is
+    // that the size of m_impl->m_otypes is equal to n_objs, which is
     // represented as a std::size_t.
     return dspan_1d<const std::int32_t>{m_impl->m_otypes.data(), static_cast<std::size_t>(m_impl->m_otypes.size())};
 }

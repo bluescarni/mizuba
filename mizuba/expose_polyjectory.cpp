@@ -228,7 +228,7 @@ void expose_polyjectory(pybind11::module_ &m)
         },
         "traj_file"_a, "time_file"_a, "order"_a, "traj_offsets"_a, "status"_a, "epoch"_a = 0., "epoch2"_a = 0.,
         "data_dir"_a = py::none{}, "persist"_a = false);
-    pt_cl.def_property_readonly("nobjs", &mz::polyjectory::get_nobjs);
+    pt_cl.def_property_readonly("n_objs", &mz::polyjectory::get_n_objs);
     pt_cl.def_property_readonly("maxT", &mz::polyjectory::get_maxT);
     pt_cl.def_property_readonly("epoch", &mz::polyjectory::get_epoch);
     pt_cl.def_property_readonly("poly_order", &mz::polyjectory::get_poly_order);
@@ -342,7 +342,7 @@ void expose_polyjectory(pybind11::module_ &m)
                 } else {
                     // Create the output array.
                     return py::array_t<double>(py::array::ShapeContainer{
-                        boost::numeric_cast<py::ssize_t>(sel ? sel->extent(0) : self.get_nobjs()),
+                        boost::numeric_cast<py::ssize_t>(sel ? sel->extent(0) : self.get_n_objs()),
                         static_cast<py::ssize_t>(7)});
                 }
             }();
@@ -463,7 +463,7 @@ void expose_polyjectory(pybind11::module_ &m)
                 } else {
                     // Create the output array.
                     return py::array_t<double>(py::array::ShapeContainer{
-                        boost::numeric_cast<py::ssize_t>(sel ? sel->extent(0) : self.get_nobjs()), n_time_evals,
+                        boost::numeric_cast<py::ssize_t>(sel ? sel->extent(0) : self.get_n_objs()), n_time_evals,
                         static_cast<py::ssize_t>(7)});
                 }
             }();

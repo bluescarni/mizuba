@@ -208,7 +208,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         self.assertTrue(np.all(np.isclose(cjc["vj"], hy_conj_list["vj"], rtol=1e-10)))
 
         # Re-run the same conjunction but with only 0 and 1 as primaries.
-        otypes = [otype.SECONDARY] * pj.nobjs
+        otypes = [otype.SECONDARY] * pj.n_objs
         otypes[0] = otype.PRIMARY
         otypes[1] = otype.PRIMARY
         cj = conj(pj, 1e6, 60.0, otypes=otypes)
@@ -268,7 +268,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         self.assertTrue(np.all(np.isclose(cjc["vj"], hy_conj_list["vj"], rtol=1e-12)))
 
         # Re-run the same conjunction but with a only 3 and 8 as primaries.
-        otypes = [otype.SECONDARY] * pj.nobjs
+        otypes = [otype.SECONDARY] * pj.n_objs
         otypes[3] = otype.PRIMARY
         otypes[8] = otype.PRIMARY
         cj = conj(pj, 500.0, 60.0, otypes=otypes)
@@ -327,7 +327,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         self.assertTrue(np.all(np.isclose(cjc["vj"], hy_conj_list["vj"], rtol=1e-12)))
 
         # Re-run the same conjunction but only with 9 and 2 as primaries.
-        otypes = [otype.SECONDARY] * pj.nobjs
+        otypes = [otype.SECONDARY] * pj.n_objs
         otypes[9] = otype.PRIMARY
         otypes[2] = otype.PRIMARY
         cj = conj(pj, 200.0, 60.0, otypes=otypes)

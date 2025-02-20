@@ -264,9 +264,9 @@ void validate_global_aabbs(auto cd_aabbs_span)
     std::array ub = {-finf, -finf, -finf, -finf};
 
     assert(cd_aabbs_span.extent(0) > 0u);
-    const auto nobjs = cd_aabbs_span.extent(0) - 1u;
+    const auto n_objs = cd_aabbs_span.extent(0) - 1u;
 
-    for (decltype(cd_aabbs_span.extent(0)) i = 0; i < nobjs; ++i) {
+    for (decltype(cd_aabbs_span.extent(0)) i = 0; i < n_objs; ++i) {
         for (auto j = 0u; j < 4u; ++j) {
             lb[j] = std::min(lb[j], cd_aabbs_span(i, 0, j));
             ub[j] = std::max(ub[j], cd_aabbs_span(i, 1, j));
@@ -275,8 +275,8 @@ void validate_global_aabbs(auto cd_aabbs_span)
 
     // Check the global aabb.
     for (auto j = 0u; j < 4u; ++j) {
-        assert(lb[j] == cd_aabbs_span(nobjs, 0, j));
-        assert(ub[j] == cd_aabbs_span(nobjs, 1, j));
+        assert(lb[j] == cd_aabbs_span(n_objs, 0, j));
+        assert(ub[j] == cd_aabbs_span(n_objs, 1, j));
     }
 }
 
@@ -303,8 +303,8 @@ void conjunctions::detect_conjunctions_aabbs(std::size_t cd_idx, std::vector<flo
     assert(cd_idx < cd_end_times.size());
 
     // Cache the total number of objects.
-    const auto nobjs = pj.get_nobjs();
-    assert(cd_aabbs.size() == (nobjs + 1u) * 8u);
+    const auto n_objs = pj.get_n_objs();
+    assert(cd_aabbs.size() == (n_objs + 1u) * 8u);
 
     // Cache maxT.
     const auto maxT = pj.get_maxT();
@@ -320,10 +320,10 @@ void conjunctions::detect_conjunctions_aabbs(std::size_t cd_idx, std::vector<flo
 
     // Create a mutable span into cd_aabbs.
     using mut_aabbs_span_t = heyoka::mdspan<float, heyoka::extents<std::size_t, std::dynamic_extent, 2, 4>>;
-    const mut_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), nobjs + 1u};
+    const mut_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), n_objs + 1u};
 
     // Iterate over all objects to determine their AABBs for the current conjunction step.
-    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, nobjs),
+    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, n_objs),
                               [&pj, cd_begin, cd_end, conj_thresh, &cur_global_lb, &cur_global_ub, cd_aabbs_span,
                                &cjd](const auto &obj_range) {
                                   // Init the local AABB for the current obj range.
@@ -380,8 +380,8 @@ void conjunctions::detect_conjunctions_aabbs(std::size_t cd_idx, std::vector<flo
             // LCOV_EXCL_STOP
         }
 
-        cd_aabbs_span(nobjs, 0, i) = cur_lb;
-        cd_aabbs_span(nobjs, 1, i) = cur_ub;
+        cd_aabbs_span(n_objs, 0, i) = cur_lb;
+        cd_aabbs_span(n_objs, 1, i) = cur_ub;
     }
 
 #if !defined(NDEBUG)
