@@ -100,8 +100,10 @@ boost::filesystem::path create_temp_dir(const char *tplt)
 
     // Attempt to create it.
     if (!boost::filesystem::create_directory(path)) [[unlikely]] {
+        // LCOV_EXCL_START
         throw std::runtime_error(fmt::format(
             "Error while creating a unique temporary directory: the directory '{}' already exists", path.string()));
+        // LCOV_EXCL_STOP
     }
 
     // The directory has now been created. Wrap the rest of the function in a try/catch
