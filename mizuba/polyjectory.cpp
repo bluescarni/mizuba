@@ -913,6 +913,7 @@ polyjectory &polyjectory::operator=(polyjectory &&) noexcept = default;
 
 polyjectory::~polyjectory() = default;
 
+// NOTE: this is the ctor implementing the mount() functionality.
 polyjectory::polyjectory(ptag, const std::filesystem::path &data_dir_path)
 {
     // Canonicalise and convert to boost.
