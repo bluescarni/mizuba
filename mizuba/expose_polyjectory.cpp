@@ -181,6 +181,8 @@ void expose_polyjectory(pybind11::module_ &m)
                 times.push_back(o.cast<py::array_t<double>>());
             }
 
+            // NOTE: currently we cannot release the GIL during construction
+            // because we are calling into Python in the range transformation pipeline.
             auto ret
                 = mz::polyjectory(trajs | std::views::transform(traj_trans), times | std::views::transform(time_trans),
                                   std::ranges::subrange(status_ptr, status_ptr + status.shape(0)), epoch, epoch2,
@@ -213,8 +215,16 @@ void expose_polyjectory(pybind11::module_ &m)
                 traj_offsets.push_back(acc(i));
             }
 
-            return mz::polyjectory(orig_traj_file_path, orig_time_file_path, order, std::move(traj_offsets),
-                                   std::move(status), epoch, epoch2, std::move(data_dir), persist);
+            // NOTE: release the GIL during construction.
+            py::gil_scoped_release release;
+
+            mz::polyjectory ret(orig_traj_file_path, orig_time_file_path, order, std::move(traj_offsets),
+                                std::move(status), epoch, epoch2, std::move(data_dir), persist);
+
+            // Register the polyjectory implementation in the cleanup machinery.
+            add_pj_weak_ptr(mz::detail::fetch_pj_impl(ret));
+
+            return ret;
         },
         "traj_file"_a, "time_file"_a, "order"_a, "traj_offsets"_a, "status"_a, "epoch"_a = 0., "epoch2"_a = 0.,
         "data_dir"_a = py::none{}, "persist"_a = false);
@@ -233,7 +243,24 @@ void expose_polyjectory(pybind11::module_ &m)
         return mdspan_to_array(self, status_span);
     });
     pt_cl.def_property_readonly("persist", &mz::polyjectory::get_persist);
-    pt_cl.def_static("mount", &mz::polyjectory::mount, "data_dir"_a);
+    pt_cl.def_static(
+        "mount",
+        [](const std::filesystem::path &path) {
+            // NOTE: release the GIL during construction.
+            py::gil_scoped_release release;
+
+            auto ret = mz::polyjectory::mount(path);
+
+            // Register the polyjectory implementation in the cleanup machinery.
+            // NOTE: currently this is not strictly needed as we can mount only
+            // persistent data, which can be removed only from the outside and never
+            // as part of polyjectory destruction. We keep it in any case for symmetry
+            // with the other constructors.
+            add_pj_weak_ptr(mz::detail::fetch_pj_impl(ret));
+
+            return ret;
+        },
+        "data_dir"_a);
     pt_cl.def("detach", &mz::polyjectory::detach);
     pt_cl.def_property_readonly("is_detached", &mz::polyjectory::is_detached);
     pt_cl.def(
