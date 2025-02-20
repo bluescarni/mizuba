@@ -88,21 +88,21 @@ bool may_share_memory(const pybind11::array &a, const pybind11::array &b, const 
 //
 // Python does not guarantee that all objects are garbage-collected at
 // shutdown. This means that we may find ourselves in a situation where
-// the temporary memory-mapped files used internally by the polyjectory,
-// conjunction, etc. classes are not deleted when the program terminates
-// because the C++ destructors are never called.
+// the temporary memory-mapped files used internally by several classes
+// are not deleted when the program terminates because the C++ destructors
+// are never called.
 //
 // In order to avoid this, we adopt the following approach:
 //
-// - every time a new polyjectory/conjunction/etc. is constructed, we grab a weak pointer
+// - every time a new polyjectory/etc. is constructed, we grab a weak pointer
 //   to its implementation and store it in a global vector;
 // - we register a cleanup function that, at shutdown, goes through
-//   the unexpired weak pointers and manually closes the polyjectories/conjunctions/etc.,
+//   the unexpired weak pointers and manually closes the polyjectories/etc.,
 //   thus ensuring that the temporary files are removed.
 //
-// All newly-created polyjectories/conjunctions/etc. which end up exposed as a py::object
+// All newly-created polyjectories/etc. which end up exposed as a py::object
 // are affected by this issue. This means that the weak pointer registration
-// should be done every time a new polyjectory/conjunction/etc. is created in C++ before it is
+// should be done every time a new polyjectory/etc. is created in C++ before it is
 // wrapped and returned as a py::object.
 //
 // For instance, both the polyjectory __init__() and the make_sgp4_polyjectory() factory need
@@ -111,10 +111,8 @@ bool may_share_memory(const pybind11::array &a, const pybind11::array &b, const 
 // This all sounds unfortunately complicated, let us hope it does not get too messy :/
 //
 // NOTE: we will have to re-examine this approach if/when we implement des11n, as that
-// results in a creation of a new Python-wrapped polyjectory/conjunction/etc. without any weak pointer
+// results in a creation of a new Python-wrapped polyjectory/etc. without any weak pointer
 // registration. Probably we will need to enforce the registration at unpickling time?
-// Note also that des11n of, e.g., a conjunctions object will also create a new internal
-// polyjectory object, which will also need to be registered.
 //
 // NOTE: in jupyterlab the cleanup functions registered to run at exit sometimes
 // do not run to completion, thus leaving behind temporary files after shutdown.
