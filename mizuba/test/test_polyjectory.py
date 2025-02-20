@@ -1469,7 +1469,8 @@ class polyjectory_test_case(_ut.TestCase):
     def test_mount(self):
         from .. import polyjectory
         import numpy as np
-        import os
+        import tempfile
+        from pathlib import Path
 
         state_data = np.zeros((1, 8, 7))
 
@@ -1479,20 +1480,53 @@ class polyjectory_test_case(_ut.TestCase):
             status=np.array([0, 0], dtype=np.int32),
         )
 
-        if os.name == "nt":
-            # NOTE: on Windows, we won't be able to access the pj descriptor
-            # at all as Windows will forbid mounting while pj already "owns"
-            # the data.
-            with self.assertRaises(Exception) as cm:
-                polyjectory.mount(pj.data_dir)
+        # Check mounting a non-persistent data dir.
+        with self.assertRaises(ValueError) as cm:
+            polyjectory.mount(pj.data_dir)
+        self.assertTrue(": the data is not persistent" in str(cm.exception))
 
-            self.assertFalse(": the data is not persistent" in str(cm.exception))
-        elif os.name == "posix":
-            # On POSIX, we should be able to mount, but the operation will
-            # fail as the original data dir is not persistent.
+        # Check mounting a non-existing data dir.
+        with tempfile.TemporaryDirectory() as tmpdirname:
             with self.assertRaises(ValueError) as cm:
-                # NOTE: this line will already throw if we are dealing
-                # with a property. Otherwise, this will fetch the method.
-                polyjectory.mount(pj.data_dir)
+                polyjectory.mount(Path(tmpdirname) / "foobar")
+            self.assertTrue(
+                "could not be canonicalised (does it exist?)" in str(cm.exception)
+            )
 
-            self.assertTrue(": the data is not persistent" in str(cm.exception))
+        # Check mounting a file.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            with open(Path(tmpdirname) / "foobar", "wb"):
+                pass
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.mount(Path(tmpdirname) / "foobar")
+            self.assertTrue("the path is not a directory" in str(cm.exception))
+
+        # Check a working case.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            data_dir = Path(tmpdirname) / "foo"
+
+            pj = polyjectory(
+                trajs=[state_data, state_data[1:]],
+                times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
+                status=np.array([0, 0], dtype=np.int32),
+                data_dir=data_dir,
+                persist=True,
+            )
+
+            pj.detach()
+
+            self.assertTrue(data_dir.exists())
+            self.assertTrue(data_dir.is_dir())
+
+            pj = polyjectory.mount(data_dir)
+
+            self.assertTrue(np.all(pj[0][0] == state_data))
+            self.assertTrue(np.all(pj[0][1] == np.array([0.0, 1.0])))
+            self.assertTrue(np.all(pj[1][0] == state_data[1:]))
+            self.assertTrue(np.all(pj[1][1] == np.array([], dtype=float)))
+
+            pj.detach()
+
+            self.assertTrue(data_dir.exists())
+            self.assertTrue(data_dir.is_dir())
