@@ -68,11 +68,8 @@ class conjunctions_test_case(_ut.TestCase):
     # Helper to verify that the aabbs are consistent
     # with the positions of the objects computed via
     # polynomial evaluation.
-    def _verify_conj_aabbs(self, c, rng):
+    def _verify_conj_aabbs(self, c, pj, rng):
         import numpy as np
-
-        # Fetch the polyjectory.
-        pj = c.polyjectory
 
         # For every conjunction step, pick random times within,
         # evaluate the polyjectory at the corresponding times and
@@ -246,13 +243,6 @@ class conjunctions_test_case(_ut.TestCase):
         with self.assertRaises(AttributeError) as cm:
             c.cd_end_times = cd_end_times
 
-        # polyjectory.
-        rc = sys.getrefcount(c)
-        pj = c.polyjectory
-        self.assertEqual(sys.getrefcount(c), rc + 1)
-        with self.assertRaises(AttributeError) as cm:
-            c.polyjectory = pj
-
         # srt_aabbs.
         rc = sys.getrefcount(c)
         srt_aabbs = c.srt_aabbs
@@ -337,7 +327,7 @@ class conjunctions_test_case(_ut.TestCase):
             self.assertTrue(np.all(c.aabbs[:, 0, 1, 3] <= 1 + 0.05001))
 
             # Verify the aabbs.
-            self._verify_conj_aabbs(c, rng)
+            self._verify_conj_aabbs(c, pj, rng)
 
             # No aabb collisions or conjunctions expected.
             for i in range(c.n_cd_steps):
@@ -433,27 +423,21 @@ class conjunctions_test_case(_ut.TestCase):
         c = conj(pt, conj_thresh=1e-8, conj_det_interval=1.0 / 1440.0)
 
         # Verify the aabbs.
-        self._verify_conj_aabbs(c, rng)
+        self._verify_conj_aabbs(c, pt, rng)
 
         # Shape checks.
         self.assertEqual(c.aabbs.shape, c.srt_aabbs.shape)
         self.assertEqual(c.mcodes.shape, c.srt_mcodes.shape)
-        self.assertEqual(c.srt_idx.shape, (c.n_cd_steps, c.polyjectory.nobjs))
+        self.assertEqual(c.srt_idx.shape, (c.n_cd_steps, pt.nobjs))
 
         # The global aabbs must be the same in srt_aabbs.
         self.assertTrue(
-            np.all(
-                c.aabbs[:, c.polyjectory.nobjs, :, :]
-                == c.srt_aabbs[:, c.polyjectory.nobjs, :, :]
-            )
+            np.all(c.aabbs[:, pt.nobjs, :, :] == c.srt_aabbs[:, pt.nobjs, :, :])
         )
 
         # The individual aabbs for the objects will differ.
         self.assertFalse(
-            np.all(
-                c.aabbs[:, : c.polyjectory.nobjs, :, :]
-                == c.srt_aabbs[:, : c.polyjectory.nobjs, :, :]
-            )
+            np.all(c.aabbs[:, : pt.nobjs, :, :] == c.srt_aabbs[:, : pt.nobjs, :, :])
         )
 
         # The morton codes won't be sorted.
@@ -468,14 +452,12 @@ class conjunctions_test_case(_ut.TestCase):
         # Indexing into aabbs and mcodes via srt_idx must produce
         # srt_abbs and srt_mcodes.
         for cd_idx in range(c.n_cd_steps):
-            self.assertEqual(
-                sorted(c.srt_idx[cd_idx]), list(range(c.polyjectory.nobjs))
-            )
+            self.assertEqual(sorted(c.srt_idx[cd_idx]), list(range(pt.nobjs)))
 
             self.assertTrue(
                 np.all(
                     c.aabbs[cd_idx, c.srt_idx[cd_idx], :, :]
-                    == c.srt_aabbs[cd_idx, : c.polyjectory.nobjs, :, :]
+                    == c.srt_aabbs[cd_idx, : pt.nobjs, :, :]
                 )
             )
 
@@ -985,7 +967,7 @@ class conjunctions_test_case(_ut.TestCase):
             self.assertTrue(np.all(c.aabbs[:, 0, 1, 3] <= 1 + 0.05001))
 
             # Verify the aabbs.
-            self._verify_conj_aabbs(c, rng)
+            self._verify_conj_aabbs(c, pj, rng)
 
             # No aabb collisions or conjunctions expected.
             for i in range(c.n_cd_steps):

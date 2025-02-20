@@ -901,13 +901,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
     }
 }
 
-// NOTE: the polyjectory class will have shallow copy semantics - this is ok
-// as the public API is immutable and thus there is no point in making deep copies.
-polyjectory::polyjectory(const polyjectory &) noexcept = default;
-
 polyjectory::polyjectory(polyjectory &&) noexcept = default;
-
-polyjectory &polyjectory::operator=(const polyjectory &) noexcept = default;
 
 polyjectory &polyjectory::operator=(polyjectory &&) noexcept = default;
 
