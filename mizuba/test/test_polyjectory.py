@@ -1530,3 +1530,40 @@ class polyjectory_test_case(_ut.TestCase):
 
             self.assertTrue(data_dir.exists())
             self.assertTrue(data_dir.is_dir())
+
+    def test_dir_removal(self):
+        # A test checking behaviour when polyjectory data
+        # is deleted before the polyjectory is garbage-collected.
+        from .. import polyjectory
+        import numpy as np
+        import os
+        import shutil
+
+        state_data = np.full((1, 8, 7), 42.0)
+
+        pj = polyjectory(
+            trajs=[state_data, state_data[1:]],
+            times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
+            status=np.array([0, 0], dtype=np.int32),
+        )
+
+        if os.name == "nt":
+            # On Windows, we won't be able to delete the data
+            # because it is "owned" by the polyjectory object.
+            with self.assertRaises(Exception):
+                shutil.rmtree(pj.data_dir)
+
+            self.assertTrue(pj.data_dir.exists())
+
+        elif os.name == "posix":
+            # On posix, we assume we can remove the data.
+            # The memory-mapped regions should remain valid
+            # because we have not closed the file descriptors.
+            shutil.rmtree(pj.data_dir)
+
+            self.assertFalse(pj.data_dir.exists())
+
+            self.assertTrue(np.all(pj[0][0] == state_data))
+            self.assertTrue(np.all(pj[0][1] == np.array([0.0, 1.0])))
+            self.assertTrue(np.all(pj[1][0] == state_data[1:]))
+            self.assertTrue(np.all(pj[1][1] == np.array([], dtype=float)))
