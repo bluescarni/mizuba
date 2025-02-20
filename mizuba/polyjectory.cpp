@@ -206,10 +206,12 @@ struct polyjectory_impl {
         unsigned version{};
         std::memcpy(&version, m_desc_file.data(), sizeof(unsigned));
         if (version != detail::cur_pj_version) [[unlikely]] {
+            // LCOV_EXCL_START
             throw std::invalid_argument(fmt::format("Version mismatch when trying to mount() a polyjectory: the "
                                                     "current polyjectory version is {}, while the polyjectory in the "
                                                     "data dir '{}' has a version number of {}",
                                                     detail::cur_pj_version, m_data_dir_path.string(), version));
+            // LCOV_EXCL_STOP
         }
 
         // Now that we know that the descriptor has the correct version, assign the pointer to it.

@@ -1465,3 +1465,34 @@ class polyjectory_test_case(_ut.TestCase):
         check_raise("persist")
         check_raise("state_eval", 0.0)
         check_raise("state_meval", [0.0])
+
+    def test_mount(self):
+        from .. import polyjectory
+        import numpy as np
+        import os
+
+        state_data = np.zeros((1, 8, 7))
+
+        pj = polyjectory(
+            trajs=[state_data, state_data[1:]],
+            times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
+            status=np.array([0, 0], dtype=np.int32),
+        )
+
+        if os.name == "nt":
+            # NOTE: on Windows, we won't be able to access the pj descriptor
+            # at all as Windows will forbid mounting while pj already "owns"
+            # the data.
+            with self.assertRaises(Exception) as cm:
+                polyjectory.mount(pj.data_dir)
+
+            self.assertFalse(": the data is not persistent" in str(cm.exception))
+        elif os.name == "posix":
+            # On POSIX, we should be able to mount, but the operation will
+            # fail as the original data dir is not persistent.
+            with self.assertRaises(ValueError) as cm:
+                # NOTE: this line will already throw if we are dealing
+                # with a property. Otherwise, this will fetch the method.
+                polyjectory.mount(pj.data_dir)
+
+            self.assertTrue(": the data is not persistent" in str(cm.exception))
