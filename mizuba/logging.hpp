@@ -25,6 +25,8 @@
 
 #include <fmt/core.h>
 
+// LCOV_EXCL_START
+
 namespace mizuba
 {
 
@@ -33,6 +35,8 @@ namespace detail
 
 void log_info_impl(const std::string &);
 void log_trace_impl(const std::string &);
+void log_debug_impl(const std::string &);
+void log_warning_impl(const std::string &);
 
 } // namespace detail
 
@@ -56,6 +60,8 @@ public:
 // Set the logger level.
 void set_logger_level_info();
 void set_logger_level_trace();
+void set_logger_level_debug();
+void set_logger_level_warning();
 
 // Log to info level.
 template <typename... T>
@@ -69,6 +75,20 @@ template <typename... T>
 void log_trace(fmt::format_string<T...> fmt, T &&...args)
 {
     detail::log_trace_impl(fmt::format(fmt, std::forward<T>(args)...));
+}
+
+// Log to debug level.
+template <typename... T>
+void log_debug(fmt::format_string<T...> fmt, T &&...args)
+{
+    detail::log_debug_impl(fmt::format(fmt, std::forward<T>(args)...));
+}
+
+// Log to warning level.
+template <typename... T>
+void log_warning(fmt::format_string<T...> fmt, T &&...args)
+{
+    detail::log_warning_impl(fmt::format(fmt, std::forward<T>(args)...));
 }
 
 } // namespace mizuba
@@ -87,5 +107,7 @@ struct formatter<mizuba::stopwatch> : formatter<double> {
 };
 
 } // namespace fmt
+
+// LCOV_EXCL_STOP
 
 #endif

@@ -813,7 +813,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             self.assertLess(max_err, 1e-6)
 
     def test_custom_data_dir(self):
-        # Simple test with a single gpe.
+        # Simple test custom data dir.
         from .. import _have_sgp4_deps
 
         if not _have_sgp4_deps():
@@ -823,7 +823,6 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         import pathlib
         import tempfile
         import polars as pl
-        import gc
 
         # Fetch the current directory.
         cur_dir = pathlib.Path(__file__).parent.resolve()
@@ -840,7 +839,40 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             ]
             self.assertEqual(data_dir, pj.data_dir)
 
-            # NOTE: here the purpose is to destroy the polyjectory before
-            # the temp dir.
-            del pj
-            gc.collect()
+            # NOTE: ensure we remove the datafiles before the temp dir,
+            # otherwise the test will fail on Windows.
+            pj.detach()
+
+    def test_persist(self):
+        # Simple test with persistence.
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
+            return
+
+        from .. import make_sgp4_polyjectory
+        import pathlib
+        import tempfile
+        import polars as pl
+
+        # Fetch the current directory.
+        cur_dir = pathlib.Path(__file__).parent.resolve()
+
+        # Load the test data.
+        gpes = pl.read_parquet(cur_dir / "single_gpe.parquet")
+
+        # Build the polyjectory.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            data_dir = (pathlib.Path(tmpdirname) / "data_dir").resolve()
+            jd_begin = 2460669.0
+            pj = make_sgp4_polyjectory(
+                gpes, jd_begin, jd_begin + 1, data_dir=data_dir, persist=True
+            )[0]
+            self.assertEqual(data_dir, pj.data_dir)
+
+            # NOTE: detach will *not* remove the data dirs since persist is active.
+            pj.detach()
+
+            # Check the data dir still exists.
+            self.assertTrue(data_dir.is_dir())
+            self.assertTrue(data_dir.exists())

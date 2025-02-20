@@ -53,7 +53,7 @@ void expose_make_sgp4_polyjectory(pybind11::module_ &m)
     m.def(
         "_make_sgp4_polyjectory",
         [](py::array_t<gpe> gpes, const double jd_begin, const double jd_end, const double reentry_radius,
-           const double exit_radius, std::optional<std::filesystem::path> data_dir) {
+           const double exit_radius, std::optional<std::filesystem::path> data_dir, bool persist) {
             // Check the number of dimensions for gpes.
             if (gpes.ndim() != 1) [[unlikely]] {
                 throw std::invalid_argument(fmt::format("The array of gpes passed to make_sgp4_polyjectory() must have "
@@ -73,14 +73,14 @@ void expose_make_sgp4_polyjectory(pybind11::module_ &m)
             py::gil_scoped_release release;
 
             auto ret = mz::make_sgp4_polyjectory(gpes_span, jd_begin, jd_end, reentry_radius, exit_radius,
-                                                 std::move(data_dir));
+                                                 std::move(data_dir), persist);
 
             // Register the polyjectory implementation in the cleanup machinery.
             add_pj_weak_ptr(mz::detail::fetch_pj_impl(ret));
 
             return ret;
         },
-        "gpes"_a.noconvert(), "jd_begin"_a, "jd_end"_a, "reentry_radius"_a, "exit_radius"_a, "data_dir"_a);
+        "gpes"_a.noconvert(), "jd_begin"_a, "jd_end"_a, "reentry_radius"_a, "exit_radius"_a, "data_dir"_a, "persist"_a);
 }
 
 } // namespace mizuba_py

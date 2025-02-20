@@ -52,7 +52,7 @@ struct gpe {
 // second and third arguments (begin/end as UTC Julian dates). The last two arguments are the reentry and exit
 // radiuses.
 polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std::size_t, std::dynamic_extent>>, double,
-                                  double, double, double, std::optional<std::filesystem::path>);
+                                  double, double, double, std::optional<std::filesystem::path>, bool);
 
 } // namespace mizuba
 

@@ -318,6 +318,7 @@ class polyjectory_test_case(_ut.TestCase):
         self.assertEqual(pj.epoch, (43.0, 0.0))
         self.assertEqual(pj.poly_order, 7)
         self.assertTrue(isinstance(pj.data_dir, Path))
+        self.assertFalse(pj.persist)
 
         rc = sys.getrefcount(pj)
 
@@ -1300,7 +1301,6 @@ class polyjectory_test_case(_ut.TestCase):
         from pathlib import Path
         import tempfile
         import numpy as np
-        import gc
 
         state_data = np.zeros((1, 8, 7))
 
@@ -1330,10 +1330,10 @@ class polyjectory_test_case(_ut.TestCase):
             )
             self.assertEqual(data_dir, pj.data_dir)
 
-            # NOTE: here the purpose is to destroy the polyjectory before
-            # the temp dir.
-            del pj
-            gc.collect()
+            # NOTE: ensure we remove the datafiles before the temp dir,
+            # otherwise the test will fail on Windows.
+            pj.detach()
+            self.assertFalse(data_dir.exists())
 
         # Check the ctor from datafiles too.
         with tempfile.TemporaryDirectory() as tmpdirname:
@@ -1358,7 +1358,175 @@ class polyjectory_test_case(_ut.TestCase):
             )
             self.assertEqual(data_dir, pj.data_dir)
 
-            # NOTE: here the purpose is to destroy the polyjectory before
-            # the temp dir.
-            del pj
-            gc.collect()
+            # NOTE: ensure we remove the datafiles before the temp dir,
+            # otherwise the test will fail on Windows.
+            pj.detach()
+            self.assertFalse(data_dir.exists())
+
+    def test_persist(self):
+        from .. import polyjectory
+        import numpy as np
+        from pathlib import Path
+        import tempfile
+
+        state_data = np.zeros((1, 8, 7))
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            data_dir = (Path(tmpdirname) / "data_dir").resolve()
+
+            pj = polyjectory(
+                trajs=[state_data, state_data[1:]],
+                times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
+                status=np.array([0, 0], dtype=np.int32),
+                persist=True,
+                data_dir=data_dir,
+            )
+            self.assertTrue(data_dir.is_dir())
+            self.assertTrue(data_dir.exists())
+            self.assertTrue(pj.persist)
+
+            # NOTE: detach will *not* remove the data dirs since persist is active.
+            pj.detach()
+
+            # Check the data dir still exists.
+            self.assertTrue(data_dir.is_dir())
+            self.assertTrue(data_dir.exists())
+
+        # Check the ctor from datafiles too.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((42,), 0.0, dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            time_data = np.array([0.0, 1.0, 1.1])
+            time_data.tofile(time_file)
+            time_file.close()
+
+            data_dir = (Path(tmpdirname) / "data_dir").resolve()
+
+            pj = polyjectory.from_datafiles(
+                traj_file=traj_file.name,
+                time_file=time_file.name,
+                order=2,
+                traj_offsets=np.array([(0, 2)], dtype=polyjectory.traj_offset),
+                status=[1],
+                data_dir=data_dir,
+                persist=True,
+            )
+            self.assertEqual(data_dir, pj.data_dir)
+
+            # NOTE: detach will *not* remove the data dirs since persist is active.
+            pj.detach()
+
+            # Check the data dir still exists.
+            self.assertTrue(data_dir.is_dir())
+            self.assertTrue(data_dir.exists())
+
+    def test_detached_throw(self):
+        # A test to check throwing behaviour after a polyjectory
+        # has been detached.
+        from .. import polyjectory
+        import numpy as np
+
+        state_data = np.zeros((1, 8, 7))
+
+        pj = polyjectory(
+            trajs=[state_data, state_data[1:]],
+            times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
+            status=np.array([0, 0], dtype=np.int32),
+        )
+
+        pj.detach()
+
+        # detach() and is_detached() still work.
+        pj.detach()
+        self.assertTrue(pj.is_detached)
+
+        # All the other properties/methods must throw.
+        def check_raise(attr, *args, **kwargs):
+            with self.assertRaises(ValueError) as cm:
+                # NOTE: this line will already throw if we are dealing
+                # with a property. Otherwise, this will fetch the method.
+                attr = getattr(pj, attr)
+                attr(*args, **kwargs)
+
+            self.assertTrue(
+                "Cannot operate on a detached polyjectory" in str(cm.exception)
+            )
+
+        check_raise("nobjs")
+        check_raise("maxT")
+        check_raise("epoch")
+        check_raise("poly_order")
+        check_raise("data_dir")
+        check_raise("__getitem__", 0)
+        check_raise("status")
+        check_raise("persist")
+        check_raise("state_eval", 0.0)
+        check_raise("state_meval", [0.0])
+
+    def test_mount(self):
+        from .. import polyjectory
+        import numpy as np
+        import tempfile
+        from pathlib import Path
+
+        state_data = np.zeros((1, 8, 7))
+
+        pj = polyjectory(
+            trajs=[state_data, state_data[1:]],
+            times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
+            status=np.array([0, 0], dtype=np.int32),
+        )
+
+        # Check mounting a non-persistent data dir.
+        with self.assertRaises(ValueError) as cm:
+            polyjectory.mount(pj.data_dir)
+        self.assertTrue(": the data is not persistent" in str(cm.exception))
+
+        # Check mounting a non-existing data dir.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.mount(Path(tmpdirname) / "foobar")
+            self.assertTrue(
+                "could not be canonicalised (does it exist?)" in str(cm.exception)
+            )
+
+        # Check mounting a file.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            with open(Path(tmpdirname) / "foobar", "wb"):
+                pass
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.mount(Path(tmpdirname) / "foobar")
+            self.assertTrue("the path is not a directory" in str(cm.exception))
+
+        # Check a working case.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            data_dir = Path(tmpdirname) / "foo"
+
+            pj = polyjectory(
+                trajs=[state_data, state_data[1:]],
+                times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
+                status=np.array([0, 0], dtype=np.int32),
+                data_dir=data_dir,
+                persist=True,
+            )
+
+            pj.detach()
+
+            self.assertTrue(data_dir.exists())
+            self.assertTrue(data_dir.is_dir())
+
+            pj = polyjectory.mount(data_dir)
+
+            self.assertTrue(np.all(pj[0][0] == state_data))
+            self.assertTrue(np.all(pj[0][1] == np.array([0.0, 1.0])))
+            self.assertTrue(np.all(pj[1][0] == state_data[1:]))
+            self.assertTrue(np.all(pj[1][1] == np.array([], dtype=float)))
+
+            pj.detach()
+
+            self.assertTrue(data_dir.exists())
+            self.assertTrue(data_dir.is_dir())
