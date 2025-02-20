@@ -47,11 +47,11 @@ namespace
 
 // Helper to verify the broad-phase conjunction detection against a naive
 // n**2 algorithm.
-void verify_broad_phase(auto nobjs, const auto &bp_cv, auto aabbs, const auto &otypes)
+void verify_broad_phase(auto n_objs, const auto &bp_cv, auto aabbs, const auto &otypes)
 {
     // LCOV_EXCL_START
     // Don't run the check if there's too many objects.
-    if (nobjs > 10000u) {
+    if (n_objs > 10000u) {
         return;
     }
     // LCOV_EXCL_STOP
@@ -69,63 +69,65 @@ void verify_broad_phase(auto nobjs, const auto &bp_cv, auto aabbs, const auto &o
     // A counter for the N**2 collision detection algorithm below.
     std::atomic<decltype(coll_tree.size())> coll_counter(0);
 
-    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<decltype(nobjs)>(0, nobjs), [nobjs, aabbs, &otypes, &coll_tree,
-                                                                                      &coll_counter](
-                                                                                         const auto &obj_range) {
-        for (auto i = obj_range.begin(); i != obj_range.end(); ++i) {
-            const auto xi_lb = aabbs(i, 0, 0);
-            const auto yi_lb = aabbs(i, 0, 1);
-            const auto zi_lb = aabbs(i, 0, 2);
-            const auto ri_lb = aabbs(i, 0, 3);
+    oneapi::tbb::parallel_for(
+        oneapi::tbb::blocked_range<decltype(n_objs)>(0, n_objs),
+        [n_objs, aabbs, &otypes, &coll_tree, &coll_counter](const auto &obj_range) {
+            for (auto i = obj_range.begin(); i != obj_range.end(); ++i) {
+                const auto xi_lb = aabbs(i, 0, 0);
+                const auto yi_lb = aabbs(i, 0, 1);
+                const auto zi_lb = aabbs(i, 0, 2);
+                const auto ri_lb = aabbs(i, 0, 3);
 
-            const auto xi_ub = aabbs(i, 1, 0);
-            const auto yi_ub = aabbs(i, 1, 1);
-            const auto zi_ub = aabbs(i, 1, 2);
-            const auto ri_ub = aabbs(i, 1, 3);
+                const auto xi_ub = aabbs(i, 1, 0);
+                const auto yi_ub = aabbs(i, 1, 1);
+                const auto zi_ub = aabbs(i, 1, 2);
+                const auto ri_ub = aabbs(i, 1, 3);
 
-            // Fetch the type of object i.
-            const auto otype_i = otypes[i];
+                // Fetch the type of object i.
+                const auto otype_i = otypes[i];
 
-            oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<decltype(nobjs)>(i + 1u, nobjs), [&](const auto &rj) {
-                decltype(coll_tree.size()) loc_ncoll = 0;
+                oneapi::tbb::parallel_for(
+                    oneapi::tbb::blocked_range<decltype(n_objs)>(i + 1u, n_objs), [&](const auto &rj) {
+                        decltype(coll_tree.size()) loc_ncoll = 0;
 
-                for (auto j = rj.begin(); j != rj.end(); ++j) {
-                    const auto xj_lb = aabbs(j, 0, 0);
-                    const auto yj_lb = aabbs(j, 0, 1);
-                    const auto zj_lb = aabbs(j, 0, 2);
-                    const auto rj_lb = aabbs(j, 0, 3);
+                        for (auto j = rj.begin(); j != rj.end(); ++j) {
+                            const auto xj_lb = aabbs(j, 0, 0);
+                            const auto yj_lb = aabbs(j, 0, 1);
+                            const auto zj_lb = aabbs(j, 0, 2);
+                            const auto rj_lb = aabbs(j, 0, 3);
 
-                    const auto xj_ub = aabbs(j, 1, 0);
-                    const auto yj_ub = aabbs(j, 1, 1);
-                    const auto zj_ub = aabbs(j, 1, 2);
-                    const auto rj_ub = aabbs(j, 1, 3);
+                            const auto xj_ub = aabbs(j, 1, 0);
+                            const auto yj_ub = aabbs(j, 1, 1);
+                            const auto zj_ub = aabbs(j, 1, 2);
+                            const auto rj_ub = aabbs(j, 1, 3);
 
-                    // Fetch the type of object j.
-                    const auto otype_j = otypes[j];
+                            // Fetch the type of object j.
+                            const auto otype_j = otypes[j];
 
-                    // Check the overlap condition.
-                    const bool overlap = (xi_ub >= xj_lb && xi_lb <= xj_ub) && (yi_ub >= yj_lb && yi_lb <= yj_ub)
-                                         && (zi_ub >= zj_lb && zi_lb <= zj_ub) && (ri_ub >= rj_lb && ri_lb <= rj_ub)
-                                         && (otype_i + otype_j <= 3);
+                            // Check the overlap condition.
+                            const bool overlap = (xi_ub >= xj_lb && xi_lb <= xj_ub)
+                                                 && (yi_ub >= yj_lb && yi_lb <= yj_ub)
+                                                 && (zi_ub >= zj_lb && zi_lb <= zj_ub)
+                                                 && (ri_ub >= rj_lb && ri_lb <= rj_ub) && (otype_i + otype_j <= 3);
 
-                    if (overlap) {
-                        // Overlap detected in the simple algorithm:
-                        // the collision must be present also
-                        // in the tree code.
-                        assert(coll_tree.find({i, j}) != coll_tree.end());
-                    } else {
-                        // NOTE: the contrary is not necessarily
-                        // true: for multi-object leaves, we
-                        // may detect overlaps that do not actually exist.
-                    }
+                            if (overlap) {
+                                // Overlap detected in the simple algorithm:
+                                // the collision must be present also
+                                // in the tree code.
+                                assert(coll_tree.find({i, j}) != coll_tree.end());
+                            } else {
+                                // NOTE: the contrary is not necessarily
+                                // true: for multi-object leaves, we
+                                // may detect overlaps that do not actually exist.
+                            }
 
-                    loc_ncoll += overlap;
-                }
+                            loc_ncoll += overlap;
+                        }
 
-                coll_counter.fetch_add(loc_ncoll);
-            });
-        }
-    });
+                        coll_counter.fetch_add(loc_ncoll);
+                    });
+            }
+        });
 
     // NOTE: in case of multi-object leaves, we will have detected
     // non-existing AABBs overlaps. Thus, just require that the number
@@ -162,17 +164,17 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
     }
 
     // Cache the total number of objects.
-    const auto tot_nobjs = static_cast<std::size_t>(otypes.size());
-    assert(cd_vidx.size() == tot_nobjs);
+    const auto tot_n_objs = static_cast<std::size_t>(otypes.size());
+    assert(cd_vidx.size() == tot_n_objs);
 
     // Create a const span into cd_srt_aabbs.
     using const_aabbs_span_t = heyoka::mdspan<const float, heyoka::extents<std::size_t, std::dynamic_extent, 2, 4>>;
-    const_aabbs_span_t cd_srt_aabbs_span{cd_srt_aabbs.data(), tot_nobjs + 1u};
+    const_aabbs_span_t cd_srt_aabbs_span{cd_srt_aabbs.data(), tot_n_objs + 1u};
 
 #if !defined(NDEBUG)
 
     // Create a const span into cd_aabbs.
-    const_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), tot_nobjs + 1u};
+    const_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), tot_n_objs + 1u};
 
 #endif
 
@@ -193,8 +195,8 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
     // are sorted first into the morton order, and their total number can be
     // determined from the number of objects in the root node of the tree.
     assert(tree.size() > 0u);
-    const auto nobjs = tree[0].end - tree[0].begin;
-    assert(nobjs <= tot_nobjs);
+    const auto n_objs = tree[0].end - tree[0].begin;
+    assert(n_objs <= tot_n_objs);
 
     // We will be using thread-specific data to store temporary results during broad-phase
     // conjunction detection.
@@ -211,7 +213,7 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
     // For each object with trajectory data for this conjunction step,
     // identify collisions between its aabb and the aabbs of the other objects.
     oneapi::tbb::parallel_for(
-        oneapi::tbb::blocked_range<std::uint32_t>(0, nobjs),
+        oneapi::tbb::blocked_range<std::uint32_t>(0, n_objs),
         [&cd_vidx, &otypes, cd_srt_aabbs_span, &tree, &bp_coll_vector, &bp_coll_vector_mutex,
          &ets](const auto &obj_range) {
             // Fetch the thread-local data.
@@ -328,7 +330,7 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
 #if !defined(NDEBUG)
 
     // Verify the outcome of collision detection in debug mode.
-    detail::verify_broad_phase(nobjs, bp_coll_vector, cd_aabbs_span, otypes);
+    detail::verify_broad_phase(n_objs, bp_coll_vector, cd_aabbs_span, otypes);
 
 #endif
 

@@ -84,11 +84,11 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     log_trace("JIT compilation time: {}s", sw);
 
     // Cache the total number of objects.
-    const auto nobjs = pj.get_nobjs();
+    const auto n_objs = pj.get_n_objs();
 
     // The total number of aabbs we need to compute and store.
     // NOTE: the +1 is the global AABB to be computed for each conjunction step.
-    const auto n_tot_aabbs = (safe_size_t(nobjs) + 1) * n_cd_steps;
+    const auto n_tot_aabbs = (safe_size_t(n_objs) + 1) * n_cd_steps;
 
     // Prepare the files whose size we know in advance.
     detail::create_sized_file(tmp_dir_path / "aabbs", n_tot_aabbs * sizeof(float) * 8u);
@@ -97,16 +97,16 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     detail::create_sized_file(tmp_dir_path / "srt_aabbs", n_tot_aabbs * sizeof(float) * 8u);
     detail::file_pwrite srt_aabbs_file(tmp_dir_path / "srt_aabbs");
 
-    detail::create_sized_file(tmp_dir_path / "mcodes", safe_size_t(nobjs) * n_cd_steps * sizeof(std::uint64_t));
+    detail::create_sized_file(tmp_dir_path / "mcodes", safe_size_t(n_objs) * n_cd_steps * sizeof(std::uint64_t));
     detail::file_pwrite mcodes_file(tmp_dir_path / "mcodes");
 
-    detail::create_sized_file(tmp_dir_path / "srt_mcodes", safe_size_t(nobjs) * n_cd_steps * sizeof(std::uint64_t));
+    detail::create_sized_file(tmp_dir_path / "srt_mcodes", safe_size_t(n_objs) * n_cd_steps * sizeof(std::uint64_t));
     detail::file_pwrite srt_mcodes_file(tmp_dir_path / "srt_mcodes");
 
     // NOTE: we use std::uint32_t to index into the objects, even though in principle a polyjectory could contain more
     // than 2**32-1 objects. std::uint32_t gives us ample room to run large simulations if ever needed, while at the
     // same time reducing memory utilisation wrt 64-bit indices (especially in the representation of bvh trees).
-    detail::create_sized_file(tmp_dir_path / "vidx", safe_size_t(nobjs) * n_cd_steps * sizeof(std::uint32_t));
+    detail::create_sized_file(tmp_dir_path / "vidx", safe_size_t(n_objs) * n_cd_steps * sizeof(std::uint32_t));
     detail::file_pwrite vidx_file(tmp_dir_path / "vidx");
 
     // Prepare the files whose sizes are not known in advance.
@@ -275,26 +275,26 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
         };
         using ets_t = oneapi::tbb::enumerable_thread_specific<ets_data, oneapi::tbb::cache_aligned_allocator<ets_data>,
                                                               oneapi::tbb::ets_key_usage_type::ets_key_per_instance>;
-        ets_t ets([nobjs]() {
+        ets_t ets([n_objs]() {
             // Setup aabbs.
             std::vector<float> aabbs;
-            aabbs.resize(boost::numeric_cast<decltype(aabbs.size())>((nobjs + 1u) * 8u));
+            aabbs.resize(boost::numeric_cast<decltype(aabbs.size())>((n_objs + 1u) * 8u));
 
             // Setup mcodes.
             std::vector<std::uint64_t> mcodes;
-            mcodes.resize(boost::numeric_cast<decltype(mcodes.size())>(nobjs));
+            mcodes.resize(boost::numeric_cast<decltype(mcodes.size())>(n_objs));
 
             // Setup vidx.
             std::vector<std::uint32_t> vidx;
-            vidx.resize(boost::numeric_cast<decltype(vidx.size())>(nobjs));
+            vidx.resize(boost::numeric_cast<decltype(vidx.size())>(n_objs));
 
             // Setup srt_aabbs.
             std::vector<float> srt_aabbs;
-            srt_aabbs.resize(boost::numeric_cast<decltype(srt_aabbs.size())>((nobjs + 1u) * 8u));
+            srt_aabbs.resize(boost::numeric_cast<decltype(srt_aabbs.size())>((n_objs + 1u) * 8u));
 
             // Setup srt_mcodes.
             std::vector<std::uint64_t> srt_mcodes;
-            srt_mcodes.resize(boost::numeric_cast<decltype(srt_mcodes.size())>(nobjs));
+            srt_mcodes.resize(boost::numeric_cast<decltype(srt_mcodes.size())>(n_objs));
 
             return ets_data{.aabbs = std::move(aabbs),
                             .mcodes = std::move(mcodes),
@@ -317,7 +317,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
 
             oneapi::tbb::parallel_for(
                 oneapi::tbb::blocked_range<std::size_t>(start_cd_step_idx, end_cd_step_idx),
-                [&ets, &pj, conj_thresh, conj_det_interval, n_cd_steps, &cd_end_times, &otypes, &cjd, &promises, nobjs,
+                [&ets, &pj, conj_thresh, conj_det_interval, n_cd_steps, &cd_end_times, &otypes, &cjd, &promises, n_objs,
                  &aabbs_file, &mcodes_file, &vidx_file, &srt_aabbs_file, &srt_mcodes_file, &aabbs_time, &morton_time,
                  &bvh_time, &broad_time, &narrow_time, &io_time, &total_time, &np_rep, skip_cd](const auto &cd_range) {
                     // Fetch the thread-local data.
@@ -330,7 +330,7 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                     oneapi::tbb::this_task_arena::isolate(
                         [&cd_range, &cd_aabbs, &pj, conj_thresh, conj_det_interval, n_cd_steps, &cd_end_times,
                          &cd_mcodes, &cd_vidx, &cd_srt_aabbs, &cd_srt_mcodes, &cd_bvh_tree, &cd_bvh_aux_data,
-                         &cd_bvh_l_buffer, &otypes, &cjd, &promises, nobjs, &aabbs_file, &mcodes_file, &vidx_file,
+                         &cd_bvh_l_buffer, &otypes, &cjd, &promises, n_objs, &aabbs_file, &mcodes_file, &vidx_file,
                          &srt_aabbs_file, &srt_mcodes_file, &aabbs_time, &morton_time, &bvh_time, &broad_time,
                          &narrow_time, &io_time, &total_time, &np_rep, skip_cd]() {
                             stopwatch local_sw, total_sw;
@@ -395,24 +395,24 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
                                 promises[cd_idx].set_value(std::move(fval));
 
                                 // Write the aabbs.
-                                aabbs_file.pwrite(cd_aabbs.data(), (nobjs + 1u) * 8u * sizeof(float),
-                                                  cd_idx * (nobjs + 1u) * 8u * sizeof(float));
+                                aabbs_file.pwrite(cd_aabbs.data(), (n_objs + 1u) * 8u * sizeof(float),
+                                                  cd_idx * (n_objs + 1u) * 8u * sizeof(float));
 
                                 // Write the mcodes.
-                                mcodes_file.pwrite(cd_mcodes.data(), nobjs * sizeof(std::uint64_t),
-                                                   cd_idx * nobjs * sizeof(std::uint64_t));
+                                mcodes_file.pwrite(cd_mcodes.data(), n_objs * sizeof(std::uint64_t),
+                                                   cd_idx * n_objs * sizeof(std::uint64_t));
 
                                 // Write the indices.
-                                vidx_file.pwrite(cd_vidx.data(), nobjs * sizeof(std::uint32_t),
-                                                 cd_idx * nobjs * sizeof(std::uint32_t));
+                                vidx_file.pwrite(cd_vidx.data(), n_objs * sizeof(std::uint32_t),
+                                                 cd_idx * n_objs * sizeof(std::uint32_t));
 
                                 // Write the sorted aabbs.
-                                srt_aabbs_file.pwrite(cd_srt_aabbs.data(), (nobjs + 1u) * 8u * sizeof(float),
-                                                      cd_idx * (nobjs + 1u) * 8u * sizeof(float));
+                                srt_aabbs_file.pwrite(cd_srt_aabbs.data(), (n_objs + 1u) * 8u * sizeof(float),
+                                                      cd_idx * (n_objs + 1u) * 8u * sizeof(float));
 
                                 // Write the sorted mcodes.
-                                srt_mcodes_file.pwrite(cd_srt_mcodes.data(), nobjs * sizeof(std::uint64_t),
-                                                       cd_idx * nobjs * sizeof(std::uint64_t));
+                                srt_mcodes_file.pwrite(cd_srt_mcodes.data(), n_objs * sizeof(std::uint64_t),
+                                                       cd_idx * n_objs * sizeof(std::uint64_t));
                                 io_time += local_sw.elapsed_ns().count();
                             }
 

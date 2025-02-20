@@ -81,8 +81,8 @@ class conjunctions_test_case(_ut.TestCase):
             random_times = rng.uniform(begin_time, end_time, (5,))
 
             # Fetch the global aabb for this conjunction step.
-            global_lb = c.aabbs[cd_idx, pj.nobjs, 0]
-            global_ub = c.aabbs[cd_idx, pj.nobjs, 1]
+            global_lb = c.aabbs[cd_idx, pj.n_objs, 0]
+            global_ub = c.aabbs[cd_idx, pj.n_objs, 1]
 
             if not np.isfinite(global_lb[0]):
                 # Non-finite value detected in the global AABB.
@@ -95,7 +95,7 @@ class conjunctions_test_case(_ut.TestCase):
                 self.assertTrue(
                     all(
                         np.all(np.isinf(c.aabbs[cd_idx, obj_idx]))
-                        for obj_idx in range(pj.nobjs)
+                        for obj_idx in range(pj.n_objs)
                     )
                 )
 
@@ -103,7 +103,7 @@ class conjunctions_test_case(_ut.TestCase):
                 continue
 
             # Iterate over all objects.
-            for obj_idx in range(pj.nobjs):
+            for obj_idx in range(pj.n_objs):
                 # Fetch the polyjectory data for the current object.
                 traj, traj_times, status = pj[obj_idx]
 
@@ -335,15 +335,15 @@ class conjunctions_test_case(_ut.TestCase):
             self.assertEqual(len(c.conjunctions), 0)
 
             # Check the object types.
-            self.assertTrue(np.all(c.otypes == [1] * pj.nobjs))
-            self.assertTrue(np.all(c.otypes == [otype.PRIMARY] * pj.nobjs))
+            self.assertTrue(np.all(c.otypes == [1] * pj.n_objs))
+            self.assertTrue(np.all(c.otypes == [otype.PRIMARY] * pj.n_objs))
 
             # Test otypes initialisation.
             c = conj(
                 pj,
                 conj_thresh=0.1,
                 conj_det_interval=conj_det_interval,
-                otypes=[1] * pj.nobjs,
+                otypes=[1] * pj.n_objs,
             )
 
             # Check the otypes property.
@@ -354,7 +354,7 @@ class conjunctions_test_case(_ut.TestCase):
                 otypes[:] = otypes
             with self.assertRaises(AttributeError) as cm:
                 c.otypes = otypes
-            self.assertEqual(len(otypes), pj.nobjs)
+            self.assertEqual(len(otypes), pj.n_objs)
 
             # Error handling.
             with self.assertRaises(ValueError) as cm:
@@ -366,7 +366,7 @@ class conjunctions_test_case(_ut.TestCase):
                 )
             self.assertTrue(
                 "Invalid array of object types passed to the constructor of a"
-                f" conjunctions objects: the expected size is {pj.nobjs}, but the"
+                f" conjunctions objects: the expected size is {pj.n_objs}, but the"
                 " actual size is 0 instead" in str(cm.exception)
             )
 
@@ -416,7 +416,7 @@ class conjunctions_test_case(_ut.TestCase):
         pt = make_sgp4_polyjectory(
             sat_list, begin_jd, begin_jd + 0.25, exit_radius=12000.0
         )[0]
-        tot_nobjs = pt.nobjs
+        tot_n_objs = pt.n_objs
 
         # Build the conjunctions object. Keep a small threshold not to interfere
         # with aabb checking.
@@ -428,16 +428,16 @@ class conjunctions_test_case(_ut.TestCase):
         # Shape checks.
         self.assertEqual(c.aabbs.shape, c.srt_aabbs.shape)
         self.assertEqual(c.mcodes.shape, c.srt_mcodes.shape)
-        self.assertEqual(c.srt_idx.shape, (c.n_cd_steps, pt.nobjs))
+        self.assertEqual(c.srt_idx.shape, (c.n_cd_steps, pt.n_objs))
 
         # The global aabbs must be the same in srt_aabbs.
         self.assertTrue(
-            np.all(c.aabbs[:, pt.nobjs, :, :] == c.srt_aabbs[:, pt.nobjs, :, :])
+            np.all(c.aabbs[:, pt.n_objs, :, :] == c.srt_aabbs[:, pt.n_objs, :, :])
         )
 
         # The individual aabbs for the objects will differ.
         self.assertFalse(
-            np.all(c.aabbs[:, : pt.nobjs, :, :] == c.srt_aabbs[:, : pt.nobjs, :, :])
+            np.all(c.aabbs[:, : pt.n_objs, :, :] == c.srt_aabbs[:, : pt.n_objs, :, :])
         )
 
         # The morton codes won't be sorted.
@@ -452,12 +452,12 @@ class conjunctions_test_case(_ut.TestCase):
         # Indexing into aabbs and mcodes via srt_idx must produce
         # srt_abbs and srt_mcodes.
         for cd_idx in range(c.n_cd_steps):
-            self.assertEqual(sorted(c.srt_idx[cd_idx]), list(range(pt.nobjs)))
+            self.assertEqual(sorted(c.srt_idx[cd_idx]), list(range(pt.n_objs)))
 
             self.assertTrue(
                 np.all(
                     c.aabbs[cd_idx, c.srt_idx[cd_idx], :, :]
-                    == c.srt_aabbs[cd_idx, : pt.nobjs, :, :]
+                    == c.srt_aabbs[cd_idx, : pt.n_objs, :, :]
                 )
             )
 
@@ -482,12 +482,12 @@ class conjunctions_test_case(_ut.TestCase):
         self.assertTrue(np.all(c.mcodes[inf_idx, self.exiting_idx] == ((1 << 64) - 1)))
 
         # Similarly, the number of objects reported in the root
-        # node of the bvh trees must be tot_nobjs - 2.
+        # node of the bvh trees must be tot_n_objs - 2.
         # NOTE: -3 (rather than -1) because 2 other satellites generated
         # infinite aabbs.
         for idx in inf_idx:
             t = c.get_bvh_tree(idx)
-            self.assertEqual(t[0]["end"] - t[0]["begin"], tot_nobjs - 3)
+            self.assertEqual(t[0]["end"] - t[0]["begin"], tot_n_objs - 3)
 
     def test_zero_aabbs(self):
         # Test to check behaviour with aabbs of zero size.
@@ -714,7 +714,7 @@ class conjunctions_test_case(_ut.TestCase):
 
         # Build a list of object types that excludes two satellites
         # that we know undergo a conjunction.
-        otypes = [otype.PRIMARY] * pt.nobjs
+        otypes = [otype.PRIMARY] * pt.n_objs
         otypes[6746] = otype.SECONDARY
         otypes[4549] = otype.SECONDARY
 
@@ -834,10 +834,10 @@ class conjunctions_test_case(_ut.TestCase):
             pt,
             conj_thresh=10.0,
             conj_det_interval=1.0,
-            otypes=[otype.MASKED] * pt.nobjs,
+            otypes=[otype.MASKED] * pt.n_objs,
         )
 
-        self.assertEqual(len(c.otypes), pt.nobjs)
+        self.assertEqual(len(c.otypes), pt.n_objs)
 
         for i in range(c.n_cd_steps):
             self.assertEqual(len(c.get_aabb_collisions(i)), 0)
@@ -849,10 +849,10 @@ class conjunctions_test_case(_ut.TestCase):
             pt,
             conj_thresh=10.0,
             conj_det_interval=1.0,
-            otypes=[otype.SECONDARY] * pt.nobjs,
+            otypes=[otype.SECONDARY] * pt.n_objs,
         )
 
-        self.assertEqual(len(c.otypes), pt.nobjs)
+        self.assertEqual(len(c.otypes), pt.n_objs)
 
         for i in range(c.n_cd_steps):
             self.assertEqual(len(c.get_aabb_collisions(i)), 0)
@@ -860,8 +860,8 @@ class conjunctions_test_case(_ut.TestCase):
         self.assertEqual(len(c.conjunctions), 0)
 
         # Try with a mix of secondaries and masked.
-        otypes = [otype.SECONDARY] * (pt.nobjs // 2)
-        otypes += [otype.MASKED] * (pt.nobjs - pt.nobjs // 2)
+        otypes = [otype.SECONDARY] * (pt.n_objs // 2)
+        otypes += [otype.MASKED] * (pt.n_objs - pt.n_objs // 2)
 
         c = conj(
             pt,
@@ -870,7 +870,7 @@ class conjunctions_test_case(_ut.TestCase):
             otypes=otypes,
         )
 
-        self.assertEqual(len(c.otypes), pt.nobjs)
+        self.assertEqual(len(c.otypes), pt.n_objs)
 
         for i in range(c.n_cd_steps):
             self.assertEqual(len(c.get_aabb_collisions(i)), 0)

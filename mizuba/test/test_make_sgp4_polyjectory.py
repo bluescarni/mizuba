@@ -229,7 +229,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         jd_begin = 2460669.0
         pj, norad_ids = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1)
 
-        self.assertEqual(pj.nobjs, len(norad_ids))
+        self.assertEqual(pj.n_objs, len(norad_ids))
         self.assertTrue((gpes["norad_id"].to_numpy() == norad_ids).all())
 
         # Check that the initial times of the trajectories are exactly zero.

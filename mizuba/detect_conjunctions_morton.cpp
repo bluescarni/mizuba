@@ -116,28 +116,28 @@ void conjunctions::detect_conjunctions_morton(std::vector<std::uint64_t> &cd_mco
                                               const std::vector<float> &cd_aabbs, const polyjectory &pj)
 {
     // Cache the total number of objects.
-    const auto nobjs = pj.get_nobjs();
-    assert(cd_mcodes.size() == nobjs);
-    assert(cd_vidx.size() == nobjs);
-    assert(cd_srt_aabbs.size() == (nobjs + 1u) * 8u);
-    assert(cd_srt_mcodes.size() == nobjs);
-    assert(cd_aabbs.size() == (nobjs + 1u) * 8u);
+    const auto n_objs = pj.get_n_objs();
+    assert(cd_mcodes.size() == n_objs);
+    assert(cd_vidx.size() == n_objs);
+    assert(cd_srt_aabbs.size() == (n_objs + 1u) * 8u);
+    assert(cd_srt_mcodes.size() == n_objs);
+    assert(cd_aabbs.size() == (n_objs + 1u) * 8u);
 
     // Create a const span into cd_aabbs.
     using const_aabbs_span_t = heyoka::mdspan<const float, heyoka::extents<std::size_t, std::dynamic_extent, 2, 4>>;
-    const_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), nobjs + 1u};
+    const_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), n_objs + 1u};
 
     // Create a mutable span into cd_srt_aabbs.
     using mut_aabbs_span_t = heyoka::mdspan<float, heyoka::extents<std::size_t, std::dynamic_extent, 2, 4>>;
-    mut_aabbs_span_t cd_srt_aabbs_span{cd_srt_aabbs.data(), nobjs + 1u};
+    mut_aabbs_span_t cd_srt_aabbs_span{cd_srt_aabbs.data(), n_objs + 1u};
 
     // Fetch the global AABB for this conjunction step.
-    const auto *glb = &cd_aabbs_span(nobjs, 0, 0);
-    const auto *gub = &cd_aabbs_span(nobjs, 1, 0);
+    const auto *glb = &cd_aabbs_span(n_objs, 0, 0);
+    const auto *gub = &cd_aabbs_span(n_objs, 1, 0);
 
     // Computation of the morton codes and initialisation of cd_vidx.
-    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, nobjs), [cd_aabbs_span, glb, gub, &cd_mcodes,
-                                                                                  &cd_vidx](const auto &obj_range) {
+    oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, n_objs), [cd_aabbs_span, glb, gub, &cd_mcodes,
+                                                                                   &cd_vidx](const auto &obj_range) {
         // Temporary array to store the coordinates of the centre of the AABB.
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         std::array<float, 4> xyzr_ctr;
@@ -200,7 +200,7 @@ void conjunctions::detect_conjunctions_morton(std::vector<std::uint64_t> &cd_mco
     // is bottlenecked by RAM speed anyway. Perhaps revisit on machines
     // with larger core counts during performance tuning.
     oneapi::tbb::parallel_for(
-        oneapi::tbb::blocked_range<std::size_t>(0, nobjs),
+        oneapi::tbb::blocked_range<std::size_t>(0, n_objs),
         [&cd_mcodes, &cd_vidx, cd_aabbs_span, cd_srt_aabbs_span, &cd_srt_mcodes](const auto &obj_range) {
             for (auto obj_idx = obj_range.begin(); obj_idx != obj_range.end(); ++obj_idx) {
                 const auto sorted_idx = cd_vidx[obj_idx];
@@ -218,8 +218,8 @@ void conjunctions::detect_conjunctions_morton(std::vector<std::uint64_t> &cd_mco
 
     // Write the global aabb into cd_srt_aabbs_span.
     for (auto i = 0u; i < 4u; ++i) {
-        cd_srt_aabbs_span(nobjs, 0, i) = glb[i];
-        cd_srt_aabbs_span(nobjs, 1, i) = gub[i];
+        cd_srt_aabbs_span(n_objs, 0, i) = glb[i];
+        cd_srt_aabbs_span(n_objs, 1, i) = gub[i];
     }
 }
 

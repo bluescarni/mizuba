@@ -313,7 +313,7 @@ class polyjectory_test_case(_ut.TestCase):
             epoch2=1.0,
         )
 
-        self.assertEqual(pj.nobjs, 2)
+        self.assertEqual(pj.n_objs, 2)
         self.assertEqual(pj.maxT, 3)
         self.assertEqual(pj.epoch, (43.0, 0.0))
         self.assertEqual(pj.poly_order, 7)
@@ -1455,7 +1455,7 @@ class polyjectory_test_case(_ut.TestCase):
                 "Cannot operate on a detached polyjectory" in str(cm.exception)
             )
 
-        check_raise("nobjs")
+        check_raise("n_objs")
         check_raise("maxT")
         check_raise("epoch")
         check_raise("poly_order")

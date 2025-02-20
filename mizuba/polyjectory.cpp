@@ -950,10 +950,10 @@ polyjectory::operator[](std::size_t i) const
 {
     check_attached();
 
-    if (i >= get_nobjs()) [[unlikely]] {
+    if (i >= get_n_objs()) [[unlikely]] {
         throw std::out_of_range(
             fmt::format("Invalid object index {} specified - the total number of objects in the polyjectory is only {}",
-                        i, get_nobjs()));
+                        i, get_n_objs()));
     }
 
     // Fetch the base pointers.
@@ -977,7 +977,7 @@ polyjectory::operator[](std::size_t i) const
             time_span_t{time_ptr, nsteps + static_cast<unsigned>(nsteps != 0u)}, m_impl->m_status_ptr[i]};
 }
 
-std::size_t polyjectory::get_nobjs() const
+std::size_t polyjectory::get_n_objs() const
 {
     check_attached();
 
@@ -1018,7 +1018,7 @@ dspan_1d<const std::int32_t> polyjectory::get_status() const
 {
     check_attached();
 
-    return dspan_1d<const std::int32_t>{m_impl->m_status_ptr, get_nobjs()};
+    return dspan_1d<const std::int32_t>{m_impl->m_status_ptr, get_n_objs()};
 }
 
 namespace detail
@@ -1142,27 +1142,27 @@ void polyjectory::state_eval_impl(single_eval_span_t out, Time tm,
             });
     } else {
         // Cache the number of objects.
-        const auto nobjs = get_nobjs();
+        const auto n_objs = get_n_objs();
 
         // Check the out span.
-        if (out.extent(0) != nobjs) [[unlikely]] {
+        if (out.extent(0) != n_objs) [[unlikely]] {
             throw std::invalid_argument(
                 fmt::format("Invalid output array passed to state_eval(): the number of objects is {} but the size of "
                             "the first dimension of the array is {} (the two numbers must be equal)",
-                            nobjs, out.extent(0)));
+                            n_objs, out.extent(0)));
         }
 
         if constexpr (!std::same_as<double, Time>) {
             // Check the time span.
-            if (tm.extent(0) != nobjs) [[unlikely]] {
+            if (tm.extent(0) != n_objs) [[unlikely]] {
                 throw std::invalid_argument(fmt::format(
                     "Invalid time array passed to state_eval(): the number of objects is {} but the size of "
                     "the array is {} (the two numbers must be equal)",
-                    nobjs, tm.extent(0)));
+                    n_objs, tm.extent(0)));
             }
         }
 
-        oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, nobjs),
+        oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<std::size_t>(0, n_objs),
                                   [this, tm, out](const auto &range) {
                                       for (auto obj_idx = range.begin(); obj_idx != range.end(); ++obj_idx) {
                                           if constexpr (std::same_as<double, Time>) {
@@ -1255,28 +1255,28 @@ void polyjectory::state_meval_impl(multi_eval_span_t out, Time tm,
             });
     } else {
         // Cache the number of objects.
-        const auto nobjs = get_nobjs();
+        const auto n_objs = get_n_objs();
 
         // Check the first dimension of the output span.
-        if (out.extent(0) != nobjs) [[unlikely]] {
+        if (out.extent(0) != n_objs) [[unlikely]] {
             throw std::invalid_argument(
                 fmt::format("Invalid output array passed to state_meval(): the number of objects is {} but the size of "
                             "the first dimension of the array is {} (the two numbers must be equal)",
-                            nobjs, out.extent(0)));
+                            n_objs, out.extent(0)));
         }
 
         if constexpr (std::same_as<dspan_2d<const double>, Time>) {
             // Check the first dimension of the time array.
-            if (tm.extent(0) != nobjs) [[unlikely]] {
+            if (tm.extent(0) != n_objs) [[unlikely]] {
                 throw std::invalid_argument(fmt::format(
                     "Invalid time array passed to state_meval(): the number of objects is {} but the size of "
                     "the first dimension of the array is {} (the two numbers must be equal)",
-                    nobjs, tm.extent(0)));
+                    n_objs, tm.extent(0)));
             }
         }
 
         oneapi::tbb::parallel_for(
-            oneapi::tbb::blocked_range2d<std::size_t>(0, nobjs, 0, n_time_evals), [this, tm, out](const auto &range) {
+            oneapi::tbb::blocked_range2d<std::size_t>(0, n_objs, 0, n_time_evals), [this, tm, out](const auto &range) {
                 for (auto obj_idx = range.rows().begin(); obj_idx != range.rows().end(); ++obj_idx) {
                     for (auto tm_idx = range.cols().begin(); tm_idx != range.cols().end(); ++tm_idx) {
                         if constexpr (std::same_as<dspan_1d<const double>, Time>) {

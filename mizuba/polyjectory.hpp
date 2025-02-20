@@ -153,7 +153,7 @@ public:
     void detach() noexcept;
     [[nodiscard]] bool is_detached() const noexcept;
 
-    [[nodiscard]] std::size_t get_nobjs() const;
+    [[nodiscard]] std::size_t get_n_objs() const;
     [[nodiscard]] double get_maxT() const;
     [[nodiscard]] std::pair<double, double> get_epoch() const;
     [[nodiscard]] std::uint32_t get_poly_order() const;
