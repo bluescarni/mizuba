@@ -1422,3 +1422,46 @@ class polyjectory_test_case(_ut.TestCase):
             # Check the data dir still exists.
             self.assertTrue(data_dir.is_dir())
             self.assertTrue(data_dir.exists())
+
+    def test_detached_throw(self):
+        # A test to check throwing behaviour after a polyjectory
+        # has been detached.
+        from .. import polyjectory
+        import numpy as np
+
+        state_data = np.zeros((1, 8, 7))
+
+        pj = polyjectory(
+            trajs=[state_data, state_data[1:]],
+            times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
+            status=np.array([0, 0], dtype=np.int32),
+        )
+
+        pj.detach()
+
+        # detach() and is_detached() still work.
+        pj.detach()
+        self.assertTrue(pj.is_detached)
+
+        # All the other properties/methods must throw.
+        def check_raise(attr, *args, **kwargs):
+            with self.assertRaises(ValueError) as cm:
+                # NOTE: this line will already throw if we are dealing
+                # with a property. Otherwise, this will fetch the method.
+                attr = getattr(pj, attr)
+                attr(*args, **kwargs)
+
+            self.assertTrue(
+                "Cannot operate on a detached polyjectory" in str(cm.exception)
+            )
+
+        check_raise("nobjs")
+        check_raise("maxT")
+        check_raise("epoch")
+        check_raise("poly_order")
+        check_raise("data_dir")
+        check_raise("__getitem__", 0)
+        check_raise("status")
+        check_raise("persist")
+        check_raise("state_eval", 0.0)
+        check_raise("state_meval", [0.0])
