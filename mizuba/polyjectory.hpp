@@ -139,6 +139,8 @@ public:
     ~polyjectory();
 
     [[nodiscard]] static polyjectory mount(const std::filesystem::path &);
+    // NOTE: this is the only non-const function in the polyjectory interface
+    // and the only function which is not thread-safe.
     void detach() noexcept;
     [[nodiscard]] bool is_detached() const noexcept;
 
