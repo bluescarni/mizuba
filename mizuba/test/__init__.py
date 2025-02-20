@@ -26,6 +26,7 @@ def run_test_suite(data_sources: bool = False) -> None:
         test_heyoka_conjunctions,
         test_data_sources,
         test_make_sgp4_polyjectory,
+        test_tmpdir,
     )
 
     retval = 0
@@ -51,6 +52,7 @@ def run_test_suite(data_sources: bool = False) -> None:
             test_make_sgp4_polyjectory.make_sgp4_polyjectory_test_case
         )
     )
+    suite.addTest(tl.loadTestsFromTestCase(test_tmpdir.tmpdir_test_case))
 
     test_result = _ut.TextTestRunner(verbosity=2).run(suite)
 

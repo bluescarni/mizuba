@@ -24,6 +24,7 @@ set(MIZUBA_PYTHON_FILES
     test/full_catalog.parquet
     test/strack_20240705.parquet
     test/strack_20240917.parquet
+    test/test_tmpdir.py
     data_sources/__init__.py
     data_sources/_common.py
     data_sources/_spacetrack.py
