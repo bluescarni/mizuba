@@ -16,15 +16,21 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
+#include <optional>
+#include <utility>
 
 #include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+#include <pybind11/stl/filesystem.h>
 
 #include "expose_conjunctions.hpp"
 #include "expose_make_sgp4_polyjectory.hpp"
 #include "expose_polyjectory.hpp"
 #include "logging.hpp"
+#include "tmpdir.hpp"
 
 namespace mizuba_py::detail
 {
@@ -52,6 +58,7 @@ PYBIND11_MODULE(core, m)
     namespace py = pybind11;
     namespace mz = mizuba;
     namespace mzpy = mizuba_py;
+    using namespace py::literals;
 
     // Disable automatic function signatures in the docs.
     // NOTE: the 'options' object needs to stay alive
@@ -75,6 +82,30 @@ PYBIND11_MODULE(core, m)
     m.def("set_logger_level_trace", &mz::set_logger_level_trace);
     m.def("set_logger_level_debug", &mz::set_logger_level_debug);
     m.def("set_logger_level_warning", &mz::set_logger_level_warning);
+
+    // tmpdir getter/setter.
+    // NOTE: we cannot directly wrap the C++ functions because Python has no
+    // notion of an empty path. Thus, the getter returns None if tmpdir is an
+    // empty path, and it sets tmpdir to an empty path if None is passed in input.
+    m.def("get_tmpdir", []() -> std::optional<std::filesystem::path> {
+        auto ret = mz::get_tmpdir();
+        if (ret.empty()) {
+            return {};
+        } else {
+            return ret;
+        }
+    });
+    // NOTE: passing an empty string to this function is equivalent to passing None.
+    m.def(
+        "set_tmpdir",
+        [](std::optional<std::filesystem::path> path) {
+            if (path) {
+                mz::set_tmpdir(std::move(*path));
+            } else {
+                mz::set_tmpdir({});
+            }
+        },
+        "path"_a);
 
     // Register the polyjectory/conjunctions cleanup machinery on the Python side.
     auto atexit = py::module_::import("atexit");

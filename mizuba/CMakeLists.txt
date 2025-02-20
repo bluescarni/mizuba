@@ -47,6 +47,7 @@ set(_MIZUBA_CORE_SOURCES
     detect_conjunctions_narrow_phase.cpp
     make_sgp4_polyjectory.cpp
     logging.cpp
+    tmpdir.cpp
     detail/conjunctions_jit.cpp
     detail/file_utils.cpp
     detail/poly_utils.cpp
