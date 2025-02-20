@@ -1553,11 +1553,15 @@ class polyjectory_test_case(_ut.TestCase):
             with self.assertRaises(Exception):
                 shutil.rmtree(pj.data_dir)
 
+            self.assertTrue(pj.data_dir.exists())
+
         elif os.name == "posix":
             # On posix, we assume we can remove the data.
             # The memory-mapped regions should remain valid
             # because we have not closed the file descriptors.
             shutil.rmtree(pj.data_dir)
+
+            self.assertFalse(pj.data_dir.exists())
 
             self.assertTrue(np.all(pj[0][0] == state_data))
             self.assertTrue(np.all(pj[0][1] == np.array([0.0, 1.0])))
