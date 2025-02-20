@@ -1330,7 +1330,8 @@ class polyjectory_test_case(_ut.TestCase):
             )
             self.assertEqual(data_dir, pj.data_dir)
 
-            # NOTE: ensure we destroy the polyjectory before the temp dir.
+            # NOTE: ensure we remove the datafiles before the temp dir,
+            # otherwise the test will fail on Windows.
             pj.detach()
             self.assertFalse(data_dir.exists())
 
@@ -1357,7 +1358,8 @@ class polyjectory_test_case(_ut.TestCase):
             )
             self.assertEqual(data_dir, pj.data_dir)
 
-            # NOTE: ensure we destroy the polyjectory before the temp dir.
+            # NOTE: ensure we remove the datafiles before the temp dir,
+            # otherwise the test will fail on Windows.
             pj.detach()
             self.assertFalse(data_dir.exists())
 
@@ -1383,7 +1385,7 @@ class polyjectory_test_case(_ut.TestCase):
             self.assertTrue(data_dir.exists())
             self.assertTrue(pj.persist)
 
-            # NOTE: ensure we destroy the polyjectory.
+            # NOTE: detach will *not* remove the data dirs since persist is active.
             pj.detach()
 
             # Check the data dir still exists.
@@ -1414,7 +1416,7 @@ class polyjectory_test_case(_ut.TestCase):
             )
             self.assertEqual(data_dir, pj.data_dir)
 
-            # NOTE: ensure we destroy the polyjectory.
+            # NOTE: detach will *not* remove the data dirs since persist is active.
             pj.detach()
 
             # Check the data dir still exists.
