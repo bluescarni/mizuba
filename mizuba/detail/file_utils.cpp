@@ -65,52 +65,66 @@
 
 #include <fmt/core.h>
 
+#include "../tmpdir.hpp"
 #include "file_utils.hpp"
 
 namespace mizuba::detail
 {
 
-// Helper to create a directory with a "unique" name into the
-// system's temporary dir. If the directory to be created exists
-// already, an exception will be thrown, otherwise the canonicalised path
+// Helper to create a directory with a "unique" name into either the
+// system's temporary dir, or the user-provided temp dir. If the directory
+// to be created exists already, an exception will be thrown, otherwise the canonicalised path
 // to the newly-created directory will be returned. The directory
 // will have its permission set to boost::filesystem::owner_all.
 boost::filesystem::path create_temp_dir(const char *tplt)
 {
-    // Assemble a "unique" dir path into the system's temp dir.
-    // NOTE: make sure to canonicalise the temp dir path, so that if we
-    // convert the result to string we get an absolute path with resolved symlinks.
-    auto tmp_dir_path
-        = boost::filesystem::canonical(boost::filesystem::temp_directory_path()) / boost::filesystem::unique_path(tplt);
+    // Init the temp dir path with the output of get_tmpdir(). This will be
+    // an empty path if the user has not set any temp dir.
+    boost::filesystem::path tmpdir_path(get_tmpdir());
+
+    // If tmpdir_path is empty, use the system's temporary dir instead.
+    if (tmpdir_path.empty()) {
+        tmpdir_path = boost::filesystem::temp_directory_path();
+    }
+
+    // Canonicalise tmpdir_path.
+    try {
+        tmpdir_path = boost::filesystem::canonical(tmpdir_path);
+    } catch (...) {
+        throw std::invalid_argument(fmt::format(
+            "Unable to canonicalise the path to the temporary dir '{}' (does it exist?)", tmpdir_path.string()));
+    }
+
+    // Assemble a "unique" dir path into tmpdir_path.
+    auto path = tmpdir_path / boost::filesystem::unique_path(tplt);
 
     // Attempt to create it.
-    // LCOV_EXCL_START
-    if (!boost::filesystem::create_directory(tmp_dir_path)) [[unlikely]] {
-        throw std::runtime_error(
-            fmt::format("Error while creating a unique temporary directory: the directory '{}' already exists",
-                        tmp_dir_path.string()));
+    if (!boost::filesystem::create_directory(path)) [[unlikely]] {
+        // LCOV_EXCL_START
+        throw std::runtime_error(fmt::format(
+            "Error while creating a unique temporary directory: the directory '{}' already exists", path.string()));
+        // LCOV_EXCL_STOP
     }
-    // LCOV_EXCL_STOP
 
     // The directory has now been created. Wrap the rest of the function in a try/catch
     // block so that, if any error is thrown, we ensure that the directory is cleaned up
     // before returning.
     try {
         // Change the permissions so that only the owner has access.
-        boost::filesystem::permissions(tmp_dir_path, boost::filesystem::owner_all);
+        boost::filesystem::permissions(path, boost::filesystem::owner_all);
 
         // In the short time span between directory creation and permission setting, another
         // user may have written into the directory. Make sure to remove the content of the directory
         // as a precaution.
-        for (const auto &entry : boost::filesystem::directory_iterator(tmp_dir_path)) {
+        for (const auto &entry : boost::filesystem::directory_iterator(path)) {
             boost::filesystem::remove_all(entry.path()); // LCOV_EXCL_LINE
         }
 
-        return tmp_dir_path;
+        return path;
 
         // LCOV_EXCL_START
     } catch (...) {
-        boost::filesystem::remove_all(tmp_dir_path);
+        boost::filesystem::remove_all(path);
         throw;
     }
     // LCOV_EXCL_STOP

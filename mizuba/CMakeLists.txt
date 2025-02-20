@@ -24,6 +24,7 @@ set(MIZUBA_PYTHON_FILES
     test/full_catalog.parquet
     test/strack_20240705.parquet
     test/strack_20240917.parquet
+    test/test_tmpdir.py
     data_sources/__init__.py
     data_sources/_common.py
     data_sources/_spacetrack.py
@@ -47,6 +48,7 @@ set(_MIZUBA_CORE_SOURCES
     detect_conjunctions_narrow_phase.cpp
     make_sgp4_polyjectory.cpp
     logging.cpp
+    tmpdir.cpp
     detail/conjunctions_jit.cpp
     detail/file_utils.cpp
     detail/poly_utils.cpp
