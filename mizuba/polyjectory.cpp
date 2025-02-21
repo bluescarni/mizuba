@@ -305,7 +305,7 @@ const std::shared_ptr<polyjectory_impl> &fetch_pj_impl(const polyjectory &pj) no
 // custom logic that needs to be invoked at the beginning and at the end of the function.
 // The custom logic is to be implemented in the ctor and dtor of the object that will
 // be returned wrapped in a std::any. The default implementation of this hook is a no-op.
-std::function<std::any()> pj_close_raii_hook = []() { return std::any{}; };
+std::function<std::any()> pj_close_raii_hook = []() { return std::any{}; }; // LCOV_EXCL_LINE
 
 namespace
 {
