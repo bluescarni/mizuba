@@ -16,6 +16,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <algorithm>
+#include <any>
 #include <atomic>
 #include <cassert>
 #include <cmath>
@@ -25,6 +26,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <ios>
 #include <limits>
 #include <memory>
@@ -239,6 +241,9 @@ struct polyjectory_impl {
             // more than once.
             assert(is_open());
 
+            // Invoke the custom logic.
+            const auto pj_close_raii = detail::pj_close_raii_hook();
+
             // Fetch the persist flag before unmapping.
             const auto persist = m_desc_ptr->persist;
 
@@ -294,6 +299,13 @@ const std::shared_ptr<polyjectory_impl> &fetch_pj_impl(const polyjectory &pj) no
 {
     return pj.m_impl;
 }
+
+// NOTE: this is a hook that will be invoked at the beginning of the function that
+// closes a polyjectory's data files. The intent here is to allow the user to specify
+// custom logic that needs to be invoked at the beginning and at the end of the function.
+// The custom logic is to be implemented in the ctor and dtor of the object that will
+// be returned wrapped in a std::any. The default implementation of this hook is a no-op.
+std::function<std::any()> pj_close_raii_hook = []() { return std::any{}; };
 
 namespace
 {

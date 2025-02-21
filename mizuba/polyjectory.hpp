@@ -19,10 +19,12 @@
 #define MIZUBA_POLYJECTORY_HPP
 
 #include <algorithm>
+#include <any>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -50,6 +52,8 @@ struct polyjectory_impl;
 
 void close_pj(std::shared_ptr<polyjectory_impl> &) noexcept;
 [[nodiscard]] const std::shared_ptr<polyjectory_impl> &fetch_pj_impl(const polyjectory &) noexcept;
+
+extern std::function<std::any()> pj_close_raii_hook;
 
 } // namespace detail
 

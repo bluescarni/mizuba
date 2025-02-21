@@ -15,7 +15,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -31,27 +30,6 @@
 #include "expose_polyjectory.hpp"
 #include "logging.hpp"
 #include "tmpdir.hpp"
-
-namespace mizuba_py::detail
-{
-
-namespace
-{
-
-// Wrapper to invoke the cleanup functions at shutdown.
-extern "C" void cpp_atexit_wrapper()
-{
-#if !defined(NDEBUG)
-    std::cout << "Running the C++ cleanup function" << std::endl;
-#endif
-
-    cleanup_pj_weak_ptrs();
-    cleanup_cj_weak_ptrs();
-}
-
-} // namespace
-
-} // namespace mizuba_py::detail
 
 PYBIND11_MODULE(core, m)
 {
@@ -107,7 +85,7 @@ PYBIND11_MODULE(core, m)
         },
         "path"_a);
 
-    // Register the polyjectory/conjunctions cleanup machinery on the Python side.
+    // Register the cleanup machinery.
     auto atexit = py::module_::import("atexit");
     atexit.attr("register")(py::cpp_function([]() {
 #if !defined(NDEBUG)
@@ -117,20 +95,4 @@ PYBIND11_MODULE(core, m)
         mzpy::cleanup_pj_weak_ptrs();
         mzpy::cleanup_cj_weak_ptrs();
     }));
-
-    // Register the cleanup machinery also on the C++ side.
-    //
-    // NOTE: we do this also on the C++ side because we have run into some situations
-    // in which, after a Ctrl+C signal, the Python interpreter would not invoke
-    // the functions registered with atexit, leaving behind the temporary data on disk.
-    //
-    // NOTE: because we declared the structures used for cleanup as constinit, they are
-    // constructed at compile time and they should be guaranteed to be destroyed *after*
-    // the execution of cpp_atexit_wrapper, whose registration happens at runtime.
-    //
-    // NOTE: perhaps consider keeping only the C++-side cleanup in the future? Also,
-    // if this is ever extracted as a separate C++ library, we probably want to keep
-    // this cleanup mechanism for those cases in which the destructors of local
-    // variables will not be called (e.g., if the user calls std::exit()).
-    std::atexit(mzpy::detail::cpp_atexit_wrapper);
 }
