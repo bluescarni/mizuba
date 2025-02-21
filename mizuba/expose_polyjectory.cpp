@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <any>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -102,6 +103,19 @@ void expose_polyjectory(pybind11::module_ &m)
     namespace py = pybind11;
     namespace mz = mizuba;
     using namespace py::literals;
+
+    // Implement custom logic to be executed when closing a polyjectory's datafiles.
+    // The intent here is to release the GIL while closing the files, as that can take
+    // some time with large datafiles and we do not want to needlessly block Python
+    // while that happens.
+    // NOTE: here we are setting a global variable with no lock protection. This should be
+    // ok as Python makes sure that a module cannot be imported concurrently from
+    // multiple threads (i.e., import of a specific module is protected by a lock).
+    mz::detail::pj_close_raii_hook = []() {
+        // NOTE: the rationale for using shared_ptr here is that we need to wrap
+        // gil_scoped_release into a copyable type.
+        return std::any(std::make_shared<py::gil_scoped_release>());
+    };
 
     // Register polyjectory::traj_offset as a structured NumPy datatype.
     using traj_offset = mz::polyjectory::traj_offset;
