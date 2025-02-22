@@ -1363,6 +1363,35 @@ class polyjectory_test_case(_ut.TestCase):
             pj.detach()
             self.assertFalse(data_dir.exists())
 
+        # Check that an empty data dir path is treated as if not provided.
+        # NOTE: here we only check the lack of throwing.
+        pj = polyjectory(
+            trajs=[state_data, state_data[1:]],
+            times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
+            status=np.array([0, 0], dtype=np.int32),
+            data_dir="",
+        )
+
+        # Check the ctor from datafiles too.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((42,), 0.0, dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            time_data = np.array([0.0, 1.0, 1.1])
+            time_data.tofile(time_file)
+            time_file.close()
+
+            pj = polyjectory.from_datafiles(
+                traj_file=traj_file.name,
+                time_file=time_file.name,
+                order=2,
+                traj_offsets=np.array([(0, 2)], dtype=polyjectory.traj_offset),
+                status=[1],
+                data_dir="",
+            )
+
     def test_persist(self):
         from .. import polyjectory
         import numpy as np
@@ -1688,4 +1717,33 @@ class polyjectory_test_case(_ut.TestCase):
             self.assertTrue(
                 "The 'data_dir' and 'tmpdir' construction arguments cannot be provided at the same time"
                 in str(cm.exception)
+            )
+
+        # Check that an empty tmpdir is interpreted as if not provided.
+        # NOTE: here we only check the lack of throwing.
+        pj = polyjectory(
+            trajs=[state_data, state_data[1:]],
+            times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
+            status=np.array([0, 0], dtype=np.int32),
+            tmpdir="",
+        )
+
+        # Check the ctor from datafiles too.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((42,), 0.0, dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            time_data = np.array([0.0, 1.0, 1.1])
+            time_data.tofile(time_file)
+            time_file.close()
+
+            pj = polyjectory.from_datafiles(
+                traj_file=traj_file.name,
+                time_file=time_file.name,
+                order=2,
+                traj_offsets=np.array([(0, 2)], dtype=polyjectory.traj_offset),
+                status=[1],
+                tmpdir="",
             )

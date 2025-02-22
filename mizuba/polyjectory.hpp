@@ -119,6 +119,8 @@ private:
     void check_attached() const;
 
 public:
+    // NOTE: in the docs we must point out that empty tmpdir/data_dir paths are treated
+    // as if not provided.
     template <typename TrajRng, typename TimeRng, typename StatusRng>
         requires std::ranges::input_range<TrajRng>
                  && std::same_as<traj_span_t, std::remove_cvref_t<std::ranges::range_reference_t<TrajRng>>>

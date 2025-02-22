@@ -397,9 +397,10 @@ polyjectory::polyjectory(ptag,
     }
     const auto dl_epoch = detail::hilo_to_dfloat(epoch, epoch2);
 
-    // Init the data dir path as either the user-provided path or a "unique" dir path into a temp dir.
-    auto data_dir_path = data_dir ? detail::create_dir_0700(boost::filesystem::path(*data_dir))
-                                  : detail::create_temp_dir(detail::pj_tmp_tplt, std::move(tmpdir));
+    // Init the data dir path as either the user-provided path (if not empty) or a "unique" dir path into a temp dir.
+    auto data_dir_path = (data_dir && !data_dir->empty())
+                             ? detail::create_dir_0700(boost::filesystem::path(*data_dir))
+                             : detail::create_temp_dir(detail::pj_tmp_tplt, std::move(tmpdir));
 
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the data dir in case of exceptions.
@@ -781,9 +782,10 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         }
     }
 
-    // Init the data dir path as either the user-provided path or a "unique" dir path into a temp dir.
-    auto data_dir_path = data_dir ? detail::create_dir_0700(boost::filesystem::path(*data_dir))
-                                  : detail::create_temp_dir(detail::pj_tmp_tplt, std::move(tmpdir));
+    // Init the data dir path as either the user-provided path (if not empty) or a "unique" dir path into a temp dir.
+    auto data_dir_path = (data_dir && !data_dir->empty())
+                             ? detail::create_dir_0700(boost::filesystem::path(*data_dir))
+                             : detail::create_temp_dir(detail::pj_tmp_tplt, std::move(tmpdir));
 
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the data dir in case of exceptions.
