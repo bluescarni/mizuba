@@ -19,6 +19,7 @@
 #define MIZUBA_DETAIL_FILE_UTILS_HPP
 
 #include <cstddef>
+#include <optional>
 
 #if defined(_WIN32)
 
@@ -31,7 +32,7 @@
 namespace mizuba::detail
 {
 
-boost::filesystem::path create_temp_dir(const char *);
+boost::filesystem::path create_temp_dir(const char *, std::optional<boost::filesystem::path> = {});
 
 boost::filesystem::path create_dir_0700(const boost::filesystem::path &);
 

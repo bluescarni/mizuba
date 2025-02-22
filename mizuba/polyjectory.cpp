@@ -76,6 +76,10 @@ namespace
 // The current version of the polyjectory data structure.
 constexpr unsigned cur_pj_version = 0;
 
+// The template used when creating temporary dirs for polyjectories.
+// NOTE: it needs to be documented that temporary dirs always begin with "mizuba_polyjectory".
+constexpr auto *pj_tmp_tplt = "mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%";
+
 } // namespace
 
 struct polyjectory_impl {
@@ -342,9 +346,21 @@ void polyjectory::check_attached() const
 
 polyjectory::polyjectory(ptag,
                          std::tuple<std::vector<traj_span_t>, std::vector<time_span_t>, std::vector<std::int32_t>> tup,
-                         double epoch, double epoch2, std::optional<std::filesystem::path> data_dir, bool persist)
+                         double epoch, double epoch2, std::optional<std::filesystem::path> data_dir, bool persist,
+                         std::optional<std::filesystem::path> tmpdir_)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
+
+    if (data_dir && tmpdir_) [[unlikely]] {
+        throw std::invalid_argument(
+            "The 'data_dir' and 'tmpdir' construction arguments cannot be provided at the same time");
+    }
+
+    // Convert tmpdir to boost::filesystem::path, if necessary.
+    std::optional<boost::filesystem::path> tmpdir;
+    if (tmpdir_) {
+        tmpdir.emplace(*tmpdir_);
+    }
 
     auto &[traj_spans, time_spans, status] = tup;
 
@@ -381,9 +397,10 @@ polyjectory::polyjectory(ptag,
     }
     const auto dl_epoch = detail::hilo_to_dfloat(epoch, epoch2);
 
-    // Init the data dir path as either the user-provided path or a "unique" dir path into a temp dir.
-    auto data_dir_path = data_dir ? detail::create_dir_0700(boost::filesystem::path(*data_dir))
-                                  : detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
+    // Init the data dir path as either the user-provided path (if not empty) or a "unique" dir path into a temp dir.
+    auto data_dir_path = (data_dir && !data_dir->empty())
+                             ? detail::create_dir_0700(boost::filesystem::path(*data_dir))
+                             : detail::create_temp_dir(detail::pj_tmp_tplt, std::move(tmpdir));
 
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the data dir in case of exceptions.
@@ -631,9 +648,21 @@ polyjectory::polyjectory(ptag,
 polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                          const std::filesystem::path &orig_time_file_path, std::uint32_t order,
                          std::vector<traj_offset> traj_offsets, std::vector<std::int32_t> status, double epoch,
-                         double epoch2, std::optional<std::filesystem::path> data_dir, bool persist)
+                         double epoch2, std::optional<std::filesystem::path> data_dir, bool persist,
+                         std::optional<std::filesystem::path> tmpdir_)
 {
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
+
+    if (data_dir && tmpdir_) [[unlikely]] {
+        throw std::invalid_argument(
+            "The 'data_dir' and 'tmpdir' construction arguments cannot be provided at the same time");
+    }
+
+    // Convert tmpdir to boost::filesystem::path, if necessary.
+    std::optional<boost::filesystem::path> tmpdir;
+    if (tmpdir_) {
+        tmpdir.emplace(*tmpdir_);
+    }
 
     // Check the polynomial order and compute order + 1.
     if (order < 2u || order == std::numeric_limits<std::uint32_t>::max()) [[unlikely]] {
@@ -753,9 +782,10 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         }
     }
 
-    // Init the data dir path as either the user-provided path or a "unique" dir path into a temp dir.
-    auto data_dir_path = data_dir ? detail::create_dir_0700(boost::filesystem::path(*data_dir))
-                                  : detail::create_temp_dir("mizuba_polyjectory-%%%%-%%%%-%%%%-%%%%");
+    // Init the data dir path as either the user-provided path (if not empty) or a "unique" dir path into a temp dir.
+    auto data_dir_path = (data_dir && !data_dir->empty())
+                             ? detail::create_dir_0700(boost::filesystem::path(*data_dir))
+                             : detail::create_temp_dir(detail::pj_tmp_tplt, std::move(tmpdir));
 
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the data dir in case of exceptions.

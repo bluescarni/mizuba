@@ -876,3 +876,35 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             # Check the data dir still exists.
             self.assertTrue(data_dir.is_dir())
             self.assertTrue(data_dir.exists())
+
+    def test_tmpdir(self):
+        # A test checking custom setting for tmpdir.
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
+            return
+
+        from .. import make_sgp4_polyjectory
+        import pathlib
+        import tempfile
+        import polars as pl
+
+        # Fetch the current directory.
+        cur_dir = pathlib.Path(__file__).parent.resolve()
+
+        # Load the test data.
+        gpes = pl.read_parquet(cur_dir / "single_gpe.parquet")
+
+        # Build the polyjectory.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            tmpdir = pathlib.Path(tmpdirname)
+
+            # NOTE: this checks that the dir is empty.
+            self.assertTrue(not any(tmpdir.iterdir()))
+
+            jd_begin = 2460669.0
+            pj = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1, tmpdir=tmpdir)[0]
+
+            self.assertTrue(any(tmpdir.iterdir()))
+
+            pj.detach()
