@@ -80,7 +80,7 @@ namespace mizuba::detail
 // - if the user provides a non-empty tmpdir path, then the directory will be created there; otherwise,
 // - if the user has set a non-empty global tmpdir path via set_tmpdir(), then the directory will be
 //   created there; otherwise,
-// - the directory will be created in ths system-specific temp dir.
+// - the directory will be created in the system-specific temp dir path.
 //
 // If the operation succeeds, the canonicalised path to the newly-created directory will be returned. The directory
 // will have its permission set to boost::filesystem::owner_all.

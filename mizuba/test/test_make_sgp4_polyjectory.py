@@ -879,7 +879,6 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
     def test_tmpdir(self):
         # A test checking custom setting for tmpdir.
-        # Simple test with persistence.
         from .. import _have_sgp4_deps
 
         if not _have_sgp4_deps():
