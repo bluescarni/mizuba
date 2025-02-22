@@ -1258,7 +1258,8 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
 
 polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std::size_t, std::dynamic_extent>> gpes,
                                   const double jd_begin, const double jd_end, const double reentry_radius,
-                                  const double exit_radius, std::optional<std::filesystem::path> data_dir, bool persist)
+                                  const double exit_radius, std::optional<std::filesystem::path> data_dir, bool persist,
+                                  std::optional<std::filesystem::path> tmpdir)
 {
     namespace hy = heyoka;
     using dfloat = hy::detail::dfloat<double>;
@@ -1386,7 +1387,7 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
     return polyjectory(std::filesystem::path((tmp_dir_path / "traj").string()),
                        std::filesystem::path((tmp_dir_path / "time").string()), ta_kepler_tplt->get_order(),
                        std::move(traj_offsets), std::move(status), epoch_tai.hi, epoch_tai.lo, std::move(data_dir),
-                       persist);
+                       persist, std::move(tmpdir));
 }
 
 } // namespace mizuba

@@ -130,6 +130,7 @@ def make_sgp4_polyjectory(
     exit_radius: float = float("inf"),
     data_dir: Union[os.PathLike, None] = None,
     persist: bool = False,
+    tmpdir: Union[os.PathLike, None] = None,
 ) -> Tuple[polyjectory, np.ndarray[np.uint64]]:
     # NOTE: remember to document the ordering requirement on gpes.
     from .core import _make_sgp4_polyjectory, gpe_dtype
@@ -195,7 +196,14 @@ def make_sgp4_polyjectory(
 
     # Invoke the C++ function.
     ret = _make_sgp4_polyjectory(
-        gpes_arr, jd_begin, jd_end, reentry_radius, exit_radius, data_dir, persist
+        gpes_arr,
+        jd_begin,
+        jd_end,
+        reentry_radius,
+        exit_radius,
+        data_dir,
+        persist,
+        tmpdir,
     )
 
     # Prepare the output array of norad ids.

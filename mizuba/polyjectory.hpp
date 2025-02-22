@@ -98,7 +98,8 @@ private:
     explicit polyjectory(ptag, const std::filesystem::path &);
     explicit polyjectory(ptag,
                          std::tuple<std::vector<traj_span_t>, std::vector<time_span_t>, std::vector<std::int32_t>>,
-                         double, double, std::optional<std::filesystem::path>, bool);
+                         double, double, std::optional<std::filesystem::path>, bool,
+                         std::optional<std::filesystem::path>);
 
     template <typename TrajRng, typename TimeRng, typename StatusRng>
     static auto ctor_impl(TrajRng &&traj_rng, TimeRng &&time_rng, StatusRng &&status_rng)
@@ -126,16 +127,17 @@ public:
                  && std::ranges::input_range<StatusRng>
                  && std::same_as<std::int32_t, std::remove_cvref_t<std::ranges::range_reference_t<StatusRng>>>
     explicit polyjectory(TrajRng &&traj_rng, TimeRng &&time_rng, StatusRng &&status_rng, double epoch, double epoch2,
-                         std::optional<std::filesystem::path> data_dir, bool persist)
+                         std::optional<std::filesystem::path> data_dir, bool persist,
+                         std::optional<std::filesystem::path> tmpdir)
         : polyjectory(ptag{},
                       ctor_impl(std::forward<TrajRng>(traj_rng), std::forward<TimeRng>(time_rng),
                                 std::forward<StatusRng>(status_rng)),
-                      epoch, epoch2, std::move(data_dir), persist)
+                      epoch, epoch2, std::move(data_dir), persist, std::move(tmpdir))
     {
     }
     explicit polyjectory(const std::filesystem::path &, const std::filesystem::path &, std::uint32_t,
                          std::vector<traj_offset>, std::vector<std::int32_t>, double, double,
-                         std::optional<std::filesystem::path>, bool);
+                         std::optional<std::filesystem::path>, bool, std::optional<std::filesystem::path>);
     // NOTE: forbidding copy semantics basically synchs the lifetime of the polyjectory
     // with the lifetime of the internal shared pointer. This ensures, for instance,
     // that calling detach() on a non-persistent polyjectory triggers the removal of the

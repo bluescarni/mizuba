@@ -1567,3 +1567,125 @@ class polyjectory_test_case(_ut.TestCase):
             self.assertTrue(np.all(pj[0][1] == np.array([0.0, 1.0])))
             self.assertTrue(np.all(pj[1][0] == state_data[1:]))
             self.assertTrue(np.all(pj[1][1] == np.array([], dtype=float)))
+
+    def test_tmpdir(self):
+        # A test checking custom setting for tmpdir in the constructors.
+        from .. import polyjectory, set_tmpdir, get_tmpdir
+        import numpy as np
+        import tempfile
+        from pathlib import Path
+        import os
+
+        state_data = np.full((1, 8, 7), 42.0)
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            tmpdir = Path(tmpdirname)
+
+            # NOTE: this checks that the dir is empty.
+            self.assertTrue(not any(tmpdir.iterdir()))
+
+            pj = polyjectory(
+                trajs=[state_data, state_data[1:]],
+                times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
+                status=np.array([0, 0], dtype=np.int32),
+                tmpdir=tmpdir,
+            )
+
+            self.assertTrue(any(tmpdir.iterdir()))
+
+            pj.detach()
+
+        # Check the ctor from datafiles too.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            os.makedirs(Path(tmpdirname) / "foo")
+            tmpdir = Path(tmpdirname) / "foo"
+
+            # NOTE: this checks that the dir is empty.
+            self.assertTrue(not any(tmpdir.iterdir()))
+
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((42,), 0.0, dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            time_data = np.array([0.0, 1.0, 1.1])
+            time_data.tofile(time_file)
+            time_file.close()
+
+            pj = polyjectory.from_datafiles(
+                traj_file=traj_file.name,
+                time_file=time_file.name,
+                order=2,
+                traj_offsets=np.array([(0, 2)], dtype=polyjectory.traj_offset),
+                status=[1],
+                tmpdir=tmpdir,
+            )
+
+            self.assertTrue(any(tmpdir.iterdir()))
+
+            pj.detach()
+
+        # A test to check that a custom tmpdir overrides
+        # the global tmpdir.
+        orig_global_tmpdir = get_tmpdir()
+        set_tmpdir(__file__)
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            tmpdir = Path(tmpdirname)
+
+            # NOTE: this checks that the dir is empty.
+            self.assertTrue(not any(tmpdir.iterdir()))
+
+            pj = polyjectory(
+                trajs=[state_data, state_data[1:]],
+                times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
+                status=np.array([0, 0], dtype=np.int32),
+                tmpdir=tmpdir,
+            )
+
+            self.assertTrue(any(tmpdir.iterdir()))
+
+            pj.detach()
+
+        # Restore the original global temp dir.
+        set_tmpdir(orig_global_tmpdir)
+
+        # Check that we cannot specify both tmpdir and data_dir at the same time.
+        with self.assertRaises(ValueError) as cm:
+            polyjectory(
+                trajs=[state_data, state_data[1:]],
+                times=[np.array([0.0, 1.0]), np.array([], dtype=float)],
+                status=np.array([0, 0], dtype=np.int32),
+                tmpdir="",
+                data_dir="",
+            )
+        self.assertTrue(
+            "The 'data_dir' and 'tmpdir' construction arguments cannot be provided at the same time"
+            in str(cm.exception)
+        )
+
+        # Datafile ctor too.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            traj_file = open(Path(tmpdirname) / "traj", "wb")
+            np.full((42,), 0.0, dtype=float).tofile(traj_file)
+            traj_file.close()
+
+            time_file = open(Path(tmpdirname) / "time", "wb")
+            time_data = np.array([0.0, 1.0, 1.1])
+            time_data.tofile(time_file)
+            time_file.close()
+
+            with self.assertRaises(ValueError) as cm:
+                polyjectory.from_datafiles(
+                    traj_file=traj_file.name,
+                    time_file=time_file.name,
+                    order=2,
+                    traj_offsets=np.array([(0, 2)], dtype=polyjectory.traj_offset),
+                    status=[1],
+                    tmpdir="",
+                    data_dir="",
+                )
+            self.assertTrue(
+                "The 'data_dir' and 'tmpdir' construction arguments cannot be provided at the same time"
+                in str(cm.exception)
+            )

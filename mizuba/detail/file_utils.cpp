@@ -22,7 +22,9 @@
 #include <ios>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
+#include <utility>
 
 // Detect POSIX 2008.
 #if __has_include(<unistd.h>)
@@ -71,20 +73,33 @@
 namespace mizuba::detail
 {
 
-// Helper to create a directory with a "unique" name into either the
-// system's temporary dir, or the user-provided temp dir. If the directory
-// to be created exists already, an exception will be thrown, otherwise the canonicalised path
-// to the newly-created directory will be returned. The directory
+// Helper to create a directory with a "unique" name into a temp dir.
+//
+// The temp dir into which the directory will be created is determined as follows:
+//
+// - if the user provides a non-empty tmpdir path, then the directory will be created there; otherwise,
+// - if the user has set a non-empty global tmpdir path via set_tmpdir(), then the directory will be
+//   created there; otherwise,
+// - the directory will be created in ths system-specific temp dir.
+//
+// If the operation succeeds, the canonicalised path to the newly-created directory will be returned. The directory
 // will have its permission set to boost::filesystem::owner_all.
-boost::filesystem::path create_temp_dir(const char *tplt)
+boost::filesystem::path create_temp_dir(const char *tplt, std::optional<boost::filesystem::path> tmpdir)
 {
-    // Init the temp dir path with the output of get_tmpdir(). This will be
-    // an empty path if the user has not set any temp dir.
-    boost::filesystem::path tmpdir_path(get_tmpdir());
+    boost::filesystem::path tmpdir_path;
 
-    // If tmpdir_path is empty, use the system's temporary dir instead.
-    if (tmpdir_path.empty()) {
-        tmpdir_path = boost::filesystem::temp_directory_path();
+    if (tmpdir && !tmpdir->empty()) {
+        // User-provided non-empty tmpdir, use it.
+        tmpdir_path = std::move(*tmpdir);
+    } else {
+        // Fetch the global tmpdir. This will be an empty path if the user has not
+        // set a global temp dir.
+        tmpdir_path = get_tmpdir();
+
+        // If tmpdir_path is empty, use the system's temporary dir instead.
+        if (tmpdir_path.empty()) {
+            tmpdir_path = boost::filesystem::temp_directory_path();
+        }
     }
 
     // Canonicalise tmpdir_path.
@@ -95,14 +110,23 @@ boost::filesystem::path create_temp_dir(const char *tplt)
             "Unable to canonicalise the path to the temporary dir '{}' (does it exist?)", tmpdir_path.string()));
     }
 
-    // Assemble a "unique" dir path into tmpdir_path.
-    auto path = tmpdir_path / boost::filesystem::unique_path(tplt);
+    // Make a few attempts at creating a unique dir into tmpdir_path.
+    boost::filesystem::path path;
+    constexpr auto max_tries = 10u;
+    auto counter = 0u;
 
-    // Attempt to create it.
-    if (!boost::filesystem::create_directory(path)) [[unlikely]] {
+    for (; counter < max_tries; ++counter) {
+        path = tmpdir_path / boost::filesystem::unique_path(tplt);
+
+        if (boost::filesystem::create_directory(path)) [[likely]] {
+            break;
+        }
+    }
+
+    if (counter == max_tries) [[unlikely]] {
         // LCOV_EXCL_START
-        throw std::runtime_error(fmt::format(
-            "Error while creating a unique temporary directory: the directory '{}' already exists", path.string()));
+        throw std::invalid_argument(
+            fmt::format("Unable to create a unique temporary directory in the path '{}'", tmpdir_path.string()));
         // LCOV_EXCL_STOP
     }
 
