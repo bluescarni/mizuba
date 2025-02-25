@@ -29,7 +29,7 @@ class conjunctions_test_case(_ut.TestCase):
         import pathlib
         import polars as pl
         from bisect import bisect_left
-        from sgp4.api import SatrecArray, Satrec
+        from sgp4.api import Satrec
 
         # Fetch the current directory.
         cur_dir = pathlib.Path(__file__).parent.resolve()
