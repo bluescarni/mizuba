@@ -29,7 +29,7 @@ class conjunctions_test_case(_ut.TestCase):
         import pathlib
         import polars as pl
         from bisect import bisect_left
-        from sgp4.api import SatrecArray, Satrec
+        from .._sgp4_polyjectory import _make_satrec_from_dict
 
         # Fetch the current directory.
         cur_dir = pathlib.Path(__file__).parent.resolve()
@@ -38,10 +38,7 @@ class conjunctions_test_case(_ut.TestCase):
         gpes = pl.read_parquet(cur_dir / "strack_20240705.parquet")
 
         # Create the satellite objects.
-        sat_list = [
-            Satrec.twoline2rv(_["tle_line1"], _["tle_line2"])
-            for _ in gpes.iter_rows(named=True)
-        ]
+        sat_list = [_make_satrec_from_dict(_) for _ in gpes.iter_rows(named=True)]
 
         # Create a sparse list of satellites.
         # NOTE: we manually include an object for which the

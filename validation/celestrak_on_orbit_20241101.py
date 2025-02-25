@@ -125,7 +125,7 @@ norad_id_j = norad_ids[conj["j"]]
 
 # Build the tca column, representing it as a ISO UTC
 # string with millisecond resolution.
-pj_epoch1, pj_epoch2 = cj.polyjectory.epoch
+pj_epoch1, pj_epoch2 = pj.epoch
 tca = Time(
     val=pj_epoch1, val2=pj_epoch2 + conj["tca"], format="jd", scale="tai", precision=3
 ).utc.iso

@@ -129,7 +129,8 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         import numpy as np
         import pathlib
         import polars as pl
-        from sgp4.api import SatrecArray, Satrec
+        from sgp4.api import SatrecArray
+        from .._sgp4_polyjectory import _make_satrec_from_dict
 
         # Fetch the current directory.
         cur_dir = pathlib.Path(__file__).parent.resolve()
@@ -138,10 +139,7 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         gpes = pl.read_parquet(cur_dir / "strack_20240705.parquet")
 
         # Create the satellite objects.
-        sat_list = [
-            Satrec.twoline2rv(_["tle_line1"], _["tle_line2"])
-            for _ in gpes.iter_rows(named=True)
-        ]
+        sat_list = [_make_satrec_from_dict(_) for _ in gpes.iter_rows(named=True)]
 
         # Select around 10 objects.
         sat_list = sat_list[:: len(sat_list) // 10]

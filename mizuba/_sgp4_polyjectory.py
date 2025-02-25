@@ -103,7 +103,12 @@ def _make_satrec_from_dict(d: dict) -> Satrec:
     sat = Satrec()
     sat.sgp4init(
         WGS72,
-        "i",
+        # NOTE: here we are using the 'a' opsmode in order to closely match propagations
+        # done by celestrak (by extension, I would imagine that this is also the setting
+        # used by spacetrack and associates). Note that the sgp4 Python module by default
+        # uses the 'i' mode instead. In the future, we may allow to make this a user-tunable
+        # parameter (perhaps together with the WGS models?).
+        "a",
         d["norad_id"],
         jd,
         d["bstar"],
