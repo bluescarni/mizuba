@@ -898,3 +898,51 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             self.assertTrue(any(tmpdir.iterdir()))
 
             pj.detach()
+
+    def test_opsmode(self):
+        # This is a test checking that we correctly set the
+        # opsmode to 'a' when propagating with sgp4. The test case
+        # comes from a SOCRATES conjunction that we missed due
+        # to the mismatch in opsmode.
+        from .. import _have_sgp4_deps
+
+        if not _have_sgp4_deps():
+            return
+
+        from astropy.time import Time
+        from sgp4.api import Satrec
+        from .. import make_sgp4_polyjectory
+        import numpy as np
+
+        # The tles of the two satellites.
+        line1i = "1 25541U          25053.26376711  .00000000  00000-0  48065-2 0    03"
+        line2i = "2 25541   7.2593   0.4196 7073454 171.4819 214.8548  2.39999221    04"
+
+        line1j = "1 46172U          25055.07880679  .00000000  00000-0  17505-3 0    06"
+        line2j = "2 46172  53.0525 196.2605 0001187  60.4679 299.6428 15.06411185    02"
+
+        # The TCA reported by SOCRATES.
+        tca_time = Time(
+            "2025-02-26 14:23:41.901", format="iso", scale="utc", precision=9
+        )
+
+        # Init the satrec objects.
+        # NOTE: the sgp4 python module by default uses the 'i' opsmode, but it
+        # does not matter here as we do not use these satrecs for propagation.
+        sat_i = Satrec.twoline2rv(line1i, line2i)
+        sat_j = Satrec.twoline2rv(line1j, line2j)
+
+        # Build a polyjectory.
+        pj = make_sgp4_polyjectory([sat_i, sat_j], tca_time.jd - 1, tca_time.jd + 1)[0]
+
+        # Evaluate the state at TCA.
+        teval = (
+            tca_time.tai
+            - Time(val=pj.epoch[0], val2=pj.epoch[1], format="jd", scale="tai")
+        ).to_value("d")
+        st = pj.state_eval(teval)
+
+        # Compute the distance.
+        dist = np.linalg.norm(st[0, :3] - st[1, :3])
+
+        self.assertAlmostEqual(dist, 4.8980344574062675, places=8)
