@@ -694,7 +694,13 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
     // NOTE: this is the baseline reference epoch used by the C++ SGP4 code,
     // corresponding to "jan 0, 1950. 0 hr".
     constexpr auto jd_sub = 2433281.5;
-    SGP4Funcs::sgp4init(wgs72, 'i', "",
+    SGP4Funcs::sgp4init(wgs72,
+                        // NOTE: here we are using the 'a' opsmode in order to closely match propagations
+                        // done by celestrak (by extension, I would imagine that this is also the setting
+                        // used by spacetrack and associates). Note that the sgp4 Python module by default
+                        // uses the 'i' mode instead. In the future, we may allow to make this a user-tunable
+                        // parameter (perhaps together with the WGS models?).
+                        'a', "",
                         // NOTE: here we are directly subtracting the UTC Julian dates
                         // in order to compute the epoch, which, according to the C++ code,
                         // must be expressed as the "number of days from jan 0, 1950. 0 hr".

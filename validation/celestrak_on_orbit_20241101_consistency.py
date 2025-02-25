@@ -105,10 +105,10 @@ nonzero = np.where(cj1.conjunctions["tca"] != 0)
 tca_diff = np.abs(cj1.conjunctions["tca"][nonzero] - cj2.conjunctions["tca"][nonzero])
 if np.any(tca_diff > 5e-8):
     raise ValueError("Differences detected in the tcas between cj1 and cj2")
-print(f"Larget TCA difference between cj1 and cj2: {np.max(tca_diff)}")
+print(f"Largest TCA difference between cj1 and cj2: {np.max(tca_diff)}")
 
 
 tca_diff = np.abs(cj1.conjunctions["tca"][nonzero] - cj3.conjunctions["tca"][nonzero])
 if np.any(tca_diff > 5e-8):
     raise ValueError("Differences detected in the tcas between cj1 and cj3")
-print(f"Larget TCA difference between cj1 and cj3: {np.max(tca_diff)}")
+print(f"Largest TCA difference between cj1 and cj3: {np.max(tca_diff)}")

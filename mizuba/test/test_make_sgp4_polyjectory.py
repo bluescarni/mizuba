@@ -76,10 +76,10 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         from .. import make_sgp4_polyjectory
         from .._dl_utils import _eft_add_knuth
         import pathlib
-        from sgp4.api import Satrec
         import polars as pl
         import numpy as np
         from astropy.time import Time
+        from .._sgp4_polyjectory import _make_satrec_from_dict
 
         # Deterministic seeding.
         rng = np.random.default_rng(42)
@@ -98,9 +98,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         self.assertEqual(pj[0][1][0], 0.0)
 
         # Build the satrec.
-        s = gpes["tle_line1"][0]
-        t = gpes["tle_line2"][0]
-        sat = Satrec.twoline2rv(s, t)
+        sat = _make_satrec_from_dict(gpes.row(0, named=True))
 
         # Iterate over the trajectory steps, sampling randomly,
         # evaluating the polynomials and comparing with the
@@ -124,8 +122,8 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         from .. import make_sgp4_polyjectory
         import pathlib
-        from sgp4.api import Satrec
         import polars as pl
+        from .._sgp4_polyjectory import _make_satrec_from_dict
         import numpy as np
 
         # Deterministic seeding.
@@ -145,9 +143,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         self.assertEqual(pj[0][1][0], 0.0)
 
         # Build the satrec.
-        s = gpes["tle_line1"][0]
-        t = gpes["tle_line2"][0]
-        sat = Satrec.twoline2rv(s, t)
+        sat = _make_satrec_from_dict(gpes.row(0, named=True))
 
         # Iterate over the trajectory steps, sampling randomly,
         # evaluating the polynomials and comparing with the
@@ -170,8 +166,8 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         from .. import make_sgp4_polyjectory
         import pathlib
-        from sgp4.api import Satrec
         import polars as pl
+        from .._sgp4_polyjectory import _make_satrec_from_dict
         import numpy as np
 
         # Deterministic seeding.
@@ -191,9 +187,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         self.assertEqual(pj[0][1][0], 0.0)
 
         # Build the satrec.
-        s = gpes["tle_line1"][0]
-        t = gpes["tle_line2"][0]
-        sat = Satrec.twoline2rv(s, t)
+        sat = _make_satrec_from_dict(gpes.row(0, named=True))
 
         # Iterate over the trajectory steps, sampling randomly,
         # evaluating the polynomials and comparing with the
@@ -212,7 +206,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         from .. import make_sgp4_polyjectory
         import pathlib
-        from sgp4.api import Satrec
+        from .._sgp4_polyjectory import _make_satrec_from_dict
         import polars as pl
         import numpy as np
 
@@ -238,9 +232,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         for sat_idx in range(len(gpes)):
             # Build the satrec.
-            s = gpes["tle_line1"][sat_idx]
-            t = gpes["tle_line2"][sat_idx]
-            sat = Satrec.twoline2rv(s, t)
+            sat = _make_satrec_from_dict(gpes.row(sat_idx, named=True))
 
             cfs, end_times, _ = pj[sat_idx]
             for i in range(1, len(end_times)):
@@ -698,7 +690,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         from .. import make_sgp4_polyjectory
         import pathlib
-        from sgp4.api import Satrec
+        from .._sgp4_polyjectory import _make_satrec_from_dict
         import polars as pl
         import numpy as np
 
@@ -713,7 +705,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         pj1 = make_sgp4_polyjectory(gpes, jd_begin, jd_begin + 1)[0]
 
         # Build a satrec from the satellite.
-        sat = Satrec.twoline2rv(gpes["tle_line1"][0], gpes["tle_line2"][0])
+        sat = _make_satrec_from_dict(gpes.row(0, named=True))
 
         # Build the second polyjectory.
         pj2 = make_sgp4_polyjectory([sat], jd_begin, jd_begin + 1)[0]
@@ -758,7 +750,8 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
 
         from .. import make_sgp4_polyjectory
         import pathlib
-        from sgp4.api import SatrecArray, Satrec
+        from sgp4.api import SatrecArray
+        from .._sgp4_polyjectory import _make_satrec_from_dict
 
         # from sgp4.api import Satrec
         import polars as pl
@@ -790,10 +783,7 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
             tspan = np.linspace(0.0, np.nextafter(prop_time, -1.0), N_times)
 
             # Create the satellite objects.
-            sat_list = [
-                Satrec.twoline2rv(_["tle_line1"], _["tle_line2"])
-                for _ in gpes.iter_rows(named=True)
-            ]
+            sat_list = [_make_satrec_from_dict(_) for _ in gpes.iter_rows(named=True)]
 
             # Create the satrec array.
             sat_arr = SatrecArray(sat_list)
