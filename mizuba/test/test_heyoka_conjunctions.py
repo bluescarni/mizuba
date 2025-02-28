@@ -136,7 +136,10 @@ class heyoka_conjunctions_test_case(_ut.TestCase):
         cur_dir = pathlib.Path(__file__).parent.resolve()
 
         # Load the test data.
-        gpes = pl.read_parquet(cur_dir / "strack_20240705.parquet")
+        try:
+            gpes = pl.read_parquet(cur_dir / "strack_20240705.parquet")
+        except Exception:
+            return
 
         # Create the satellite objects.
         sat_list = [_make_satrec_from_dict(_) for _ in gpes.iter_rows(named=True)]

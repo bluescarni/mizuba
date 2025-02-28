@@ -42,3 +42,6 @@ wheel.packages = []
 cmake.define.MIZUBA_ENABLE_IPO = "ON"
 # Custom install path setting.
 cmake.define.MIZUBA_INSTALL_PATH = "."
+# Exclude certain test data files from the wheel in order
+# to curb the size.
+wheel.exclude = ["strack_*.parquet", "full_catalog.parquet"]
