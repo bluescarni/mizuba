@@ -169,12 +169,12 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
 
     // Create a const span into cd_srt_aabbs.
     using const_aabbs_span_t = heyoka::mdspan<const float, heyoka::extents<std::size_t, std::dynamic_extent, 2, 4>>;
-    const_aabbs_span_t cd_srt_aabbs_span{cd_srt_aabbs.data(), tot_n_objs + 1u};
+    const const_aabbs_span_t cd_srt_aabbs_span{cd_srt_aabbs.data(), tot_n_objs + 1u};
 
 #if !defined(NDEBUG)
 
     // Create a const span into cd_aabbs.
-    const_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), tot_n_objs + 1u};
+    const const_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), tot_n_objs + 1u};
 
 #endif
 
@@ -194,7 +194,7 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
     // with trajectory data for the current conjunction step. These objects
     // are sorted first into the morton order, and their total number can be
     // determined from the number of objects in the root node of the tree.
-    assert(tree.size() > 0u);
+    assert(!tree.empty());
     const auto n_objs = tree[0].end - tree[0].begin;
     assert(n_objs <= tot_n_objs);
 
@@ -251,6 +251,7 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
                 const auto z_ub = cd_srt_aabbs_span(obj_idx, 1, 2);
                 const auto r_ub = cd_srt_aabbs_span(obj_idx, 1, 3);
 
+                // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
                 do {
                     // Pop a node.
                     const auto cur_node_idx = stack.back();
@@ -320,7 +321,7 @@ std::vector<conjunctions::aabb_collision> conjunctions::detect_conjunctions_broa
             // Atomically merge rng_bp_coll_vec into bp_coll_vector.
             // NOTE: ensure we do this at the end of the scope in order to minimise
             // the locking time.
-            std::lock_guard lock(bp_coll_vector_mutex);
+            const std::lock_guard lock(bp_coll_vector_mutex);
             bp_coll_vector.insert(bp_coll_vector.end(), rng_bp_coll_vec.begin(), rng_bp_coll_vec.end());
         });
 

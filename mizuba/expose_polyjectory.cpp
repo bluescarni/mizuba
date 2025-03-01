@@ -54,8 +54,11 @@ namespace
 {
 
 // Global data for use in add_weak_ptr_cleanup().
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 constinit std::mutex pj_weak_ptr_mutex;
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 constinit std::vector<std::weak_ptr<mizuba::detail::polyjectory_impl>> pj_weak_ptr_vector;
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cert-err58-cpp,cert-msc51-cpp,cert-msc32-c)
 std::mt19937 pj_weak_ptr_rng;
 
 // Helper to setup the selector in the exposition of polyjectory::state_(m)eval().
@@ -63,9 +66,7 @@ std::mt19937 pj_weak_ptr_rng;
 // return value may return a reference to it.
 auto eval_setup_selector(const auto &selector)
 {
-    namespace mz = mizuba;
-
-    std::optional<mz::dspan_1d<const std::size_t>> sel;
+    std::optional<mizuba::dspan_1d<const std::size_t>> sel;
 
     if (selector) {
         std::visit(
@@ -102,6 +103,7 @@ void expose_polyjectory(pybind11::module_ &m)
 {
     namespace py = pybind11;
     namespace mz = mizuba;
+    // NOLINTNEXTLINE(google-build-using-namespace)
     using namespace py::literals;
 
     // Implement custom logic to be executed when closing a polyjectory's datafiles.
@@ -123,8 +125,9 @@ void expose_polyjectory(pybind11::module_ &m)
 
     py::class_<mz::polyjectory> pt_cl(m, "polyjectory", py::dynamic_attr{});
     pt_cl.def(
-        py::init([](py::iterable trajs_, py::iterable times_, py::iterable status_, double epoch, double epoch2,
-                    std::optional<std::filesystem::path> data_dir, bool persist,
+        // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+        py::init([](const py::iterable &trajs_, const py::iterable &times_, const py::iterable &status_, double epoch,
+                    double epoch2, std::optional<std::filesystem::path> data_dir, bool persist,
                     std::optional<std::filesystem::path> tmpdir) {
             auto traj_trans = [](const py::array_t<double> &arr) {
                 // Check shape/dimension.
@@ -213,8 +216,8 @@ void expose_polyjectory(pybind11::module_ &m)
     pt_cl.def_static(
         "from_datafiles",
         [](const std::filesystem::path &orig_traj_file_path, const std::filesystem::path &orig_time_file_path,
-           std::uint32_t order, py::array_t<traj_offset> traj_offsets_, std::vector<std::int32_t> status, double epoch,
-           double epoch2, std::optional<std::filesystem::path> data_dir, bool persist,
+           std::uint32_t order, const py::array_t<traj_offset> &traj_offsets_, std::vector<std::int32_t> status,
+           double epoch, double epoch2, std::optional<std::filesystem::path> data_dir, bool persist,
            std::optional<std::filesystem::path> tmpdir) {
             if (traj_offsets_.ndim() != 1) [[unlikely]] {
                 throw std::invalid_argument(
@@ -232,7 +235,7 @@ void expose_polyjectory(pybind11::module_ &m)
             }
 
             // NOTE: release the GIL during construction.
-            py::gil_scoped_release release;
+            const py::gil_scoped_release release;
 
             mz::polyjectory ret(orig_traj_file_path, orig_time_file_path, order, std::move(traj_offsets),
                                 std::move(status), epoch, epoch2, std::move(data_dir), persist, std::move(tmpdir));
@@ -263,7 +266,7 @@ void expose_polyjectory(pybind11::module_ &m)
         "mount",
         [](const std::filesystem::path &path) {
             // NOTE: release the GIL during construction.
-            py::gil_scoped_release release;
+            const py::gil_scoped_release release;
 
             auto ret = mz::polyjectory::mount(path);
 
@@ -397,7 +400,7 @@ void expose_polyjectory(pybind11::module_ &m)
                     }();
 
                     // NOTE: release the GIL during evaluation.
-                    py::gil_scoped_release release;
+                    const py::gil_scoped_release release;
 
                     self.state_eval(out_span, tm_arg, sel);
                 },
@@ -495,7 +498,7 @@ void expose_polyjectory(pybind11::module_ &m)
                     = mz::dspan_1d<const double>(tm.data(), boost::numeric_cast<std::size_t>(tm.shape(0)));
 
                 // NOTE: release the GIL during evaluation.
-                py::gil_scoped_release release;
+                const py::gil_scoped_release release;
 
                 self.state_meval(out_span, tm_span, sel);
             } else {
@@ -504,7 +507,7 @@ void expose_polyjectory(pybind11::module_ &m)
                                                  boost::numeric_cast<std::size_t>(tm.shape(1)));
 
                 // NOTE: release the GIL during evaluation.
-                py::gil_scoped_release release;
+                const py::gil_scoped_release release;
 
                 self.state_meval(out_span, tm_span, sel);
             }

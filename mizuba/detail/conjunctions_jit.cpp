@@ -142,10 +142,10 @@ void add_poly_translator_a7(heyoka::llvm_state &s, std::uint32_t order)
 // Utilities for the implementation of the Cargo-Shisha algorithm.
 
 // min() implementation with nan propagation: (b == b) ? ((b < a) ? b : a) : b.
-auto hy_min = [](auto a, auto b) { return select(eq(b, b), select(lt(b, a), b, a), b); };
+const auto hy_min = [](const auto &a, const auto &b) { return select(eq(b, b), select(lt(b, a), b, a), b); };
 
 // max() implementation with nan propagation: (b == b) ? ((a < b) ? b : a) : b.
-auto hy_max = [](auto a, auto b) { return select(eq(b, b), select(lt(a, b), b, a), b); };
+const auto hy_max = [](const auto &a, const auto &b) { return select(eq(b, b), select(lt(a, b), b, a), b); };
 
 // Pairwise reduction on a list of values vals using the binary functor f.
 auto pairwise_reduce(auto vals, const auto &f)
@@ -302,6 +302,7 @@ void add_aabb_cs_func(heyoka::llvm_state &s, std::uint32_t order)
 void add_cs_enc_func(heyoka::llvm_state &s, std::uint32_t order)
 {
     namespace hy = heyoka;
+    // NOLINTNEXTLINE(google-build-using-namespace)
     using namespace hy::literals;
 
     // The inputs of the function are the polynomial coefficients.
@@ -338,12 +339,14 @@ void add_batched_cheby_eval6(heyoka::llvm_state &s, std::uint32_t order)
 
     // Create the expressions representing the input polynomial coefficients.
     std::vector<hy::expression> cfs;
+    cfs.reserve(op1);
     for (std::uint32_t i = 0; i < op1; ++i) {
         cfs.emplace_back(fmt::format("c_{}", i));
     }
 
     // Create the Cheby nodes in the [0, par[0]] range.
     std::vector<hy::expression> eval_points;
+    eval_points.reserve(op1);
     for (std::uint32_t i = 0; i < op1; ++i) {
         eval_points.push_back((std::cos((2. * i + 1.) / (2. * op1) * boost::math::constants::pi<double>()) + 1.) / 2.
                               * hy::par[0]);
@@ -426,6 +429,7 @@ namespace
 
 // Mutex for safe access to the global JIT data
 // for conjunction detection.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 constinit std::mutex conj_jit_data_map_mutex;
 
 } // namespace
@@ -434,7 +438,7 @@ const conj_jit_data &get_conj_jit_data(std::uint32_t order)
 {
     static std::unordered_map<std::uint32_t, conj_jit_data> conj_jit_data_map;
 
-    std::lock_guard lock{conj_jit_data_map_mutex};
+    const std::lock_guard lock{conj_jit_data_map_mutex};
 
     const auto [it, new_insertion] = conj_jit_data_map.try_emplace(order, order);
 

@@ -36,6 +36,7 @@
 
 #endif
 
+// NOLINTNEXTLINE(bugprone-suspicious-include)
 #include "SGP4.cpp"
 
 #if defined(__GNUC__)

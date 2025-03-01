@@ -245,7 +245,7 @@ std::tuple<T, int> bracketed_root_find(const T *poly, std::uint32_t order, T lb,
     // Run the root finder.
     const auto p = boost::math::tools::toms748_solve([poly, order](T x) { return horner_eval(poly, order, x); }, lb, ub,
                                                      boost::math::tools::eps_tolerance<T>(), max_iter, pol{});
-    const auto ret = p.first / 2 + p.second / 2;
+    const auto ret = (p.first / 2) + (p.second / 2);
 
     if (errno > 0) {
         // Some error condition arose during root finding,
@@ -351,6 +351,7 @@ bool run_poly_root_finding(const double *poly, std::uint32_t order, double rf_in
     // loop below.
     wlist.emplace_back(0, 1, std::move(tmp));
 
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     do {
         // Fetch the current interval and polynomial from the working list.
         // NOTE: from now on, tmp contains the polynomial referred
@@ -398,7 +399,7 @@ bool run_poly_root_finding(const double *poly, std::uint32_t order, double rf_in
             pt1(tmp2.v.data(), tmp1.v.data());
 
             // Finally we add tmp1 and tmp2 to the working list.
-            const auto mid = lb / 2 + ub / 2;
+            const auto mid = (lb / 2) + (ub / 2);
             wlist.emplace_back(lb, mid, std::move(tmp1));
             wlist.emplace_back(mid, ub, std::move(tmp2));
 
