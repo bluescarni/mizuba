@@ -1288,6 +1288,9 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
     }
 
     // Check the reentry/exit radiuses.
+    // NOTE: not sure why, but on the CI clang-tidy seems to think that
+    // std::isnan() returns int...
+    // NOLINTNEXTLINE(readability-implicit-bool-conversion)
     if (std::isnan(reentry_radius) || std::isnan(exit_radius)) [[unlikely]] {
         throw std::invalid_argument("The reentry/exit radiuses cannot be NaN");
     }
