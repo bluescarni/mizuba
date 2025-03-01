@@ -205,6 +205,8 @@ void verify_bvh_tree(const auto &srt_mcodes, const auto &bvh_tree, const auto &a
                 const auto common_init_bits = srt_mcodes[cur_node.begin] >> (64u - cur_aux_data.split_idx);
 
                 for (auto obj_idx = cur_node.begin + 1u; obj_idx != cur_node.end; ++obj_idx) {
+                    // NOTE: this looks like a clang-tidy issue.
+                    // NOLINTNEXTLINE(bugprone-assert-side-effect)
                     assert((srt_mcodes[obj_idx] >> (64u - cur_aux_data.split_idx)) == common_init_bits);
                 }
             } else {
@@ -275,7 +277,7 @@ void conjunctions::detect_conjunctions_bvh(std::vector<bvh_node> &tree, std::vec
 
     // Create a const span into cd_srt_aabbs.
     using const_aabbs_span_t = heyoka::mdspan<const float, heyoka::extents<std::size_t, std::dynamic_extent, 2, 4>>;
-    const_aabbs_span_t cd_srt_aabbs_span{cd_srt_aabbs.data(), tot_n_objs + 1u};
+    const const_aabbs_span_t cd_srt_aabbs_span{cd_srt_aabbs.data(), tot_n_objs + 1u};
 
     // Some objects may have no trajectory data during a conjunction step,
     // and thus they can (and must) not be included in the bvh tree.

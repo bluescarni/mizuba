@@ -202,7 +202,7 @@ void create_sized_file(const boost::filesystem::path &path, std::size_t size)
 #if defined(MIZUBA_HAVE_POSIX_2008)
 
     // Create the file.
-    const auto fd = ::open(path.c_str(), O_RDWR | O_CREAT, S_IRWXU);
+    const auto fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, S_IRWXU);
     if (fd == -1) [[unlikely]] {
         // LCOV_EXCL_START
         throw std::runtime_error(fmt::format("Unable to create the sized file '{}'", path.string()));
@@ -210,6 +210,7 @@ void create_sized_file(const boost::filesystem::path &path, std::size_t size)
     }
 
     // RAII file closer.
+    // NOLINTNEXTLINE(hicpp-special-member-functions,cppcoreguidelines-special-member-functions)
     const struct file_closer {
         int fd;
         ~file_closer()
@@ -270,7 +271,7 @@ file_pwrite::file_pwrite(boost::filesystem::path path) : m_path(std::move(path))
 #else
 
     // Attempt to open the file.
-    m_fd = ::open(m_path.c_str(), O_WRONLY);
+    m_fd = ::open(m_path.c_str(), O_WRONLY | O_CLOEXEC);
     if (m_fd == -1) [[unlikely]] {
         // LCOV_EXCL_START
         throw std::runtime_error(fmt::format("Could not open the file '{}'", m_path.string()));
@@ -316,7 +317,9 @@ void file_pwrite::close() noexcept
     if (m_fd != -1) {
         if (::close(m_fd) == -1) [[unlikely]] {
             // LCOV_EXCL_START
-            std::cerr << "An error was detected while trying to close the file '" << m_path.string() << "'"
+            std::cerr << "An error was detected while trying to close the file '" << m_path.string()
+                      << "'"
+                      // NOLINTNEXTLINE(performance-avoid-endl)
                       << std::endl;
             // LCOV_EXCL_STOP
         }
@@ -327,6 +330,7 @@ void file_pwrite::close() noexcept
 #endif
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 void file_pwrite::pwrite(const void *buffer, std::size_t size, std::size_t offset)
 {
     // Check that we are not writing into a closed file.
@@ -380,6 +384,7 @@ void file_pwrite::pwrite(const void *buffer, std::size_t size, std::size_t offse
     safe_off_t oset = offset;
 
     // NOTE: pwrite() may produce partial writes, in which case we are supposed to try again.
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     do {
         const auto written_sz = ::pwrite(m_fd, buffer, sz, oset);
 

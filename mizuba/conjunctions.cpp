@@ -125,6 +125,7 @@ struct conjunctions_impl {
     // Pointer to the beginning of m_file_conjs, cast to conj.
     const conj *m_conjs_ptr = nullptr;
 
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     explicit conjunctions_impl(boost::filesystem::path temp_dir_path, const polyjectory &pj, double conj_thresh,
                                double conj_det_interval, std::size_t n_cd_steps, std::vector<double> cd_end_times,
                                std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets,
@@ -181,7 +182,7 @@ struct conjunctions_impl {
         }
     }
 
-    [[nodiscard]] bool is_open() noexcept
+    [[nodiscard]] bool is_open() const noexcept
     {
         return m_file_aabbs.is_open();
     }

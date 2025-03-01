@@ -175,12 +175,14 @@ struct polyjectory_impl {
         // Assign the pointers to the memory-mapped data.
         // NOTE: this is technically UB. We would use std::start_lifetime_as in C++23:
         // https://en.cppreference.com/w/cpp/memory/start_lifetime_as
+        // NOLINTBEGIN(cppcoreguidelines-prefer-member-initializer)
         m_desc_ptr = reinterpret_cast<const descriptor *>(m_desc_file.data());
         m_traj_offsets_ptr = reinterpret_cast<const traj_offset *>(m_traj_offsets_file.data());
         m_time_offsets_ptr = reinterpret_cast<const std::size_t *>(m_time_offsets_file.data());
         m_traj_ptr = reinterpret_cast<const double *>(m_traj_file.data());
         m_time_ptr = reinterpret_cast<const double *>(m_time_file.data());
         m_status_ptr = reinterpret_cast<const std::int32_t *>(m_status_file.data());
+        // NOLINTEND(cppcoreguidelines-prefer-member-initializer)
     }
 
     // NOTE: constructor for the implementation of the mount() functionality.
@@ -195,11 +197,13 @@ struct polyjectory_impl {
         m_status_file.open((m_data_dir_path / "status").string());
 
         // Assign the pointers to the memory-mapped data.
+        // NOLINTBEGIN(cppcoreguidelines-prefer-member-initializer)
         m_traj_offsets_ptr = reinterpret_cast<const traj_offset *>(m_traj_offsets_file.data());
         m_time_offsets_ptr = reinterpret_cast<const std::size_t *>(m_time_offsets_file.data());
         m_traj_ptr = reinterpret_cast<const double *>(m_traj_file.data());
         m_time_ptr = reinterpret_cast<const double *>(m_time_file.data());
         m_status_ptr = reinterpret_cast<const std::int32_t *>(m_status_file.data());
+        // NOLINTEND(cppcoreguidelines-prefer-member-initializer)
 
         // Check the version.
         // NOTE: load the version field manually from the file. The intent here
@@ -231,7 +235,7 @@ struct polyjectory_impl {
         }
     }
 
-    [[nodiscard]] bool is_open() noexcept
+    [[nodiscard]] bool is_open() const noexcept
     {
         // NOTE: this boils down to a simple pointer check in the Boost
         // implementation, hence this is trivially noexcept.
@@ -309,6 +313,7 @@ const std::shared_ptr<polyjectory_impl> &fetch_pj_impl(const polyjectory &pj) no
 // custom logic that needs to be invoked at the beginning and at the end of the function.
 // The custom logic is to be implemented in the ctor and dtor of the object that will
 // be returned wrapped in a std::any. The default implementation of this hook is a no-op.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 std::function<std::any()> pj_close_raii_hook = []() { return std::any{}; }; // LCOV_EXCL_LINE
 
 namespace
@@ -858,10 +863,10 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
                 }
 
                 // Memory-map the files.
-                boost::iostreams::mapped_file_source traj_file(traj_path);
+                const boost::iostreams::mapped_file_source traj_file(traj_path);
                 const auto *traj_file_base_ptr = reinterpret_cast<const double *>(traj_file.data());
 
-                boost::iostreams::mapped_file_source time_file(time_path);
+                const boost::iostreams::mapped_file_source time_file(time_path);
                 const auto *time_file_base_ptr = reinterpret_cast<const double *>(time_file.data());
 
                 // Check the data and compute maxT.
@@ -1053,7 +1058,7 @@ std::filesystem::path polyjectory::get_data_dir() const
     check_attached();
 
     // NOTE: we made sure on construction that the dir path is canonicalised.
-    return std::filesystem::path(m_impl->m_data_dir_path.c_str());
+    return {m_impl->m_data_dir_path.c_str()};
 }
 
 dspan_1d<const std::int32_t> polyjectory::get_status() const
@@ -1074,6 +1079,7 @@ namespace
 // pj is the polyjectory, obj_idx the object's index in the polyjectory, tm the evaluation
 // time (measured from the polyjectory's epoch), out_ptr the pointer into which the result of
 // the evaluation will be written.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, double *out_ptr)
 {
     // Check the desired evaluation time.
@@ -1115,11 +1121,11 @@ void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, do
     // LCOV_EXCL_STOP
 
     // Fetch begin/end iterators to the time span.
-    const auto t_begin = time_span.data_handle();
-    const auto t_end = t_begin + (nsteps + 1u);
+    const auto *t_begin = time_span.data_handle();
+    const auto *t_end = t_begin + (nsteps + 1u);
 
     // Look for the first trajectory step that ends *after* the evaluation time.
-    const auto tm_it = std::ranges::upper_bound(t_begin + 1, t_end, tm);
+    const auto *tm_it = std::ranges::upper_bound(t_begin + 1, t_end, tm);
     assert(tm_it != t_end);
 
     // Compute the time coordinate needed for polynomial evaluation.

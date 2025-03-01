@@ -43,6 +43,7 @@ void expose_make_sgp4_polyjectory(pybind11::module_ &m)
 {
     namespace py = pybind11;
     namespace mz = mizuba;
+    // NOLINTNEXTLINE(google-build-using-namespace)
     using namespace py::literals;
 
     // Register the GPE dtype.
@@ -52,7 +53,7 @@ void expose_make_sgp4_polyjectory(pybind11::module_ &m)
 
     m.def(
         "_make_sgp4_polyjectory",
-        [](py::array_t<gpe> gpes, const double jd_begin, const double jd_end, const double reentry_radius,
+        [](const py::array_t<gpe> &gpes, const double jd_begin, const double jd_end, const double reentry_radius,
            const double exit_radius, std::optional<std::filesystem::path> data_dir, bool persist,
            std::optional<std::filesystem::path> tmpdir) {
             // Check the number of dimensions for gpes.
@@ -71,7 +72,7 @@ void expose_make_sgp4_polyjectory(pybind11::module_ &m)
                 = mz::dspan_1d<const gpe>{gpes.data(), boost::numeric_cast<std::size_t>(gpes.shape(0))};
 
             // NOTE: release the GIL during the creation of the polyjectory.
-            py::gil_scoped_release release;
+            const py::gil_scoped_release release;
 
             auto ret = mz::make_sgp4_polyjectory(gpes_span, jd_begin, jd_end, reentry_radius, exit_radius,
                                                  std::move(data_dir), persist, std::move(tmpdir));
