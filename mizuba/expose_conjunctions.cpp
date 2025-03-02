@@ -26,6 +26,7 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/stl/filesystem.h>
 
 #include "common_utils.hpp"
 #include "conjunctions.hpp"
@@ -78,20 +79,23 @@ void expose_conjunctions(pybind11::module_ &m)
 
     // Conjunctions.
     py::class_<mz::conjunctions> conj_cl(m, "conjunctions", py::dynamic_attr{});
-    conj_cl.def(py::init([](const mz::polyjectory &pj, double conj_thresh, double conj_det_interval,
-                            std::optional<std::vector<std::int32_t>> otypes) {
-                    // NOTE: release the GIL during conjunction detection.
-                    const py::gil_scoped_release release;
+    conj_cl.def(
+        py::init([](const mz::polyjectory &pj, double conj_thresh, double conj_det_interval,
+                    std::optional<std::vector<std::int32_t>> otypes, std::optional<std::filesystem::path> data_dir,
+                    std::optional<std::filesystem::path> tmpdir) {
+            // NOTE: release the GIL during conjunction detection.
+            const py::gil_scoped_release release;
 
-                    auto ret = mz::conjunctions(pj, conj_thresh, conj_det_interval, std::move(otypes));
+            auto ret = mz::conjunctions(pj, conj_thresh, conj_det_interval, std::move(otypes), std::move(data_dir),
+                                        std::move(tmpdir));
 
-                    // Register the conjunctions implementation in the cleanup machinery.
-                    detail::add_cj_weak_ptr(mz::detail::fetch_cj_impl(ret));
+            // Register the conjunctions implementation in the cleanup machinery.
+            detail::add_cj_weak_ptr(mz::detail::fetch_cj_impl(ret));
 
-                    return ret;
-                }),
-                "pj"_a.noconvert(), "conj_thresh"_a.noconvert(), "conj_det_interval"_a.noconvert(),
-                "otypes"_a.noconvert() = py::none{});
+            return ret;
+        }),
+        "pj"_a.noconvert(), "conj_thresh"_a.noconvert(), "conj_det_interval"_a.noconvert(),
+        "otypes"_a.noconvert() = py::none{}, "data_dir"_a = py::none{}, "tmpdir"_a = py::none{});
     conj_cl.def_property_readonly("n_cd_steps", &mz::conjunctions::get_n_cd_steps);
     conj_cl.def_property_readonly("aabbs", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);

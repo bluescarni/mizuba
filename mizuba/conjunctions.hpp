@@ -23,6 +23,7 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <span>
@@ -199,7 +200,8 @@ private:
 
 public:
     explicit conjunctions(const polyjectory &pj, double conj_thresh, double conj_det_interval,
-                          std::optional<std::vector<std::int32_t>>);
+                          std::optional<std::vector<std::int32_t>>, std::optional<std::filesystem::path>,
+                          std::optional<std::filesystem::path>);
 
     conjunctions(const conjunctions &);
     conjunctions(conjunctions &&) noexcept;
