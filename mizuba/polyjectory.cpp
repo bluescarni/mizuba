@@ -1121,11 +1121,11 @@ void pj_eval_obj_state(const polyjectory &pj, std::size_t obj_idx, double tm, do
     // LCOV_EXCL_STOP
 
     // Fetch begin/end iterators to the time span.
-    const auto *t_begin = time_span.data_handle();
-    const auto *t_end = t_begin + (nsteps + 1u);
+    const auto *const t_begin = time_span.data_handle();
+    const auto *const t_end = t_begin + (nsteps + 1u);
 
     // Look for the first trajectory step that ends *after* the evaluation time.
-    const auto *tm_it = std::ranges::upper_bound(t_begin + 1, t_end, tm);
+    const auto *const tm_it = std::ranges::upper_bound(t_begin + 1, t_end, tm);
     assert(tm_it != t_end);
 
     // Compute the time coordinate needed for polynomial evaluation.

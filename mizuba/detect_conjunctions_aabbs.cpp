@@ -117,8 +117,8 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
     std::ranges::fill(cs_pars.begin() + 14, cs_pars.end(), conj_radius);
 
     // Fetch begin/end iterators to the time span.
-    const auto *t_begin = time_span.data_handle();
-    const auto *t_end = t_begin + (nsteps + 1u);
+    const auto *const t_begin = time_span.data_handle();
+    const auto *const t_end = t_begin + (nsteps + 1u);
 
     // We need to locate the range in the trajectory data
     // that temporally overlaps with the current conjunction step.
