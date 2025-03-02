@@ -96,6 +96,7 @@ void interpolate_dist2_poly(double *batched_cheby_eval6_out_ptr, const double *d
                             double *ptd2_ptr, double rf_int, auto *batched_cheby_eval6, auto *pinterp,
                             std::uint32_t order)
 {
+    // NOLINTNEXTLINE(misc-unused-alias-decls)
     namespace hy = heyoka;
 
     // Compute op1.
@@ -120,7 +121,7 @@ void interpolate_dist2_poly(double *batched_cheby_eval6_out_ptr, const double *d
     // - the number of evaluation points,
     // - 6 copies of the same evaluation point.
     const auto eval_points_span = hy::mdspan<const double, hy::extents<std::size_t, std::dynamic_extent, 6>>(
-        batched_cheby_eval6_out_ptr + static_cast<std::size_t>(6) * op1, op1);
+        batched_cheby_eval6_out_ptr + (static_cast<std::size_t>(6) * op1), op1);
 
     // Setup interp_input_ptr, the input for the interpolation.
     for (std::size_t i = 0; i < op1; ++i) {
@@ -166,6 +167,7 @@ void interpolate_dist2_poly(double *batched_cheby_eval6_out_ptr, const double *d
 std::vector<conjunctions::conj>
 conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjectory &pj,
                                                const std::vector<aabb_collision> &cd_bp_collisions,
+                                               // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
                                                const detail::conj_jit_data &cjd, double conj_thresh,
                                                double conj_det_interval, std::size_t n_cd_steps, np_report &np_rep)
 {
@@ -283,12 +285,12 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
             // NOTE: static casts to std::size_t here are ok, we checked for overflow upon construction
             // of pbuffer.
             auto *pti_ptr = pbuffer.data();
-            auto *ptj_ptr = pti_ptr + static_cast<std::size_t>(7) * (order + 1u);
-            auto *ptd2_ptr = ptj_ptr + static_cast<std::size_t>(7) * (order + 1u);
+            auto *ptj_ptr = pti_ptr + (static_cast<std::size_t>(7) * (order + 1u));
+            auto *ptd2_ptr = ptj_ptr + (static_cast<std::size_t>(7) * (order + 1u));
             auto *ptd2p_ptr = ptd2_ptr + (order + 1u);
             auto *diff_input_ptr = ptd2p_ptr + (order + 1u);
-            auto *batched_cheby_eval6_out_ptr = diff_input_ptr + static_cast<std::size_t>(6) * (order + 1u);
-            auto *interp_input_ptr = batched_cheby_eval6_out_ptr + static_cast<std::size_t>(12) * (order + 1u);
+            auto *batched_cheby_eval6_out_ptr = diff_input_ptr + (static_cast<std::size_t>(6) * (order + 1u));
+            auto *interp_input_ptr = batched_cheby_eval6_out_ptr + (static_cast<std::size_t>(12) * (order + 1u));
 
             // Prepare the local conjunction vector.
             local_conj_vec.clear();
@@ -561,7 +563,7 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
                             const auto diff_x = ri[0] - rj[0];
                             const auto diff_y = ri[1] - rj[1];
                             const auto diff_z = ri[2] - rj[2];
-                            const auto conj_dist = std::sqrt(diff_x * diff_x + diff_y * diff_y + diff_z * diff_z);
+                            const auto conj_dist = std::sqrt((diff_x * diff_x) + (diff_y * diff_y) + (diff_z * diff_z));
 
                             local_conj_vec.emplace_back(i, j,
                                                         // NOTE: we want to store here the absolute
@@ -731,7 +733,7 @@ conjunctions::detect_conjunctions_narrow_phase(std::size_t cd_idx, const polyjec
             // Atomically merge local_conj_vec into conj_vector.
             // NOTE: ensure we do this at the end of the scope in order to minimise
             // the locking time.
-            std::lock_guard lock(conj_vector_mutex);
+            const std::lock_guard lock(conj_vector_mutex);
             conj_vector.insert(conj_vector.end(), local_conj_vec.begin(), local_conj_vec.end());
         });
 

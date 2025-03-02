@@ -91,7 +91,7 @@ stopwatch::stopwatch() : m_start_tp{clock::now()} {}
 
 std::chrono::duration<double> stopwatch::elapsed() const
 {
-    return std::chrono::duration<double>(clock::now() - m_start_tp);
+    return {clock::now() - m_start_tp};
 }
 
 std::chrono::duration<std::int64_t, std::nano> stopwatch::elapsed_ns() const

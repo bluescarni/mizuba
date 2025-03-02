@@ -36,6 +36,7 @@ PYBIND11_MODULE(core, m)
     namespace py = pybind11;
     namespace mz = mizuba;
     namespace mzpy = mizuba_py;
+    // NOLINTNEXTLINE(google-build-using-namespace)
     using namespace py::literals;
 
     // Disable automatic function signatures in the docs.
@@ -89,6 +90,7 @@ PYBIND11_MODULE(core, m)
     auto atexit = py::module_::import("atexit");
     atexit.attr("register")(py::cpp_function([]() {
 #if !defined(NDEBUG)
+        // NOLINTNEXTLINE(performance-avoid-endl)
         std::cout << "Running the Python cleanup function" << std::endl;
 #endif
 

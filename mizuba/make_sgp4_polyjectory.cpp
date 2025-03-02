@@ -228,6 +228,7 @@ void build_tplts(auto &ta_kepler_tplt, auto &sgp4_prop_tplt, auto &jit_state_tpl
 // The return value will be 0 if everything went ok, otherwise an sgp4 error code will be returned.
 int gpe_eval_vallado(auto &interp_buffer, elsetrec &satrec, const auto &sample_points)
 {
+    // NOLINTNEXTLINE(misc-unused-alias-decls)
     namespace hy = heyoka;
 
     // Fetch the interpolation order + 1.
@@ -239,7 +240,7 @@ int gpe_eval_vallado(auto &interp_buffer, elsetrec &satrec, const auto &sample_p
     // Evaluate positions and velocities at the sample points, writing the result
     // into the second chunk of interp_buffer.
     const auto ibspan1 = hy::mdspan<double, heyoka::extents<std::size_t, std::dynamic_extent, 7>>{
-        interp_buffer.data() + op1 * 7u, op1};
+        interp_buffer.data() + (op1 * 7u), op1};
     for (std::size_t i = 0; i < op1; ++i) {
         // NOTE: we can write directly into ibspan1.
         SGP4Funcs::sgp4(satrec, sample_points[i], &ibspan1[i, 0], &ibspan1[i, 3]);
@@ -249,8 +250,8 @@ int gpe_eval_vallado(auto &interp_buffer, elsetrec &satrec, const auto &sample_p
         }
 
         // Compute the radius.
-        ibspan1[i, 6]
-            = std::sqrt(ibspan1[i, 0] * ibspan1[i, 0] + ibspan1[i, 1] * ibspan1[i, 1] + ibspan1[i, 2] * ibspan1[i, 2]);
+        ibspan1[i, 6] = std::sqrt((ibspan1[i, 0] * ibspan1[i, 0]) + (ibspan1[i, 1] * ibspan1[i, 1])
+                                  + (ibspan1[i, 2] * ibspan1[i, 2]));
     }
 
     return 0;
@@ -268,6 +269,7 @@ int gpe_eval_vallado(auto &interp_buffer, elsetrec &satrec, const auto &sample_p
 // The return value will be 0 if everything went ok, otherwise an sgp4 error code will be returned.
 int gpe_eval_heyoka(auto &interp_buffer, auto &sgp4_prop, const auto &sample_points, auto *cfunc_r)
 {
+    // NOLINTNEXTLINE(misc-unused-alias-decls)
     namespace hy = heyoka;
 
     // Fetch the interpolation order + 1.
@@ -307,7 +309,8 @@ int gpe_eval_heyoka(auto &interp_buffer, auto &sgp4_prop, const auto &sample_poi
     cfunc_r(&ibspan0[6, 0], &ibspan0[0, 0], nullptr, nullptr);
 
     // Step 4: we transpose the evaluation output into the second chunk of interp_buffer.
-    const auto ibspan1 = hy::mdspan<double, heyoka::dextents<std::size_t, 2>>{interp_buffer.data() + op1 * 7u, op1, 7u};
+    const auto ibspan1
+        = hy::mdspan<double, heyoka::dextents<std::size_t, 2>>{interp_buffer.data() + (op1 * 7u), op1, 7u};
     for (std::size_t i = 0; i < op1; ++i) {
         for (auto j = 0u; j < 7u; ++j) {
             ibspan1[i, j] = ibspan0[j, i];
@@ -341,6 +344,7 @@ std::variant<double, int> eval_interp_error2(const double *cf_ptr, auto &interp_
                                              auto &xyz_ieval, const double step_begin_sat_epoch, bool is_deep_space,
                                              elsetrec &satrec, auto &sgp4_prop, auto *cfunc_r)
 {
+    // NOLINTNEXTLINE(misc-unused-alias-decls)
     namespace hy = heyoka;
 
     // Cache op1.
@@ -359,7 +363,7 @@ std::variant<double, int> eval_interp_error2(const double *cf_ptr, auto &interp_
     for (std::uint32_t i = 0; i < op1; ++i) {
         const auto prev_tm = (i == 0u) ? 0. : ipoints_span[i - 1u, 0];
         const auto cur_tm = ipoints_span[i, 0];
-        const auto eval_tm = prev_tm / 2 + cur_tm / 2;
+        const auto eval_tm = (prev_tm / 2) + (cur_tm / 2);
 
         auto &cur_xyz = xyz_ieval[i];
         for (auto j = 0u; j < 3u; ++j) {
@@ -382,7 +386,7 @@ std::variant<double, int> eval_interp_error2(const double *cf_ptr, auto &interp_
     for (std::uint32_t i = 0; i < op1; ++i) {
         const auto prev_tm = (i == 0u) ? (step_begin_sat_epoch * 1440.) : sample_points[i - 1u];
         const auto cur_tm = sample_points[i];
-        const auto eval_tm = prev_tm / 2 + cur_tm / 2;
+        const auto eval_tm = (prev_tm / 2) + (cur_tm / 2);
 
         interp_buffer[i] = eval_tm;
     }
@@ -400,7 +404,7 @@ std::variant<double, int> eval_interp_error2(const double *cf_ptr, auto &interp_
 
     // Fetch a span to the result of the evaluation within interp_buffer.
     const auto epoints_span = hy::mdspan<const double, hy::extents<std::size_t, std::dynamic_extent, 7>>(
-        interp_buffer.data() + op1 * static_cast<std::size_t>(7), op1);
+        interp_buffer.data() + (op1 * static_cast<std::size_t>(7)), op1);
 
     // Compute the maximum positional error squared.
     auto max_err2 = 0.;
@@ -411,7 +415,7 @@ std::variant<double, int> eval_interp_error2(const double *cf_ptr, auto &interp_
         const auto y_err = cur_xyz[1] - epoints_span[i, 1];
         const auto z_err = cur_xyz[2] - epoints_span[i, 2];
 
-        const auto cur_err2 = x_err * x_err + y_err * y_err + z_err * z_err;
+        const auto cur_err2 = (x_err * x_err) + (y_err * y_err) + (z_err * z_err);
 
         // NOTE: if something went awry with propagation or poly evaluation, we will
         // catch it here.
@@ -447,6 +451,7 @@ int gpe_interpolate_with_bisection(const double init_step_begin, const double in
                                    auto &ets, bool is_deep_space, elsetrec &satrec, auto &sgp4_prop, auto &poly_cf_buf,
                                    auto &time_buf)
 {
+    // NOLINTNEXTLINE(misc-unused-alias-decls)
     namespace hy = heyoka;
 
     // Minimum allowed step size (in days).
@@ -607,8 +612,8 @@ int gpe_interpolate_with_bisection(const double init_step_begin, const double in
             // The interpolation error is too high, bisect.
             // NOTE: since step_begin, step_end and cur_duration are all finite,
             // the bisection should not produce any non-finite value.
-            const auto mid = step_begin + cur_duration / 2;
-            const auto mid_sat_epoch = step_begin_sat_epoch + cur_duration_sat_epoch / 2;
+            const auto mid = step_begin + (cur_duration / 2);
+            const auto mid_sat_epoch = step_begin_sat_epoch + (cur_duration_sat_epoch / 2);
 
             stack.push_back({step_begin, mid, step_begin_sat_epoch, mid_sat_epoch});
             stack.push_back({mid, step_end, mid_sat_epoch, step_end_sat_epoch});
@@ -681,6 +686,7 @@ int gpe_interpolate_with_bisection(const double init_step_begin, const double in
 // The return value will be 0 if everything went ok, otherwise it will be either an sgp4 error code,
 // or error code 10 if non-finite values are detected.
 int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end, auto &ets, auto &poly_cf_buf,
+                    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
                     auto &time_buf, const auto &pj_epoch_tai, const double reentry_radius, const double exit_radius)
 {
     namespace hy = heyoka;
@@ -811,7 +817,7 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
             return satrec.error;
         }
         // Check for reentry/exit.
-        const auto begin_r2 = sgp4_r[0] * sgp4_r[0] + sgp4_r[1] * sgp4_r[1] + sgp4_r[2] * sgp4_r[2];
+        const auto begin_r2 = (sgp4_r[0] * sgp4_r[0]) + (sgp4_r[1] * sgp4_r[1]) + (sgp4_r[2] * sgp4_r[2]);
         if (begin_r2 < reentry_radius * reentry_radius) [[unlikely]] {
             return 11;
         }
@@ -849,10 +855,10 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
 
         // Compute the end of the current interpolation step (again, in days since the epoch of
         // the polyjectory).
-        const auto step_end = step_begin + h / 86400.;
+        const auto step_end = step_begin + (h / 86400.);
 
         // Compute it also with respect to the epoch of the satellite.
-        const auto step_end_sat_epoch = step_begin_sat_epoch + h / 86400.;
+        const auto step_end_sat_epoch = step_begin_sat_epoch + (h / 86400.);
 
         // Interpolate, isolating discontinuities via bisection.
         const auto res = gpe_interpolate_with_bisection(
@@ -884,10 +890,12 @@ int gpe_interpolate(const gpe &g, const auto &jdate_begin, const auto &jdate_end
 // groups (one per satellite). tmp_dir_path is the path to the output files. epoch_tai is the polyjectory's epoch,
 // that is, jd_begin converted to double-length TAI. reentry_radius and exit_radius are the reentry/exit radiuses.
 auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const auto &sgp4_prop_tplt,
+                     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
                      const auto &jit_state_tplt, const auto &gpe_groups, const double jd_begin, const double jd_end,
                      const auto &tmp_dir_path, const auto epoch_tai, const double reentry_radius,
                      const double exit_radius)
 {
+    // NOLINTNEXTLINE(misc-unused-alias-decls)
     namespace hy = heyoka;
     using dfloat = hy::detail::dfloat<double>;
     using safe_size_t = boost::safe_numerics::safe<std::size_t>;
@@ -1002,6 +1010,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
             // Buffer used to setup the gpe data in sgp4_prop.
             std::vector<double> sgp4_sat_data_buffer;
             // The Chebyshev nodes in the [-1, 1] range.
+            // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
             const std::vector<double> cheby_nodes_unit;
             // Sample points evaluation bufffer.
             std::vector<double> sample_points;
@@ -1279,6 +1288,9 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
     }
 
     // Check the reentry/exit radiuses.
+    // NOTE: not sure why, but on the CI clang-tidy seems to think that
+    // std::isnan() returns int...
+    // NOLINTNEXTLINE(readability-implicit-bool-conversion)
     if (std::isnan(reentry_radius) || std::isnan(exit_radius)) [[unlikely]] {
         throw std::invalid_argument("The reentry/exit radiuses cannot be NaN");
     }
@@ -1370,9 +1382,11 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
     // NOTE: from now on, we need to ensure that the temp dir is automatically
     // cleaned up, even in case of exceptions. We use this little RAII helper
     // for this purpose.
+    // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions,hicpp-special-member-functions)
     struct tmp_cleaner {
         // NOTE: store by reference so that we are sure that constructing
         // a tmp_cleaner cannot possibly throw.
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
         const boost::filesystem::path &path;
         ~tmp_cleaner()
         {
@@ -1391,9 +1405,10 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
 
     // Build and return the polyjectory.
     return polyjectory(std::filesystem::path((tmp_dir_path / "traj").string()),
-                       std::filesystem::path((tmp_dir_path / "time").string()), ta_kepler_tplt->get_order(),
-                       std::move(traj_offsets), std::move(status), epoch_tai.hi, epoch_tai.lo, std::move(data_dir),
-                       persist, std::move(tmpdir));
+                       std::filesystem::path((tmp_dir_path / "time").string()),
+                       // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+                       ta_kepler_tplt->get_order(), std::move(traj_offsets), std::move(status), epoch_tai.hi,
+                       epoch_tai.lo, std::move(data_dir), persist, std::move(tmpdir));
 }
 
 } // namespace mizuba

@@ -29,6 +29,7 @@
 
 #include "common_utils.hpp"
 #include "conjunctions.hpp"
+#include "expose_conjunctions.hpp"
 #include "polyjectory.hpp"
 
 namespace mizuba_py
@@ -41,8 +42,11 @@ namespace
 {
 
 // Global data for use in add_weak_ptr_cleanup().
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 constinit std::mutex cj_weak_ptr_mutex;
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 constinit std::vector<std::weak_ptr<mizuba::detail::conjunctions_impl>> cj_weak_ptr_vector;
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cert-err58-cpp,cert-msc51-cpp,cert-msc32-c)
 std::mt19937 cj_weak_ptr_rng;
 
 // Add a weak pointer to a conjunctions implementation to cj_weak_ptr_vector.
@@ -59,6 +63,7 @@ void expose_conjunctions(pybind11::module_ &m)
 {
     namespace py = pybind11;
     namespace mz = mizuba;
+    // NOLINTNEXTLINE(google-build-using-namespace)
     using namespace py::literals;
 
     // Register conjunctions::bvh_node as a structured NumPy datatype.
@@ -76,7 +81,7 @@ void expose_conjunctions(pybind11::module_ &m)
     conj_cl.def(py::init([](const mz::polyjectory &pj, double conj_thresh, double conj_det_interval,
                             std::optional<std::vector<std::int32_t>> otypes) {
                     // NOTE: release the GIL during conjunction detection.
-                    py::gil_scoped_release release;
+                    const py::gil_scoped_release release;
 
                     auto ret = mz::conjunctions(pj, conj_thresh, conj_det_interval, std::move(otypes));
 

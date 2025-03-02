@@ -125,11 +125,11 @@ void conjunctions::detect_conjunctions_morton(std::vector<std::uint64_t> &cd_mco
 
     // Create a const span into cd_aabbs.
     using const_aabbs_span_t = heyoka::mdspan<const float, heyoka::extents<std::size_t, std::dynamic_extent, 2, 4>>;
-    const_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), n_objs + 1u};
+    const const_aabbs_span_t cd_aabbs_span{cd_aabbs.data(), n_objs + 1u};
 
     // Create a mutable span into cd_srt_aabbs.
     using mut_aabbs_span_t = heyoka::mdspan<float, heyoka::extents<std::size_t, std::dynamic_extent, 2, 4>>;
-    mut_aabbs_span_t cd_srt_aabbs_span{cd_srt_aabbs.data(), n_objs + 1u};
+    const mut_aabbs_span_t cd_srt_aabbs_span{cd_srt_aabbs.data(), n_objs + 1u};
 
     // Fetch the global AABB for this conjunction step.
     const auto *glb = &cd_aabbs_span(n_objs, 0, 0);

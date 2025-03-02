@@ -60,6 +60,7 @@ namespace
 // trajectory of the object and the conjunction step. The overlap does not need to
 // be complete - that is, the trajectory may begin or end somewhen inside the
 // conjunction step.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_begin, double cd_end, double conj_thresh,
                          const detail::conj_jit_data &cjd)
 {
@@ -86,7 +87,7 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
     // the end of the conjunction step, or does not end strictly *after*
     // the begin of the conjunction step. This means there is no overlap at all
     // between the trajectory and the conjunction step.
-    if (!(time_span[0] < cd_end && time_span[nsteps] > cd_begin)) {
+    if (time_span[0] >= cd_end || time_span[nsteps] <= cd_begin) {
         return std::make_pair(lb, ub);
     }
 
@@ -116,8 +117,8 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
     std::ranges::fill(cs_pars.begin() + 14, cs_pars.end(), conj_radius);
 
     // Fetch begin/end iterators to the time span.
-    const auto t_begin = time_span.data_handle();
-    const auto t_end = t_begin + (nsteps + 1u);
+    const auto *const t_begin = time_span.data_handle();
+    const auto *const t_end = t_begin + (nsteps + 1u);
 
     // We need to locate the range in the trajectory data
     // that temporally overlaps with the current conjunction step.
@@ -126,23 +127,23 @@ auto compute_object_aabb(const polyjectory &pj, std::size_t obj_idx, double cd_b
     // *greater* than the begin of the conjunction step. This will be
     // the chronologically first trajectory step that spans over the
     // conjunction step.
-    const auto ts_begin = std::upper_bound(t_begin + 1, t_end, cd_begin);
+    const auto *const ts_begin = std::upper_bound(t_begin + 1, t_end, cd_begin);
     // Then, we locate the first trajectory step whose end is *greater than or
     // equal to* the end of the conjunction step. This will be
     // the chronologically last trajectory step that spans over the
     // conjunction step.
     // NOTE: instead of doing another binary search here, we could alternatively
     // start iterating from ts_begin and decide as-we-iterate when to stop.
-    auto ts_end = std::lower_bound(ts_begin, t_end, cd_end);
+    const auto *ts_end = std::lower_bound(ts_begin, t_end, cd_end);
     // Bump ts_end up by one in order to define a half-open iterator range.
     // NOTE: don't bump it if it is already at the end.
     // This happens if the trajectory data ends before the end of the
     // conjunction step.
-    ts_end += (ts_end != t_end);
+    ts_end += static_cast<int>(ts_end != t_end);
 
     // Iterate over all trajectory steps which overlap with the conjunction
     // step and update the bounding box for the current object.
-    for (auto it = ts_begin; it != ts_end; ++it) {
+    for (const auto *it = ts_begin; it != ts_end; ++it) {
         // it points to the end time of a trajectory step which overlaps
         // with the current conjunction step. The polynomial evaluation
         // interval is the intersection between the trajectory step and
@@ -297,6 +298,7 @@ void validate_global_aabbs(auto cd_aabbs_span)
 // If there is no trajectory data for an object within the conjunction step, the corresponding AABB
 // will be inited with infinities.
 void conjunctions::detect_conjunctions_aabbs(std::size_t cd_idx, std::vector<float> &cd_aabbs, const polyjectory &pj,
+                                             // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
                                              double conj_thresh, double conj_det_interval, std::size_t n_cd_steps,
                                              std::vector<double> &cd_end_times, const detail::conj_jit_data &cjd)
 {

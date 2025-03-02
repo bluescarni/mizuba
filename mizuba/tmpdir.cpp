@@ -37,6 +37,7 @@ namespace
 // env variable, or an empty path.
 std::filesystem::path init_tmpdir()
 {
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
     const auto *str = std::getenv("MIZUBA_TMPDIR");
 
     if (str == nullptr) {
@@ -49,7 +50,9 @@ std::filesystem::path init_tmpdir()
 // LCOV_EXCL_STOP
 
 // The global tmpdir variable, protected by a mutex.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 constinit std::mutex tmpdir_mutex;
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cert-err58-cpp)
 std::filesystem::path tmpdir = init_tmpdir();
 
 } // namespace
@@ -59,14 +62,14 @@ std::filesystem::path tmpdir = init_tmpdir();
 // Getter/setter for tmpdir, with mutex protection.
 std::filesystem::path get_tmpdir()
 {
-    std::lock_guard lock(detail::tmpdir_mutex);
+    const std::lock_guard lock(detail::tmpdir_mutex);
 
     return detail::tmpdir;
 }
 
 void set_tmpdir(std::filesystem::path path)
 {
-    std::lock_guard lock(detail::tmpdir_mutex);
+    const std::lock_guard lock(detail::tmpdir_mutex);
 
     detail::tmpdir = std::move(path);
 }
