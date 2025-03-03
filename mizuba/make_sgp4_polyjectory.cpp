@@ -1376,8 +1376,11 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
 
     log_trace("make_sgp4_polyjectory() validation/preparation time: {}s", sw);
 
-    // Assemble a "unique" dir path into the system temp dir.
-    const auto tmp_dir_path = detail::create_temp_dir("mizuba_sgp4_polyjectory-%%%%-%%%%-%%%%-%%%%");
+    // Assemble a "unique" dir path into either the system temp dir, or the tmpdir
+    // specified by the user.
+    const auto tmp_dir_path
+        = detail::create_temp_dir("mizuba_sgp4_polyjectory-%%%%-%%%%-%%%%-%%%%",
+                                  tmpdir ? boost::filesystem::path(*tmpdir) : std::optional<boost::filesystem::path>{});
 
     // NOTE: from now on, we need to ensure that the temp dir is automatically
     // cleaned up, even in case of exceptions. We use this little RAII helper
