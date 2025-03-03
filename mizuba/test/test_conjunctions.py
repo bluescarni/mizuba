@@ -489,6 +489,96 @@ class conjunctions_test_case(_ut.TestCase):
             t = c.get_bvh_tree(idx)
             self.assertEqual(t[0]["end"] - t[0]["begin"], tot_n_objs - 3)
 
+    def test_custom_data_dir(self):
+        # Test for custom data dir passed to the constructor.
+        import tempfile
+        from pathlib import Path
+        import os
+        from .. import (
+            conjunctions as conj,
+            polyjectory,
+        )
+        from ._planar_circ import _planar_circ_tcs, _planar_circ_times
+
+        # Single planar circular orbit case.
+        pj = polyjectory([_planar_circ_tcs], [_planar_circ_times], [0])
+
+        # Test failure with already-existing dir.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            data_dir = Path(tmpdirname) / "data_dir"
+            os.mkdir(data_dir)
+
+            with self.assertRaises(RuntimeError) as cm:
+                conj(pj, conj_thresh=0.1, conj_det_interval=0.01, data_dir=data_dir)
+            self.assertTrue("Error while creating the directory" in str(cm.exception))
+
+        # Check proper creation and usage of custom data dir.
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            data_dir = (Path(tmpdirname) / "data_dir").resolve()
+
+            self.assertFalse(data_dir.exists())
+
+            c = conj(pj, conj_thresh=0.1, conj_det_interval=0.01, data_dir=data_dir)
+
+            self.assertTrue(data_dir.exists())
+            self.assertTrue(data_dir.is_dir())
+
+            del c
+
+        # Check that an empty data dir path is treated as if not provided.
+        # NOTE: here we only check the lack of throwing.
+        conj(pj, conj_thresh=0.1, conj_det_interval=0.01, data_dir="")
+
+    def test_tmpdir(self):
+        # A test checking custom setting for tmpdir in the constructors.
+        import tempfile
+        from pathlib import Path
+        from .. import conjunctions as conj, polyjectory, set_tmpdir, get_tmpdir
+        from ._planar_circ import _planar_circ_tcs, _planar_circ_times
+
+        # Single planar circular orbit case.
+        pj = polyjectory([_planar_circ_tcs], [_planar_circ_times], [0])
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            tmpdir = Path(tmpdirname)
+
+            # NOTE: this checks that the dir is empty.
+            self.assertTrue(not any(tmpdir.iterdir()))
+
+            c = conj(pj, conj_thresh=0.1, conj_det_interval=0.01, tmpdir=tmpdir)
+
+            self.assertTrue(any(tmpdir.iterdir()))
+
+            del c
+
+        # A test to check that a custom tmpdir overrides
+        # the global tmpdir.
+        orig_global_tmpdir = get_tmpdir()
+        set_tmpdir(__file__)
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            tmpdir = Path(tmpdirname)
+
+            # NOTE: this checks that the dir is empty.
+            self.assertTrue(not any(tmpdir.iterdir()))
+
+            c = conj(pj, conj_thresh=0.1, conj_det_interval=0.01, tmpdir=tmpdir)
+
+            self.assertTrue(any(tmpdir.iterdir()))
+
+            del c
+
+        # Restore the original global temp dir.
+        set_tmpdir(orig_global_tmpdir)
+
+        # Check that we cannot specify both tmpdir and data_dir at the same time.
+        with self.assertRaises(ValueError) as cm:
+            conj(pj, conj_thresh=0.1, conj_det_interval=0.01, tmpdir="", data_dir="")
+        self.assertTrue(
+            "The 'data_dir' and 'tmpdir' construction arguments cannot be provided at the same time"
+            in str(cm.exception)
+        )
+
     def test_zero_aabbs(self):
         # Test to check behaviour with aabbs of zero size.
         import numpy as np
