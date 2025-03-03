@@ -174,7 +174,9 @@ def _fetch_satcat_celestrak() -> pl.DataFrame:
         )
 
     # Parse the satcat into a polars dataframes.
-    satcat = pl.read_csv(StringIO(download_response.text))
+    # NOTE: use truncate_ragged_lines=True since occasionally we have seen malformed
+    # CSV files from celestrak.
+    satcat = pl.read_csv(StringIO(download_response.text), truncate_ragged_lines=True)
 
     logger.debug("celestrak satcat downloaded and parsed")
 
