@@ -49,8 +49,8 @@ struct gpe {
 // Construct a polyjectory using the SGP4 propagator.
 //
 // The set of gpes is passed in as a span, the time interval for the construction of the polyjectory is given by the
-// second and third arguments (begin/end as UTC Julian dates). The last two arguments are the reentry and exit
-// radiuses.
+// second and third arguments (begin/end as UTC Julian dates). The next two arguments are the reentry and exit
+// radiuses. The last three arguments are the temp/custom data dir arguments and the persist flag.
 polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std::size_t, std::dynamic_extent>>, double,
                                   double, double, double, std::optional<std::filesystem::path>, bool,
                                   std::optional<std::filesystem::path>);
