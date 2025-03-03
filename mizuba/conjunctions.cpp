@@ -336,9 +336,9 @@ conjunctions::conjunctions(const polyjectory &pj, double conj_thresh, double con
     const auto n_cd_steps = boost::numeric_cast<std::size_t>(std::ceil(pj.get_maxT() / conj_det_interval));
 
     // Init the data dir path as either the user-provided path (if not empty) or a "unique" dir path into a temp dir.
-    auto data_dir_path = (data_dir && !data_dir->empty())
-                             ? detail::create_dir_0700(boost::filesystem::path(*data_dir))
-                             : detail::create_temp_dir(detail::cj_tmp_tplt, std::move(tmpdir));
+    const auto data_dir_path = (data_dir && !data_dir->empty())
+                                   ? detail::create_dir_0700(boost::filesystem::path(*data_dir))
+                                   : detail::create_temp_dir(detail::cj_tmp_tplt, std::move(tmpdir));
 
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the temp dir in case of exceptions.
