@@ -52,7 +52,7 @@ namespace mizuba
 
 std::tuple<std::vector<double>, std::vector<std::tuple<std::size_t, std::size_t>>,
            std::vector<std::tuple<std::size_t, std::size_t>>>
-conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, const polyjectory &pj,
+conjunctions::detect_conjunctions(const boost::filesystem::path &data_dir_path, const polyjectory &pj,
                                   std::size_t n_cd_steps, double conj_thresh, double conj_det_interval,
                                   const std::vector<std::int32_t> &otypes, bool skip_cd)
 {
@@ -91,36 +91,36 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     const auto n_tot_aabbs = (safe_size_t(n_objs) + 1) * n_cd_steps;
 
     // Prepare the files whose size we know in advance.
-    detail::create_sized_file(tmp_dir_path / "aabbs", n_tot_aabbs * sizeof(float) * 8u);
-    detail::file_pwrite aabbs_file(tmp_dir_path / "aabbs");
+    detail::create_sized_file(data_dir_path / "aabbs", n_tot_aabbs * sizeof(float) * 8u);
+    detail::file_pwrite aabbs_file(data_dir_path / "aabbs");
 
-    detail::create_sized_file(tmp_dir_path / "srt_aabbs", n_tot_aabbs * sizeof(float) * 8u);
-    detail::file_pwrite srt_aabbs_file(tmp_dir_path / "srt_aabbs");
+    detail::create_sized_file(data_dir_path / "srt_aabbs", n_tot_aabbs * sizeof(float) * 8u);
+    detail::file_pwrite srt_aabbs_file(data_dir_path / "srt_aabbs");
 
-    detail::create_sized_file(tmp_dir_path / "mcodes", safe_size_t(n_objs) * n_cd_steps * sizeof(std::uint64_t));
-    detail::file_pwrite mcodes_file(tmp_dir_path / "mcodes");
+    detail::create_sized_file(data_dir_path / "mcodes", safe_size_t(n_objs) * n_cd_steps * sizeof(std::uint64_t));
+    detail::file_pwrite mcodes_file(data_dir_path / "mcodes");
 
-    detail::create_sized_file(tmp_dir_path / "srt_mcodes", safe_size_t(n_objs) * n_cd_steps * sizeof(std::uint64_t));
-    detail::file_pwrite srt_mcodes_file(tmp_dir_path / "srt_mcodes");
+    detail::create_sized_file(data_dir_path / "srt_mcodes", safe_size_t(n_objs) * n_cd_steps * sizeof(std::uint64_t));
+    detail::file_pwrite srt_mcodes_file(data_dir_path / "srt_mcodes");
 
     // NOTE: we use std::uint32_t to index into the objects, even though in principle a polyjectory could contain more
     // than 2**32-1 objects. std::uint32_t gives us ample room to run large simulations if ever needed, while at the
     // same time reducing memory utilisation wrt 64-bit indices (especially in the representation of bvh trees).
-    detail::create_sized_file(tmp_dir_path / "vidx", safe_size_t(n_objs) * n_cd_steps * sizeof(std::uint32_t));
-    detail::file_pwrite vidx_file(tmp_dir_path / "vidx");
+    detail::create_sized_file(data_dir_path / "vidx", safe_size_t(n_objs) * n_cd_steps * sizeof(std::uint32_t));
+    detail::file_pwrite vidx_file(data_dir_path / "vidx");
 
     // Prepare the files whose sizes are not known in advance.
-    const auto bvh_file_path = tmp_dir_path / "bvh";
+    const auto bvh_file_path = data_dir_path / "bvh";
     assert(!boost::filesystem::exists(bvh_file_path));
     std::ofstream bvh_file(bvh_file_path.string(), std::ios::binary | std::ios::out);
     bvh_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
-    const auto bp_file_path = tmp_dir_path / "bp";
+    const auto bp_file_path = data_dir_path / "bp";
     assert(!boost::filesystem::exists(bp_file_path));
     std::ofstream bp_file(bp_file_path.string(), std::ios::binary | std::ios::out);
     bp_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
-    const auto conj_file_path = tmp_dir_path / "conjunctions";
+    const auto conj_file_path = data_dir_path / "conjunctions";
     assert(!boost::filesystem::exists(conj_file_path));
     std::ofstream conj_file(conj_file_path.string(), std::ios::binary | std::ios::out);
     conj_file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
@@ -524,14 +524,14 @@ conjunctions::detect_conjunctions(const boost::filesystem::path &tmp_dir_path, c
     conj_file.close();
 
     // Mark them as read-only.
-    detail::mark_file_read_only(tmp_dir_path / "aabbs");
-    detail::mark_file_read_only(tmp_dir_path / "srt_aabbs");
-    detail::mark_file_read_only(tmp_dir_path / "mcodes");
-    detail::mark_file_read_only(tmp_dir_path / "srt_mcodes");
-    detail::mark_file_read_only(tmp_dir_path / "vidx");
-    detail::mark_file_read_only(tmp_dir_path / "bvh");
-    detail::mark_file_read_only(tmp_dir_path / "bp");
-    detail::mark_file_read_only(tmp_dir_path / "conjunctions");
+    detail::mark_file_read_only(data_dir_path / "aabbs");
+    detail::mark_file_read_only(data_dir_path / "srt_aabbs");
+    detail::mark_file_read_only(data_dir_path / "mcodes");
+    detail::mark_file_read_only(data_dir_path / "srt_mcodes");
+    detail::mark_file_read_only(data_dir_path / "vidx");
+    detail::mark_file_read_only(data_dir_path / "bvh");
+    detail::mark_file_read_only(data_dir_path / "bp");
+    detail::mark_file_read_only(data_dir_path / "conjunctions");
 
     return std::make_tuple(std::move(cd_end_times), std::move(tree_offsets), std::move(bp_offsets));
 }
