@@ -21,6 +21,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -40,6 +42,7 @@
 
 #include "conjunctions.hpp"
 #include "detail/file_utils.hpp"
+#include "logging.hpp"
 #include "mdspan.hpp"
 #include "polyjectory.hpp"
 
@@ -56,14 +59,22 @@ namespace mizuba
 namespace detail
 {
 
+namespace
+{
+
+// The template used when creating temporary dirs for conjunctions objects.
+// NOTE: it needs to be documented that temporary dirs always begin with "mizuba_conjunctions".
+constexpr auto *cj_tmp_tplt = "mizuba_conjunctions-%%%%-%%%%-%%%%-%%%%";
+
+} // namespace
+
 struct conjunctions_impl {
     using bvh_node = conjunctions::bvh_node;
     using aabb_collision = conjunctions::aabb_collision;
     using conj = conjunctions::conj;
 
-    // The path to the temp dir containing all the
-    // conjunctions data.
-    boost::filesystem::path m_temp_dir_path;
+    // The path to the dir containing the conjunctions data.
+    boost::filesystem::path m_data_dir_path;
     // The total number of objects.
     std::size_t m_n_objs = 0;
     // The conjunction threshold.
@@ -126,20 +137,20 @@ struct conjunctions_impl {
     const conj *m_conjs_ptr = nullptr;
 
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    explicit conjunctions_impl(boost::filesystem::path temp_dir_path, const polyjectory &pj, double conj_thresh,
+    explicit conjunctions_impl(boost::filesystem::path data_dir_path, const polyjectory &pj, double conj_thresh,
                                double conj_det_interval, std::size_t n_cd_steps, std::vector<double> cd_end_times,
                                std::vector<std::tuple<std::size_t, std::size_t>> tree_offsets,
                                std::vector<std::tuple<std::size_t, std::size_t>> bp_offsets,
                                std::vector<std::int32_t> otypes)
-        : m_temp_dir_path(std::move(temp_dir_path)), m_n_objs(pj.get_n_objs()), m_conj_thresh(conj_thresh),
+        : m_data_dir_path(std::move(data_dir_path)), m_n_objs(pj.get_n_objs()), m_conj_thresh(conj_thresh),
           m_conj_det_interval(conj_det_interval), m_n_cd_steps(n_cd_steps), m_cd_end_times(std::move(cd_end_times)),
           m_tree_offsets(std::move(tree_offsets)), m_bp_offsets(std::move(bp_offsets)), m_otypes(std::move(otypes)),
-          m_file_aabbs((m_temp_dir_path / "aabbs").string()),
-          m_file_srt_aabbs((m_temp_dir_path / "srt_aabbs").string()),
-          m_file_mcodes((m_temp_dir_path / "mcodes").string()),
-          m_file_srt_mcodes((m_temp_dir_path / "srt_mcodes").string()),
-          m_file_srt_idx((m_temp_dir_path / "vidx").string()), m_file_bvh_trees((m_temp_dir_path / "bvh").string()),
-          m_file_bp((m_temp_dir_path / "bp").string()), m_file_conjs(m_temp_dir_path / "conjunctions")
+          m_file_aabbs((m_data_dir_path / "aabbs").string()),
+          m_file_srt_aabbs((m_data_dir_path / "srt_aabbs").string()),
+          m_file_mcodes((m_data_dir_path / "mcodes").string()),
+          m_file_srt_mcodes((m_data_dir_path / "srt_mcodes").string()),
+          m_file_srt_idx((m_data_dir_path / "vidx").string()), m_file_bvh_trees((m_data_dir_path / "bvh").string()),
+          m_file_bp((m_data_dir_path / "bp").string()), m_file_conjs(m_data_dir_path / "conjunctions")
     {
         // Sanity checks.
         assert(n_cd_steps > 0u);
@@ -189,22 +200,37 @@ struct conjunctions_impl {
 
     void close() noexcept
     {
-        // NOTE: a conjunctions object is not supposed to be closed
-        // more than once.
-        assert(is_open());
+        try {
+            // NOTE: a conjunctions object is not supposed to be closed
+            // more than once.
+            assert(is_open());
 
-        // Close all memory-mapped files.
-        m_file_aabbs.close();
-        m_file_srt_aabbs.close();
-        m_file_mcodes.close();
-        m_file_srt_mcodes.close();
-        m_file_srt_idx.close();
-        m_file_bvh_trees.close();
-        m_file_bp.close();
-        m_file_conjs.close();
+            // Close all memory-mapped files.
+            // NOTE: these close() calls can in principle throw. If they do, and we are within
+            // a destructor call, the destructor of the mmapped files will eventually
+            // be invoked, ignoring any exception that may be thrown by close():
+            //
+            // https://github.com/boostorg/iostreams/blob/develop/src/mapped_file.cpp#L84
+            m_file_aabbs.close();
+            m_file_srt_aabbs.close();
+            m_file_mcodes.close();
+            m_file_srt_mcodes.close();
+            m_file_srt_idx.close();
+            m_file_bvh_trees.close();
+            m_file_bp.close();
+            m_file_conjs.close();
 
-        // Remove the temp dir and everything within.
-        boost::filesystem::remove_all(m_temp_dir_path);
+            // Remove the data dir and everything within.
+            boost::filesystem::remove_all(m_data_dir_path);
+            // LCOV_EXCL_START
+        } catch (const std::exception &e) {
+            log_warning("Exception caught while trying to close a conjunctions object (data_dir={}): '{}'",
+                        m_data_dir_path.string(), e.what());
+        } catch (...) {
+            log_warning("Exception caught while trying to close a conjunctions object (data_dir={})",
+                        m_data_dir_path.string());
+        }
+        // LCOV_EXCL_STOP
     }
 
     conjunctions_impl(conjunctions_impl &&) noexcept = delete;
@@ -236,8 +262,20 @@ const std::shared_ptr<conjunctions_impl> &fetch_cj_impl(const conjunctions &cj) 
 } // namespace detail
 
 conjunctions::conjunctions(const polyjectory &pj, double conj_thresh, double conj_det_interval,
-                           std::optional<std::vector<std::int32_t>> otypes)
+                           std::optional<std::vector<std::int32_t>> otypes,
+                           std::optional<std::filesystem::path> data_dir, std::optional<std::filesystem::path> tmpdir_)
 {
+    if (data_dir && tmpdir_) [[unlikely]] {
+        throw std::invalid_argument(
+            "The 'data_dir' and 'tmpdir' construction arguments cannot be provided at the same time");
+    }
+
+    // Convert tmpdir to boost::filesystem::path, if necessary.
+    std::optional<boost::filesystem::path> tmpdir;
+    if (tmpdir_) {
+        tmpdir.emplace(*tmpdir_);
+    }
+
     // Check conj_thresh.
     if (!std::isfinite(conj_thresh) || conj_thresh <= 0) [[unlikely]] {
         throw std::invalid_argument(
@@ -297,25 +335,26 @@ conjunctions::conjunctions(const polyjectory &pj, double conj_thresh, double con
     // Determine the number of conjunction detection steps.
     const auto n_cd_steps = boost::numeric_cast<std::size_t>(std::ceil(pj.get_maxT() / conj_det_interval));
 
-    // Assemble a "unique" dir path into the system temp dir. This will be the root dir
-    // for all conjunctions data.
-    const auto tmp_dir_path = detail::create_temp_dir("mizuba_conjunctions-%%%%-%%%%-%%%%-%%%%");
+    // Init the data dir path as either the user-provided path (if not empty) or a "unique" dir path into a temp dir.
+    const auto data_dir_path = (data_dir && !data_dir->empty())
+                                   ? detail::create_dir_0700(boost::filesystem::path(*data_dir))
+                                   : detail::create_temp_dir(detail::cj_tmp_tplt, std::move(tmpdir));
 
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the temp dir in case of exceptions.
     try {
         // Run conjunction detection.
         auto [cd_end_times, tree_offsets, bp_offsets]
-            = detect_conjunctions(tmp_dir_path, pj, n_cd_steps, conj_thresh, conj_det_interval, *otypes, skip_cd);
+            = detect_conjunctions(data_dir_path, pj, n_cd_steps, conj_thresh, conj_det_interval, *otypes, skip_cd);
 
         // Create the impl.
         m_impl = std::make_shared<detail::conjunctions_impl>(
-            tmp_dir_path, pj, conj_thresh, conj_det_interval, n_cd_steps, std::move(cd_end_times),
+            data_dir_path, pj, conj_thresh, conj_det_interval, n_cd_steps, std::move(cd_end_times),
             std::move(tree_offsets), std::move(bp_offsets), std::move(*otypes));
 
         // LCOV_EXCL_START
     } catch (...) {
-        boost::filesystem::remove_all(tmp_dir_path);
+        boost::filesystem::remove_all(data_dir_path);
         throw;
     }
     // LCOV_EXCL_STOP

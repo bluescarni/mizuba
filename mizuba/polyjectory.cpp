@@ -403,9 +403,9 @@ polyjectory::polyjectory(ptag,
     const auto dl_epoch = detail::hilo_to_dfloat(epoch, epoch2);
 
     // Init the data dir path as either the user-provided path (if not empty) or a "unique" dir path into a temp dir.
-    auto data_dir_path = (data_dir && !data_dir->empty())
-                             ? detail::create_dir_0700(boost::filesystem::path(*data_dir))
-                             : detail::create_temp_dir(detail::pj_tmp_tplt, std::move(tmpdir));
+    const auto data_dir_path = (data_dir && !data_dir->empty())
+                                   ? detail::create_dir_0700(boost::filesystem::path(*data_dir))
+                                   : detail::create_temp_dir(detail::pj_tmp_tplt, std::move(tmpdir));
 
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the data dir in case of exceptions.
@@ -630,9 +630,8 @@ polyjectory::polyjectory(ptag,
         // If an exception is thrown (e.g., from memory allocation or from the impl ctor throwing), the impl has not
         // been fully constructed and thus its dtor will not be invoked, and the cleanup of data_dir_path will be
         // performed in the catch block below.
-        m_impl = std::make_shared<detail::polyjectory_impl>(std::move(data_dir_path),
-                                                            boost::numeric_cast<std::size_t>(n_objs), poly_op1, maxT,
-                                                            dl_epoch.hi, dl_epoch.lo, persist);
+        m_impl = std::make_shared<detail::polyjectory_impl>(data_dir_path, boost::numeric_cast<std::size_t>(n_objs),
+                                                            poly_op1, maxT, dl_epoch.hi, dl_epoch.lo, persist);
     } catch (...) {
         boost::filesystem::remove_all(data_dir_path);
         throw;
@@ -788,9 +787,9 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
     }
 
     // Init the data dir path as either the user-provided path (if not empty) or a "unique" dir path into a temp dir.
-    auto data_dir_path = (data_dir && !data_dir->empty())
-                             ? detail::create_dir_0700(boost::filesystem::path(*data_dir))
-                             : detail::create_temp_dir(detail::pj_tmp_tplt, std::move(tmpdir));
+    const auto data_dir_path = (data_dir && !data_dir->empty())
+                                   ? detail::create_dir_0700(boost::filesystem::path(*data_dir))
+                                   : detail::create_temp_dir(detail::pj_tmp_tplt, std::move(tmpdir));
 
     // From now on, we have to wrap everything in a try/catch in order to ensure
     // proper cleanup of the data dir in case of exceptions.
@@ -939,7 +938,7 @@ polyjectory::polyjectory(const std::filesystem::path &orig_traj_file_path,
         assert(maxT.load() > 0);
 
         // Construct the implementation.
-        m_impl = std::make_shared<detail::polyjectory_impl>(std::move(data_dir_path),
+        m_impl = std::make_shared<detail::polyjectory_impl>(data_dir_path,
                                                             boost::numeric_cast<std::size_t>(traj_offsets.size()), op1,
                                                             maxT.load(), dl_epoch.hi, dl_epoch.lo, persist);
     } catch (...) {
