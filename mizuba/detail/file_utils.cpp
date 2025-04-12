@@ -56,6 +56,14 @@
 
 #endif
 
+#if defined(__linux__) || defined(__APPLE__)
+
+#define MIZUBA_HAS_MADVISE
+
+#include <sys/mman.h>
+
+#endif
+
 #include <boost/cstdint.hpp>
 #include <boost/filesystem/directory.hpp>
 #include <boost/filesystem/file_status.hpp>
@@ -402,6 +410,27 @@ void file_pwrite::pwrite(const void *buffer, std::size_t size, std::size_t offse
         buffer = static_cast<const void *>(reinterpret_cast<const char *>(buffer) + written_sz);
     } while (sz != 0);
 
+#endif
+}
+
+// Helper to invoke madvise() with MADV_DONTNEED on the entire content of a memory-mapped file.
+void madvise_dontneed(boost::iostreams::mapped_file_source &file)
+{
+    assert(file.is_open());
+
+    if (file.size() == 0u) {
+        return;
+    }
+
+#if defined(MIZUBA_HAS_MADVISE)
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+    void *ptr = const_cast<void *>(static_cast<const void *>(file.data()));
+
+    if (::madvise(ptr, boost::numeric_cast<std::size_t>(file.size()), MADV_DONTNEED) == -1) [[unlikely]] {
+        // LCOV_EXCL_START
+        throw std::runtime_error("madvise() call failed");
+        // LCOV_EXCL_STOP
+    }
 #endif
 }
 

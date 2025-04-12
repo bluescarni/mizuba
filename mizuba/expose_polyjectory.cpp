@@ -282,6 +282,7 @@ void expose_polyjectory(pybind11::module_ &m)
         "data_dir"_a);
     pt_cl.def("detach", &mz::polyjectory::detach);
     pt_cl.def_property_readonly("is_detached", &mz::polyjectory::is_detached);
+    pt_cl.def("hint_release", &mz::polyjectory::hint_release);
     pt_cl.def(
         "__getitem__",
         [](const py::object &self, std::size_t i) {

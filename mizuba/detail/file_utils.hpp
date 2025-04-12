@@ -28,6 +28,7 @@
 #endif
 
 #include <boost/filesystem/path.hpp>
+#include <boost/iostreams/device/mapped_file.hpp>
 
 namespace mizuba::detail
 {
@@ -66,6 +67,8 @@ public:
 
     void pwrite(const void *, std::size_t, std::size_t);
 };
+
+void madvise_dontneed(boost::iostreams::mapped_file_source &);
 
 } // namespace mizuba::detail
 
