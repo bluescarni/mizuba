@@ -138,6 +138,7 @@ class polyjectory_test_case(_ut.TestCase):
         self.assertTrue(np.all(pj[0][1] == [0.0, 1.0]))
         self.assertTrue(np.all(pj[1][0] == np.zeros((0, 8, 7), dtype=float)))
         self.assertTrue(np.all(pj[1][1] == np.zeros((0,), dtype=float)))
+        pj.hint_release()
 
         pj = polyjectory(
             trajs=[state_data[1:], state_data],
@@ -149,6 +150,7 @@ class polyjectory_test_case(_ut.TestCase):
         self.assertTrue(np.all(pj[0][1] == np.zeros((0,), dtype=float)))
         self.assertTrue(np.all(pj[1][0] == state_data))
         self.assertTrue(np.all(pj[1][1] == [0.0, 1.0]))
+        pj.hint_release()
 
         with self.assertRaises(ValueError) as cm:
             polyjectory(

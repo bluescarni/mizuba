@@ -279,6 +279,8 @@ class conjunctions_test_case(_ut.TestCase):
         with self.assertRaises(AttributeError) as cm:
             c.srt_idx = srt_idx
 
+        c.hint_release()
+
     def test_main(self):
         import numpy as np
         import sys
@@ -355,6 +357,8 @@ class conjunctions_test_case(_ut.TestCase):
             with self.assertRaises(AttributeError) as cm:
                 c.otypes = otypes
             self.assertEqual(len(otypes), pj.n_objs)
+
+            c.hint_release()
 
             # Error handling.
             with self.assertRaises(ValueError) as cm:
