@@ -119,7 +119,7 @@ endif()
 # Find the dependencies.
 
 # heyoka.
-find_package(heyoka 7.2.1 REQUIRED CONFIG)
+find_package(heyoka 7.3.0 REQUIRED CONFIG)
 message(STATUS "Found heyoka version ${heyoka_VERSION}")
 
 # fmt.
