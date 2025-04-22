@@ -16,18 +16,18 @@ BRANCH_NAME=`git rev-parse --abbrev-ref HEAD`
 echo "BRANCH_NAME: ${BRANCH_NAME}"
 
 # Detect the Python version.
-if [[ ${MIZUBA_BUILD_TYPE} == *38* ]]; then
-	PYTHON_DIR="cp38-cp38"
-elif [[ ${MIZUBA_BUILD_TYPE} == *39* ]]; then
+if [[ ${MIZUBA_BUILD_TYPE} == *39 ]]; then
 	PYTHON_DIR="cp39-cp39"
-elif [[ ${MIZUBA_BUILD_TYPE} == *310* ]]; then
+elif [[ ${MIZUBA_BUILD_TYPE} == *310 ]]; then
 	PYTHON_DIR="cp310-cp310"
-elif [[ ${MIZUBA_BUILD_TYPE} == *311* ]]; then
+elif [[ ${MIZUBA_BUILD_TYPE} == *311 ]]; then
 	PYTHON_DIR="cp311-cp311"
-elif [[ ${MIZUBA_BUILD_TYPE} == *312* ]]; then
+elif [[ ${MIZUBA_BUILD_TYPE} == *312 ]]; then
 	PYTHON_DIR="cp312-cp312"
-elif [[ ${MIZUBA_BUILD_TYPE} == *313* ]]; then
+elif [[ ${MIZUBA_BUILD_TYPE} == *313 ]]; then
 	PYTHON_DIR="cp313-cp313"
+elif [[ ${MIZUBA_BUILD_TYPE} == *313t ]]; then
+	PYTHON_DIR="cp313-cp313t"
 else
 	echo "Invalid build type: ${MIZUBA_BUILD_TYPE}"
 	exit 1

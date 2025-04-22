@@ -31,7 +31,7 @@
 #include "logging.hpp"
 #include "tmpdir.hpp"
 
-PYBIND11_MODULE(core, m)
+PYBIND11_MODULE(core, m, pybind11::mod_gil_not_used())
 {
     namespace py = pybind11;
     namespace mz = mizuba;
