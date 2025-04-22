@@ -414,6 +414,10 @@ void file_pwrite::pwrite(const void *buffer, std::size_t size, std::size_t offse
 }
 
 // Helper to invoke madvise() with MADV_DONTNEED on the entire content of a memory-mapped file.
+//
+// NOTE: it is unclear what kind of thread safety madvise() offers. In doubt, we implement this function as a
+// mutating operation on 'file' (through the use of a non-const reference), so that it is clear that the function
+// must not be called concurrently on the same file.
 void madvise_dontneed(boost::iostreams::mapped_file_source &file)
 {
     assert(file.is_open());
