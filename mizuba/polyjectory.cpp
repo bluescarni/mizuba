@@ -991,6 +991,18 @@ bool polyjectory::is_detached() const noexcept
     return !m_impl;
 }
 
+void polyjectory::hint_release()
+{
+    check_attached();
+
+    detail::madvise_dontneed(m_impl->m_desc_file);
+    detail::madvise_dontneed(m_impl->m_traj_offsets_file);
+    detail::madvise_dontneed(m_impl->m_time_offsets_file);
+    detail::madvise_dontneed(m_impl->m_traj_file);
+    detail::madvise_dontneed(m_impl->m_time_file);
+    detail::madvise_dontneed(m_impl->m_status_file);
+}
+
 std::tuple<polyjectory::traj_span_t, polyjectory::time_span_t, std::int32_t>
 polyjectory::operator[](std::size_t i) const
 {

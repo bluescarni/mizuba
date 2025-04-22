@@ -80,12 +80,15 @@ jobs:
           cd ..
           cd tools
           python -c "from mizuba.test import run_test_suite; run_test_suite()"
-  manylinux228_x86_64-py313:
+  manylinux228_x86_64:
      runs-on: ubuntu-latest
+     strategy:
+       matrix:
+         mizuba_build_type: ["Python313", "Python312", "Python311", "Python310"]
      container:
       image: pagmo2/manylinux228_x86_64_with_deps:latest
       env:
-        MIZUBA_BUILD_TYPE: "Python313"
+        MIZUBA_BUILD_TYPE: ${{ matrix.mizuba_build_type }}
         TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
      steps:
        - uses: actions/checkout@v4
@@ -93,50 +96,5 @@ jobs:
          run: bash tools/gha_manylinux.sh
        - uses: actions/upload-artifact@v4
          with:
-           name: wheel_313
-           path: repaired_wheel/*.whl
-  manylinux228_x86_64-py312:
-     runs-on: ubuntu-latest
-     container:
-      image: pagmo2/manylinux228_x86_64_with_deps:latest
-      env:
-        MIZUBA_BUILD_TYPE: "Python312"
-        TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
-     steps:
-       - uses: actions/checkout@v4
-       - name: Build
-         run: bash tools/gha_manylinux.sh
-       - uses: actions/upload-artifact@v4
-         with:
-           name: wheel_312
-           path: repaired_wheel/*.whl
-  manylinux228_x86_64-py311:
-     runs-on: ubuntu-latest
-     container:
-      image: pagmo2/manylinux228_x86_64_with_deps:latest
-      env:
-        MIZUBA_BUILD_TYPE: "Python311"
-        TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
-     steps:
-       - uses: actions/checkout@v4
-       - name: Build
-         run: bash tools/gha_manylinux.sh
-       - uses: actions/upload-artifact@v4
-         with:
-           name: wheel_311
-           path: repaired_wheel/*.whl
-  manylinux228_x86_64-py310:
-     runs-on: ubuntu-latest
-     container:
-      image: pagmo2/manylinux228_x86_64_with_deps:latest
-      env:
-        MIZUBA_BUILD_TYPE: "Python310"
-        TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
-     steps:
-       - uses: actions/checkout@v4
-       - name: Build
-         run: bash tools/gha_manylinux.sh
-       - uses: actions/upload-artifact@v4
-         with:
-           name: wheel_310
+           name: wheel_${{ matrix.mizuba_build_type }}_linux_x86_64
            path: repaired_wheel/*.whl

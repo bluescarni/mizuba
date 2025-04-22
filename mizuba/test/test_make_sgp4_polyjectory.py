@@ -331,6 +331,8 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
                 self.assertTrue(np.allclose(r, mz_state[0, :3], rtol=0, atol=1e-8))
                 self.assertTrue(np.allclose(v, mz_state[0, 3:6], rtol=0, atol=1e-11))
 
+        pj.hint_release()
+
     def test_leap_seconds(self):
         # Test creation of a polyjectory over
         # a timespan including a leap second day.

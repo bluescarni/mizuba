@@ -4,7 +4,7 @@ requires = ['scikit-build-core']
 
 [project]
 name = 'mizuba'
-version = '0.0.9'
+version = '0.0.10'
 description = "Python library for fast conjunction detection in orbital environments"
 readme = 'README.md'
 requires-python = '>=3.9'
@@ -32,7 +32,7 @@ Repository = "https://github.com/bluescarni/mizuba"
 
 [project.optional-dependencies]
 sgp4 = ["sgp4"]
-heyoka = ["heyoka >= 7.2.1, < 8"]
+heyoka = ["heyoka >= 7.3.0, < 8"]
 
 [tool.scikit-build]
 # Avoid copying the C++ source files when building

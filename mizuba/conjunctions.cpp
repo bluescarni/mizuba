@@ -464,6 +464,18 @@ std::size_t conjunctions::get_n_cd_steps() const noexcept
     return m_impl->m_n_cd_steps;
 }
 
+void conjunctions::hint_release()
+{
+    detail::madvise_dontneed(m_impl->m_file_aabbs);
+    detail::madvise_dontneed(m_impl->m_file_srt_aabbs);
+    detail::madvise_dontneed(m_impl->m_file_mcodes);
+    detail::madvise_dontneed(m_impl->m_file_srt_mcodes);
+    detail::madvise_dontneed(m_impl->m_file_srt_idx);
+    detail::madvise_dontneed(m_impl->m_file_bvh_trees);
+    detail::madvise_dontneed(m_impl->m_file_bp);
+    detail::madvise_dontneed(m_impl->m_file_conjs);
+}
+
 dspan_1d<const conjunctions::conj> conjunctions::get_conjunctions() const noexcept
 {
     if (m_impl->m_conjs_ptr == nullptr) {
