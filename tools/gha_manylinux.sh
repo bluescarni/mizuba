@@ -33,6 +33,8 @@ else
 	exit 1
 fi
 
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -- -y
+
 # Report the inferred directory where python is found.
 echo "PYTHON_DIR: ${PYTHON_DIR}"
 
