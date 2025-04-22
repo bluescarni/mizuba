@@ -84,7 +84,7 @@ jobs:
      runs-on: ubuntu-latest
      strategy:
        matrix:
-         mizuba_build_type: ["Python313", "Python312", "Python311", "Python310"]
+         mizuba_build_type: ["Python313t", "Python313", "Python312", "Python311", "Python310"]
      container:
       image: pagmo2/manylinux228_x86_64_with_deps:latest
       env:
