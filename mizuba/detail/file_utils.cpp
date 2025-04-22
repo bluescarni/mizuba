@@ -418,6 +418,8 @@ void madvise_dontneed(boost::iostreams::mapped_file_source &file)
 {
     assert(file.is_open());
 
+    // NOTE: it is not clear whether or not calling madvise with zero
+    // size is ok. Let us special-case it just in case.
     if (file.size() == 0u) {
         return;
     }
