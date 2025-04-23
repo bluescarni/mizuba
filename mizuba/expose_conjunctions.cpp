@@ -115,7 +115,12 @@ void expose_conjunctions(pybind11::module_ &m)
         // Turn into an array and return.
         return mdspan_to_array(self, cd_end_times_span);
     });
-    conj_cl.def("hint_release", &mz::conjunctions::hint_release);
+    conj_cl.def("hint_release", [](mz::conjunctions &self) {
+        // NOTE: release the GIL during release.
+        const py::gil_scoped_release release;
+
+        self.hint_release();
+    });
     conj_cl.def_property_readonly("srt_aabbs", [](const py::object &self) {
         const auto *p = py::cast<const mz::conjunctions *>(self);
 
