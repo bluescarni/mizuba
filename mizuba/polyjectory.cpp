@@ -995,12 +995,12 @@ void polyjectory::hint_release()
 {
     check_attached();
 
-    detail::madvise_dontneed(m_impl->m_desc_file);
-    detail::madvise_dontneed(m_impl->m_traj_offsets_file);
-    detail::madvise_dontneed(m_impl->m_time_offsets_file);
-    detail::madvise_dontneed(m_impl->m_traj_file);
-    detail::madvise_dontneed(m_impl->m_time_file);
-    detail::madvise_dontneed(m_impl->m_status_file);
+    detail::advise_dontneed(m_impl->m_desc_file, m_impl->m_data_dir_path / "desc");
+    detail::advise_dontneed(m_impl->m_traj_offsets_file, m_impl->m_data_dir_path / "traj_offsets");
+    detail::advise_dontneed(m_impl->m_time_offsets_file, m_impl->m_data_dir_path / "time_offsets");
+    detail::advise_dontneed(m_impl->m_traj_file, m_impl->m_data_dir_path / "traj");
+    detail::advise_dontneed(m_impl->m_time_file, m_impl->m_data_dir_path / "time");
+    detail::advise_dontneed(m_impl->m_status_file, m_impl->m_data_dir_path / "status");
 }
 
 std::tuple<polyjectory::traj_span_t, polyjectory::time_span_t, std::int32_t>
