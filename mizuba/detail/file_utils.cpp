@@ -413,12 +413,12 @@ void file_pwrite::pwrite(const void *buffer, std::size_t size, std::size_t offse
 #endif
 }
 
-// Helper to invoke madvise() with MADV_DONTNEED on the entire content of a memory-mapped file.
+// Helper to signal that the contents of the input memory-mapped file will not be needed in the future.
 //
-// NOTE: it is unclear what kind of thread safety madvise() offers. In doubt, we implement this function as a
-// mutating operation on 'file' (through the use of a non-const reference), so that it is clear that the function
+// NOTE: it is unclear what kind of thread safety madvise()/posix_fadvise() offer. In doubt, we implement this function
+// as a mutating operation on 'file' (through the use of a non-const reference), so that it is clear that the function
 // must not be called concurrently on the same file.
-void madvise_dontneed(boost::iostreams::mapped_file_source &file)
+void advise_dontneed(boost::iostreams::mapped_file_source &file, [[maybe_unused]] const boost::filesystem::path &path)
 {
     assert(file.is_open());
 
@@ -437,6 +437,34 @@ void madvise_dontneed(boost::iostreams::mapped_file_source &file)
         throw std::runtime_error("madvise() call failed");
         // LCOV_EXCL_STOP
     }
+#endif
+
+#if defined(MIZUBA_HAVE_POSIX_2008)
+
+    const auto fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd == -1) [[unlikely]] {
+        // LCOV_EXCL_START
+        throw std::runtime_error(fmt::format("Unable to open the file '{}' within advise_dontneed()", path.c_str()));
+        // LCOV_EXCL_STOP
+    }
+
+    // RAII file closer.
+    // NOLINTNEXTLINE(hicpp-special-member-functions,cppcoreguidelines-special-member-functions)
+    const struct file_closer {
+        int fd;
+        ~file_closer()
+        {
+            ::close(fd);
+        }
+    } fc{.fd = fd};
+
+    if (::posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED) != 0) [[unlikely]] {
+        // LCOV_EXCL_START
+        throw std::runtime_error(
+            fmt::format("Calling posix_fadvise() on the file '{}' returned an error code", path.c_str()));
+        // LCOV_EXCL_STOP
+    }
+
 #endif
 }
 

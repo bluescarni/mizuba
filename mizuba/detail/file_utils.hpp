@@ -68,7 +68,7 @@ public:
     void pwrite(const void *, std::size_t, std::size_t);
 };
 
-void madvise_dontneed(boost::iostreams::mapped_file_source &);
+void advise_dontneed(boost::iostreams::mapped_file_source &, const boost::filesystem::path &);
 
 } // namespace mizuba::detail
 

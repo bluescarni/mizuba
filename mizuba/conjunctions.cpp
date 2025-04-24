@@ -466,14 +466,14 @@ std::size_t conjunctions::get_n_cd_steps() const noexcept
 
 void conjunctions::hint_release()
 {
-    detail::madvise_dontneed(m_impl->m_file_aabbs);
-    detail::madvise_dontneed(m_impl->m_file_srt_aabbs);
-    detail::madvise_dontneed(m_impl->m_file_mcodes);
-    detail::madvise_dontneed(m_impl->m_file_srt_mcodes);
-    detail::madvise_dontneed(m_impl->m_file_srt_idx);
-    detail::madvise_dontneed(m_impl->m_file_bvh_trees);
-    detail::madvise_dontneed(m_impl->m_file_bp);
-    detail::madvise_dontneed(m_impl->m_file_conjs);
+    detail::advise_dontneed(m_impl->m_file_aabbs, m_impl->m_data_dir_path / "aabbs");
+    detail::advise_dontneed(m_impl->m_file_srt_aabbs, m_impl->m_data_dir_path / "srt_aabbs");
+    detail::advise_dontneed(m_impl->m_file_mcodes, m_impl->m_data_dir_path / "mcodes");
+    detail::advise_dontneed(m_impl->m_file_srt_mcodes, m_impl->m_data_dir_path / "srt_mcodes");
+    detail::advise_dontneed(m_impl->m_file_srt_idx, m_impl->m_data_dir_path / "vidx");
+    detail::advise_dontneed(m_impl->m_file_bvh_trees, m_impl->m_data_dir_path / "bvh");
+    detail::advise_dontneed(m_impl->m_file_bp, m_impl->m_data_dir_path / "bp");
+    detail::advise_dontneed(m_impl->m_file_conjs, m_impl->m_data_dir_path / "conjunctions");
 }
 
 dspan_1d<const conjunctions::conj> conjunctions::get_conjunctions() const noexcept
