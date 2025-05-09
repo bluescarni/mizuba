@@ -1038,7 +1038,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
 
                       // Update n_sats_written.
                       {
-                          std::lock_guard lock(wpc.mut);
+                          const std::lock_guard lock(wpc.mut);
                           ++wpc.n_sats_written;
                       }
                       // Notify waiting threads that n_sats_written has been modified.
@@ -1368,7 +1368,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
 
                                         // Update n_sats_processed.
                                         {
-                                            std::lock_guard lock(wpc.mut);
+                                            const std::lock_guard lock(wpc.mut);
                                             ++wpc.n_sats_processed;
                                         }
                                         // Notify waiting threads that n_sats_processed has been modified.
