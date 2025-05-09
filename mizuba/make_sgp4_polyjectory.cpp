@@ -974,7 +974,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
     std::atomic<bool> stop_writing = false;
 
     // NOTE: below we will have several threads waiting on each other. For instance, the writer thread needs to wait for
-    // the processor threads to produce the trajectories before writing them to disk. On the other hand, the current
+    // the producer threads to produce the trajectories before writing them to disk. On the other hand, the current
     // thread needs to wait for the writer thread to write enough trajectories to disk before enqueuing another producer
     // task.
     //
