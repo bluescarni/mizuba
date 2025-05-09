@@ -21,11 +21,13 @@
 #include <cassert>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <future>
 #include <ios>
+#include <mutex>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -48,6 +50,7 @@
 #include <oneapi/tbb/enumerable_thread_specific.h>
 #include <oneapi/tbb/parallel_for.h>
 #include <oneapi/tbb/parallel_invoke.h>
+#include <oneapi/tbb/task_group.h>
 
 #include <heyoka/expression.hpp>
 #include <heyoka/kw.hpp>
@@ -76,6 +79,32 @@ namespace detail
 
 namespace
 {
+
+// NOTE: this is a thin wrapper around oneapi::tbb::task_group that enforces wait() on destruction. We want this
+// behaviour in order to automatically wait() in case of exceptions.
+class jtask_group
+{
+    oneapi::tbb::task_group m_tg;
+
+public:
+    jtask_group() = default;
+    jtask_group(const jtask_group &) = delete;
+    jtask_group(jtask_group &&) noexcept = delete;
+    jtask_group &operator=(const jtask_group &) = delete;
+    jtask_group &operator=(jtask_group &&) noexcept = delete;
+    // NOTE: this will terminate if m_tg.wait() throws, but I think it is ok as I don't see a way of recovering from
+    // such an occurrence.
+    ~jtask_group()
+    {
+        m_tg.wait();
+    }
+
+    template <typename Func>
+    void run(Func &&f)
+    {
+        m_tg.run(std::forward<Func>(f));
+    }
+};
 
 // Helper to construct a double-double representation of the epoch of a gpe.
 auto fetch_gpe_epoch(const gpe &g)
@@ -937,59 +966,110 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
     std::vector traj_futures(std::ranges::begin(traj_fut_view), std::ranges::end(traj_fut_view));
     std::vector time_futures(std::ranges::begin(time_fut_view), std::ranges::end(time_fut_view));
 
-    // Flag to signal that the writer thread should stop writing.
-    std::atomic<bool> stop_writing = false;
-
     // Prepare the traj_offsets vector.
     std::vector<polyjectory::traj_offset> traj_offsets;
     traj_offsets.reserve(n_sats);
 
+    // Flag to indicate that the writer thread should stop writing.
+    std::atomic<bool> stop_writing = false;
+
+    // NOTE: below we will have several threads waiting on each other. For instance, the writer thread needs to wait for
+    // the producer threads to produce the trajectories before writing them to disk. On the other hand, the current
+    // thread needs to wait for the writer thread to write enough trajectories to disk before enqueuing another producer
+    // task.
+    //
+    // This creates situations in which an exception in a thread will lead to other threads hanging and waiting forever.
+    //
+    // We thus introduce a pair of atomic booleans, initially set to false, that will be set to true if the
+    // writer/producer threads interrupt due to an exception. Within the wait() calls, we will be periodically checking
+    // on these boolean flags and interrupt the wait in case they become true.
+    //
+    // NOTE: the point of using atomics instead other mechanisms (such as condition variables) is that they provide
+    // noexcept behaviour, whereas traditional locking can in principle throw.
+
+    // Flag to indicate that an exception was thrown in the writer thread.
+    std::atomic<bool> writer_failure = false;
+    // Flag to indicate that an exception was thrown in a producer thread.
+    std::atomic<bool> producer_failure = false;
+
+    // Timeout duration for wait operations.
+    using namespace std::chrono_literals;
+    const auto wait_timeout = 250ms;
+
+    // Data structure to coordinate between the writer thread and the producer threads.
+    struct {
+        // The total number of satellites whose trajectories have been written to disk.
+        std::size_t n_sats_written = 0;
+        // The total number of satellites whose trajectories have been produced.
+        std::size_t n_sats_processed = 0;
+        // Condition variable and mutex to coordinate the access to and notify the modification of n_sats_written and
+        // n_sats_processed.
+        std::condition_variable cv;
+        std::mutex mut;
+    } wpc;
+
     // Launch the writer thread.
-    auto writer_future = std::async(std::launch::async, [&traj_file, &traj_futures, &traj_offsets, &time_file,
-                                                         &time_futures, op1, &stop_writing, n_sats]() {
-        using namespace std::chrono_literals;
+    auto writer_future
+        = std::async(std::launch::async, [&traj_file, &traj_futures, &traj_offsets, &time_file, &time_futures, op1,
+                                          &stop_writing, &writer_failure, n_sats, &wpc, wait_timeout]() {
+              // NOTE: we place everything in a try/catch block so that we can set writer_failure to true in case of
+              // exceptions before re-throwing.
+              try {
+                  // Track the trajectory offsets to build up traj_offsets.
+                  safe_size_t cur_traj_offset = 0;
 
-        // How long should we wait before checking if we should stop writing.
-        const auto wait_duration = 250ms;
+                  for (std::size_t i = 0; i < n_sats; ++i) {
+                      // Fetch the futures.
+                      auto &traj_fut = traj_futures[i];
+                      auto &time_fut = time_futures[i];
 
-        // Track the trajectory offsets to build up traj_offsets.
-        safe_size_t cur_traj_offset = 0;
+                      // Wait until the futures become available, or return if a stop is requested.
+                      while (traj_fut.wait_for(wait_timeout) != std::future_status::ready
+                             || time_fut.wait_for(wait_timeout) != std::future_status::ready) {
+                          // LCOV_EXCL_START
+                          // NOTE: stop_writing will be set to true if an exception is thrown either by a producer
+                          // thread or by the code that enqueues the producer tasks. Thus, here we are also indirectly
+                          // checking the status of producer_failure.
+                          if (stop_writing) [[unlikely]] {
+                              return;
+                          }
+                          // LCOV_EXCL_STOP
+                      }
 
-        for (std::size_t i = 0; i < n_sats; ++i) {
-            // Fetch the futures.
-            auto &traj_fut = traj_futures[i];
-            auto &time_fut = time_futures[i];
+                      // Fetch the data in the futures.
+                      auto v_traj = traj_fut.get();
+                      auto v_time = time_fut.get();
 
-            // Wait until the futures become available, or return if a stop is requested.
-            while (traj_fut.wait_for(wait_duration) != std::future_status::ready
-                   || time_fut.wait_for(wait_duration) != std::future_status::ready) {
-                // LCOV_EXCL_START
-                if (stop_writing) [[unlikely]] {
-                    return;
-                }
-                // LCOV_EXCL_STOP
-            }
+                      // Write the traj data.
+                      traj_file.write(reinterpret_cast<const char *>(v_traj.data()),
+                                      boost::safe_numerics::safe<std::streamsize>(v_traj.size()) * sizeof(double));
 
-            // Fetch the data in the futures.
-            auto v_traj = traj_fut.get();
-            auto v_time = time_fut.get();
+                      // Compute the number of steps, and update traj_offsets and cur_traj_offset.
+                      assert(v_traj.size() % (safe_size_t(op1) * 7u) == 0u);
+                      const auto n_steps = v_traj.size() / (safe_size_t(op1) * 7u);
 
-            // Write the traj data.
-            traj_file.write(reinterpret_cast<const char *>(v_traj.data()),
-                            boost::safe_numerics::safe<std::streamsize>(v_traj.size()) * sizeof(double));
+                      traj_offsets.emplace_back(cur_traj_offset, n_steps);
+                      cur_traj_offset += v_traj.size();
 
-            // Compute the number of steps, and update traj_offsets and cur_traj_offset.
-            assert(v_traj.size() % (safe_size_t(op1) * 7u) == 0u);
-            const auto n_steps = v_traj.size() / (safe_size_t(op1) * 7u);
+                      // Write the time data.
+                      time_file.write(reinterpret_cast<const char *>(v_time.data()),
+                                      boost::safe_numerics::safe<std::streamsize>(v_time.size()) * sizeof(double));
 
-            traj_offsets.emplace_back(cur_traj_offset, n_steps);
-            cur_traj_offset += v_traj.size();
-
-            // Write the time data.
-            time_file.write(reinterpret_cast<const char *>(v_time.data()),
-                            boost::safe_numerics::safe<std::streamsize>(v_time.size()) * sizeof(double));
-        }
-    });
+                      // Update n_sats_written.
+                      {
+                          const std::lock_guard lock(wpc.mut);
+                          ++wpc.n_sats_written;
+                      }
+                      // Notify waiting threads that n_sats_written has been modified.
+                      wpc.cv.notify_all();
+                  }
+                  // LCOV_EXCL_START
+              } catch (...) {
+                  writer_failure.store(true);
+                  throw;
+              }
+              // LCOV_EXCL_STOP
+          });
 
     // NOTE: at this point, the writer thread has started. From now on, we wrap everything in a try/catch block
     // so that, if any exception is thrown, we can safely stop the writer thread before re-throwing.
@@ -1081,6 +1161,12 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
                             .xyz_ieval = std::move(xyz_ieval)};
         });
 
+        // NOTE: it is **very** important that we create the task group *after* ets. This ordering ensures that the task
+        // group is destroyed (and thus joined) *before* the destruction of ets. If we created the task group before
+        // ets, then ets would be destroyed before the tasks in the task group (which are using ets) are finished,
+        // leading to use-after-free, UB, etc.
+        detail::jtask_group tg;
+
         // Run the parallel interpolation loop.
         //
         // NOTE: we process the satellites in chunks because we want the writer thread to make steady progress.
@@ -1101,136 +1187,237 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
         //
         // NOTE: I am also not sure whether or not it is possible to achieve the same result more elegantly
         // with some TBB partitioner/range wizardry.
-        //
-        // NOTE: another approach would be to submit the computational tasks into a task_group, and submit
-        // the next computational task as soon as, say, 75% of the data for the current task has been written
-        // to disk. We would need a condition variable to coordinate. This would allow for a smoother transition
-        // from one computational task to the next, instead of the strict fork/join mode we are using now.
         constexpr auto chunk_size = 256u;
 
         for (std::size_t start_sat_idx = 0; start_sat_idx != n_sats;) {
+            // Flag to signal that an exception was thrown in the writer/producer threads.
+            bool wait_failure = false;
+
+            // Flag to signal that we already reported a delay in task processing for this iteration.
+            // This is relevant only for debug output.
+            bool delay_reported = false;
+
+            // NOTE: if this is the first iteration of the for loop, do not wait on the condition variable and
+            // unconditionally proceed to schedule the first task.
+            if (start_sat_idx != 0u) {
+                // NOTE: before scheduling the next task, we wait until the number of written trajectories is a large
+                // fraction of the number of computed trajectories. The goal here is to avoid enqueueing too many tasks
+                // if the writer thread is not keeping up - this would lead to high memory consumption because the
+                // computed trajectories will be kept in RAM until they are written to disk.
+
+                // Predicate for waiting on wpc.cv.
+                const auto pred = [&wpc, &delay_reported] {
+                    if (wpc.n_sats_processed == 0u) {
+                        // NOTE: if we get here, we know that we already scheduled the first task but it has not made
+                        // any progress yet. Wait until some trajectories have been computed.
+                        return false;
+                    }
+
+                    // Determine the ratio of written/computed trajectories.
+                    const auto ratio
+                        = static_cast<double>(wpc.n_sats_written) / static_cast<double>(wpc.n_sats_processed);
+                    if (!std::isfinite(ratio)) [[unlikely]] {
+                        // LCOV_EXCL_START
+                        throw std::runtime_error(fmt::format("A non-finite n_sats_written/n_sats_processed ratio of {} "
+                                                             "was detected in make_sgp4_polyjectory()",
+                                                             ratio));
+                        // LCOV_EXCL_STOP
+                    }
+
+                    // NOTE: allow to schedule the next task if we have written at least 75% of the computed
+                    // trajectories thus far.
+                    constexpr auto min_ratio = 0.75;
+                    if (!delay_reported && ratio < min_ratio) {
+                        log_debug("Delaying task processing in make_sgp4_polyjectory() while waiting for trajectories "
+                                  "to be written to disk");
+                        delay_reported = true;
+                    }
+                    return ratio >= min_ratio;
+                };
+
+                // Wait on wpc.cv until either the writer thread has made enough progress, or an exception was raised in
+                // the writer/producer threads.
+                std::unique_lock lock(wpc.mut);
+                while (!wpc.cv.wait_for(lock, wait_timeout, pred)) {
+                    // NOTE: if we end up here, it means that wait_timeout has elapsed and not enough progress on the
+                    // writing has been made yet. Before resuming waiting, we check for failures in the writer and
+                    // producer threads. If we detect failures, we set the flag wait_failure to true and break out.
+
+                    // LCOV_EXCL_START
+                    // NOTE: we can unlock while we check the failure flags since we are not accessing anything in wpc.
+                    lock.unlock();
+
+                    if (writer_failure.load()) [[unlikely]] {
+                        log_warning("Exception detected in the writer thread of make_sgp4_polyjectory()");
+                        wait_failure = true;
+                        break;
+                    }
+                    if (producer_failure.load()) [[unlikely]] {
+                        // NOTE: in case of a producer failure, the writer thread will eventually become stuck waiting
+                        // on a trajectory that will never be produced.
+                        log_warning("Exception detected in a producer thread of make_sgp4_polyjectory()");
+                        wait_failure = true;
+                        break;
+                    }
+
+                    // Re-lock.
+                    lock.lock();
+                    // LCOV_EXCL_STOP
+                }
+            } // LCOV_EXCL_LINE
+
+            if (wait_failure) [[unlikely]] {
+                // One of the writer/producer threads threw an exception, break out. The exception will be raised
+                // either in the destructor of the task group (which implicitly invokes wait(), which will raise the
+                // exception), or when we wait on the writer future.
+                break; // LCOV_EXCL_LINE
+            }
+
+            // Determine the end index for the next task.
             const auto n_rem_sats = n_sats - start_sat_idx;
             const auto end_sat_idx = start_sat_idx + (n_rem_sats < chunk_size ? n_rem_sats : chunk_size);
 
-            oneapi::tbb::parallel_for(
-                oneapi::tbb::blocked_range<decltype(gpe_groups.size())>(start_sat_idx, end_sat_idx),
-                [&ets, &gpe_groups, dl_jd_begin = dfloat{jd_begin, 0.}, dl_jd_end = dfloat{jd_end, 0.}, &global_status,
-                 &traj_promises, &time_promises, epoch_tai, reentry_radius, exit_radius](const auto &range) {
-                    // Fetch the thread-local data.
-                    auto &local_ets = ets.local();
+            tg.run([&ets, &gpe_groups, dl_jd_begin = dfloat{jd_begin, 0.}, dl_jd_end = dfloat{jd_end, 0.},
+                    &global_status, &traj_promises, &time_promises, epoch_tai, reentry_radius, exit_radius,
+                    start_sat_idx, end_sat_idx, &wpc, &producer_failure]() {
+                // NOTE: we place the entire task in a try/catch block so that we can set producer_failure to true in
+                // case of exceptions before re-throwing.
+                try {
+                    oneapi::tbb::parallel_for(
+                        oneapi::tbb::blocked_range<decltype(gpe_groups.size())>(start_sat_idx, end_sat_idx),
+                        [&ets, &gpe_groups, dl_jd_begin, dl_jd_end, &global_status, &traj_promises, &time_promises,
+                         epoch_tai, reentry_radius, exit_radius, &wpc](const auto &range) {
+                            // Fetch the thread-local data.
+                            auto &local_ets = ets.local();
 
-                    // NOTE: isolate to avoid issues with thread-local data. See:
-                    // https://oneapi-src.github.io/oneTBB/main/tbb_userguide/work_isolation.html
-                    // We may be invoking TBB primitives when using heyoka's sgp4 propagator.
-                    oneapi::tbb::this_task_arena::isolate([&local_ets, &range, &gpe_groups, dl_jd_begin, dl_jd_end,
-                                                           &global_status, &traj_promises, &time_promises, epoch_tai,
-                                                           reentry_radius, exit_radius]() {
-                        for (auto sat_idx = range.begin(); sat_idx != range.end(); ++sat_idx) {
-                            // Fetch the gpe group for the current satellite.
-                            const auto gpe_group = *gpe_groups[sat_idx];
-                            assert(std::ranges::size(gpe_group) >= 1);
-                            static_assert(std::ranges::sized_range<decltype(gpe_group)>);
+                            // NOTE: isolate to avoid issues with thread-local data. See:
+                            // https://oneapi-src.github.io/oneTBB/main/tbb_userguide/work_isolation.html
+                            // We may be invoking TBB primitives when using heyoka's sgp4 propagator.
+                            oneapi::tbb::this_task_arena::isolate(
+                                [&local_ets, &range, &gpe_groups, dl_jd_begin, dl_jd_end, &global_status,
+                                 &traj_promises, &time_promises, epoch_tai, reentry_radius, exit_radius, &wpc]() {
+                                    for (auto sat_idx = range.begin(); sat_idx != range.end(); ++sat_idx) {
+                                        // Fetch the gpe group for the current satellite.
+                                        const auto gpe_group = *gpe_groups[sat_idx];
+                                        assert(std::ranges::size(gpe_group) >= 1);
+                                        static_assert(std::ranges::sized_range<decltype(gpe_group)>);
 
-                            // Cache the end of the group.
-                            const auto group_end = std::ranges::end(gpe_group);
+                                        // Cache the end of the group.
+                                        const auto group_end = std::ranges::end(gpe_group);
 
-                            // NOTE: the policy we follow is that for interpolation we want to begin
-                            // with the latest gpe whose epoch is *earlier than or equal to* jd_begin, if
-                            // possible. This may not always result in the *best* (i.e., most precise)
-                            // propagation, because regular gpes are typically most accurate somewhen *before*
-                            // the epoch:
-                            //
-                            // https://celestrak.org/publications/AAS/07-127/AAS-07-127.pdf
-                            //
-                            // This happens because regular gpes are fitted to past observations.
-                            // However, in practice:
-                            //
-                            // - during operational conjunction screening we will typically have no choice
-                            //   other than using the latest available GP data, and
-                            // - SupGP gpes are actually fitted to the future ephemeris provided by
-                            //   the operators (rather than past observations like the regular gpes).
-                            //
-                            // If necessary and if this becomes an issue, we can think of more sophisticated
-                            // policies for selecting the gpes to use for propagation.
+                                        // NOTE: the policy we follow is that for interpolation we want to begin
+                                        // with the latest gpe whose epoch is *earlier than or equal to* jd_begin, if
+                                        // possible. This may not always result in the *best* (i.e., most precise)
+                                        // propagation, because regular gpes are typically most accurate somewhen
+                                        // *before* the epoch:
+                                        //
+                                        // https://celestrak.org/publications/AAS/07-127/AAS-07-127.pdf
+                                        //
+                                        // This happens because regular gpes are fitted to past observations.
+                                        // However, in practice:
+                                        //
+                                        // - during operational conjunction screening we will typically have no choice
+                                        //   other than using the latest available GP data, and
+                                        // - SupGP gpes are actually fitted to the future ephemeris provided by
+                                        //   the operators (rather than past observations like the regular gpes).
+                                        //
+                                        // If necessary and if this becomes an issue, we can think of more sophisticated
+                                        // policies for selecting the gpes to use for propagation.
 
-                            // Locate the first gpe in the group whose epoch is
-                            // *greater than* jd_begin. This is the gpe *right after*
-                            // the one we want to target.
-                            auto it_gpe = std::ranges::upper_bound(gpe_group, dl_jd_begin, {},
-                                                                   [](const gpe &g) { return fetch_gpe_epoch(g); });
-                            // If possible, move to the previous GPE.
-                            it_gpe -= (it_gpe != std::ranges::begin(gpe_group));
+                                        // Locate the first gpe in the group whose epoch is
+                                        // *greater than* jd_begin. This is the gpe *right after*
+                                        // the one we want to target.
+                                        auto it_gpe
+                                            = std::ranges::upper_bound(gpe_group, dl_jd_begin, {},
+                                                                       [](const gpe &g) { return fetch_gpe_epoch(g); });
+                                        // If possible, move to the previous GPE.
+                                        it_gpe -= (it_gpe != std::ranges::begin(gpe_group));
 
-                            // Init interpolation_begin.
-                            auto interpolation_begin = dl_jd_begin;
+                                        // Init interpolation_begin.
+                                        auto interpolation_begin = dl_jd_begin;
 
-                            // Prepare the write buffers to store the polynomial coefficients
-                            // and the end times of the interpolation steps.
-                            std::vector<double> poly_cf_buf, time_buf;
+                                        // Prepare the write buffers to store the polynomial coefficients
+                                        // and the end times of the interpolation steps.
+                                        std::vector<double> poly_cf_buf, time_buf;
 
-                            // Iterate over the gpes in the group and interpolate.
-                            while (true) {
-                                // Flag to signal that this will be the last iteration.
-                                bool last_iteration = false;
+                                        // Iterate over the gpes in the group and interpolate.
+                                        while (true) {
+                                            // Flag to signal that this will be the last iteration.
+                                            bool last_iteration = false;
 
-                                // Compute the iterator to the next gpe.
-                                const auto next_it_gpe = it_gpe + 1;
+                                            // Compute the iterator to the next gpe.
+                                            const auto next_it_gpe = it_gpe + 1;
 
-                                // Compute the upper time limit for the interpolation with
-                                // the current gpe.
-                                dfloat interpolation_end{};
-                                if (next_it_gpe == group_end) {
-                                    // We are at the last gpe of the group, we have no choice
-                                    // but to use it until the end.
-                                    interpolation_end = dl_jd_end;
-                                    last_iteration = true;
-                                } else {
-                                    // Compute the epoch of the next gpe.
-                                    const auto next_gpe_epoch = fetch_gpe_epoch(*next_it_gpe);
+                                            // Compute the upper time limit for the interpolation with
+                                            // the current gpe.
+                                            dfloat interpolation_end{};
+                                            if (next_it_gpe == group_end) {
+                                                // We are at the last gpe of the group, we have no choice
+                                                // but to use it until the end.
+                                                interpolation_end = dl_jd_end;
+                                                last_iteration = true;
+                                            } else {
+                                                // Compute the epoch of the next gpe.
+                                                const auto next_gpe_epoch = fetch_gpe_epoch(*next_it_gpe);
 
-                                    if (next_gpe_epoch >= dl_jd_end) {
-                                        // The next gpe's epoch is at or after the end date.
-                                        // We can keep on using this gpe until the end.
-                                        interpolation_end = dl_jd_end;
-                                        last_iteration = true;
-                                    } else {
-                                        // The next gpe's epoch begins before the end date.
-                                        // We need to stop the interpolation with the current gpe
-                                        // at next_gpe_epoch.
-                                        interpolation_end = next_gpe_epoch;
+                                                if (next_gpe_epoch >= dl_jd_end) {
+                                                    // The next gpe's epoch is at or after the end date.
+                                                    // We can keep on using this gpe until the end.
+                                                    interpolation_end = dl_jd_end;
+                                                    last_iteration = true;
+                                                } else {
+                                                    // The next gpe's epoch begins before the end date.
+                                                    // We need to stop the interpolation with the current gpe
+                                                    // at next_gpe_epoch.
+                                                    interpolation_end = next_gpe_epoch;
+                                                }
+                                            }
+
+                                            // Interpolate using the current gpe.
+                                            const auto res = gpe_interpolate(
+                                                *it_gpe, interpolation_begin, interpolation_end, local_ets, poly_cf_buf,
+                                                time_buf, epoch_tai, reentry_radius, exit_radius);
+
+                                            // Check the status. If it is nonzero, set the global status
+                                            // flag for the satellite and break out.
+                                            if (res != 0) [[unlikely]] {
+                                                global_status[sat_idx] = res;
+                                                break;
+                                            }
+
+                                            // Break out if this is the last iteration.
+                                            if (last_iteration) {
+                                                break;
+                                            }
+
+                                            // Update interpolation_begin.
+                                            interpolation_begin = fetch_gpe_epoch(*next_it_gpe);
+
+                                            // Move to the next gpe.
+                                            it_gpe = next_it_gpe;
+                                        }
+
+                                        // Send the buffers to the futures.
+                                        traj_promises[sat_idx].set_value(std::move(poly_cf_buf));
+                                        time_promises[sat_idx].set_value(std::move(time_buf));
+
+                                        // Update n_sats_processed.
+                                        {
+                                            const std::lock_guard lock(wpc.mut);
+                                            ++wpc.n_sats_processed;
+                                        }
+                                        // Notify waiting threads that n_sats_processed has been modified.
+                                        wpc.cv.notify_all();
                                     }
-                                }
-
-                                // Interpolate using the current gpe.
-                                const auto res
-                                    = gpe_interpolate(*it_gpe, interpolation_begin, interpolation_end, local_ets,
-                                                      poly_cf_buf, time_buf, epoch_tai, reentry_radius, exit_radius);
-
-                                // Check the status. If it is nonzero, set the global status
-                                // flag for the satellite and break out.
-                                if (res != 0) [[unlikely]] {
-                                    global_status[sat_idx] = res;
-                                    break;
-                                }
-
-                                // Break out if this is the last iteration.
-                                if (last_iteration) {
-                                    break;
-                                }
-
-                                // Update interpolation_begin.
-                                interpolation_begin = fetch_gpe_epoch(*next_it_gpe);
-
-                                // Move to the next gpe.
-                                it_gpe = next_it_gpe;
-                            }
-
-                            // Send the buffers to the futures.
-                            traj_promises[sat_idx].set_value(std::move(poly_cf_buf));
-                            time_promises[sat_idx].set_value(std::move(time_buf));
-                        }
-                    });
-                });
+                                });
+                        });
+                    // LCOV_EXCL_START
+                } catch (...) {
+                    producer_failure.store(true);
+                    throw;
+                }
+                // LCOV_EXCL_STOP
+            });
 
             start_sat_idx = end_sat_idx;
         }
@@ -1292,11 +1479,12 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
     // std::isnan() returns int...
     // NOLINTNEXTLINE(readability-implicit-bool-conversion)
     if (std::isnan(reentry_radius) || std::isnan(exit_radius)) [[unlikely]] {
-        throw std::invalid_argument("The reentry/exit radiuses cannot be NaN");
+        throw std::invalid_argument("The reentry/exit radiuses in make_sgp4_polyjectory() cannot be NaN");
     }
     if (!(reentry_radius < exit_radius)) [[unlikely]] {
         throw std::invalid_argument(
-            fmt::format("The reentry radius ({}) must be less than the exit radius ({})", reentry_radius, exit_radius));
+            fmt::format("The reentry radius ({}) must be less than the exit radius ({}) in make_sgp4_polyjectory()",
+                        reentry_radius, exit_radius));
     }
 
     // Cache the total number of GPEs.
