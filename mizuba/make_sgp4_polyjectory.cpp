@@ -1003,7 +1003,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
         // The total number of satellites whose trajectories have been produced.
         std::size_t n_sats_processed = 0;
         // Condition variable and mutex to coordinate the access to and notify the modification of n_sats_written and
-        // n_sats_processed
+        // n_sats_processed.
         std::condition_variable cv;
         std::mutex mut;
     } wpc;
