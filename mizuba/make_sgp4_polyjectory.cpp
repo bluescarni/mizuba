@@ -1174,6 +1174,9 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
             // Flag to signal that an exception in the writer/processor threads was detected.
             bool wait_failure = false;
 
+            // Flag to signal that we already reported a delay in task processing for this iteration.
+            bool delay_reported = false;
+
             // NOTE: if this is the first iteration of the for loop, do not wait on the condition variable and
             // unconditionally proceed to schedule the first task.
             if (start_sat_idx != 0u) {
@@ -1181,7 +1184,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
                 // fraction of the number of computed trajectories. The goal here is to avoid enqueueing too many tasks
                 // if the writer thread is not keeping up - this would lead to high memory consumption because the
                 // computed trajectories will be kept in RAM until they are written to disk.
-                const auto pred = [&wpc] {
+                const auto pred = [&wpc, &delay_reported] {
                     if (wpc.n_sats_processed == 0u) {
                         // NOTE: if we get here, we know that we already scheduled the first task but it has not made
                         // any progress yet. Wait until some trajectories have been computed.
@@ -1200,7 +1203,13 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
 
                     // NOTE: allow to schedule the next task if we have written at least 75% of the computed
                     // trajectories thus far.
-                    return ratio >= 0.75;
+                    constexpr auto min_ratio = 0.75;
+                    if (!delay_reported && ratio < min_ratio) {
+                        log_debug("Delaying task processing in make_sgp4_polyjectory() while waiting for trajectories "
+                                  "to be written to disk");
+                        delay_reported = true;
+                    }
+                    return ratio >= min_ratio;
                 };
 
                 std::unique_lock lock(wpc.mut);
