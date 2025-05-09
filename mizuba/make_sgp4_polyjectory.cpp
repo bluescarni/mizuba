@@ -1213,25 +1213,21 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
                     // writing has been made yet. Before resuming waiting, we check for failures in the writer and
                     // processor threads. If we detect failures, we set the flag wait_failure to true and break out.
                     if (writer_failure.load()) [[unlikely]] {
-                        // LCOV_EXCL_START
                         log_warning("Failure detected in the writer thread of make_sgp4_polyjectory()");
                         wait_failure = true;
                         break;
-                        // LCOV_EXCL_STOP
                     }
                     if (processor_failure.load()) [[unlikely]] {
-                        // LCOV_EXCL_START
                         log_warning("Failure detected in a processor thread of make_sgp4_polyjectory()");
                         wait_failure = true;
                         break;
-                        // LCOV_EXCL_STOP
                     }
 
                     // Re-lock.
                     lock.lock();
                     // LCOV_EXCL_STOP
                 }
-            }
+            } // LCOV_EXCL_LINE
 
             if (wait_failure) [[unlikely]] {
                 // One of the writer/processor threads threw an exception, break out. The exception will be raised
