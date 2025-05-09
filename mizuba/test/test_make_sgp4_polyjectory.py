@@ -538,23 +538,29 @@ class make_sgp4_polyjectory_test_case(_ut.TestCase):
         # Invalid reentry/exit radiuses.
         with self.assertRaises(ValueError) as cm:
             make_sgp4_polyjectory(arr, 0.0, 1.0, reentry_radius=float("nan"))[0]
-        self.assertTrue("The reentry/exit radiuses cannot be NaN" in str(cm.exception))
+        self.assertTrue(
+            "The reentry/exit radiuses in make_sgp4_polyjectory() cannot be NaN"
+            in str(cm.exception)
+        )
 
         with self.assertRaises(ValueError) as cm:
             make_sgp4_polyjectory(arr, 0.0, 1.0, exit_radius=float("nan"))[0]
-        self.assertTrue("The reentry/exit radiuses cannot be NaN" in str(cm.exception))
+        self.assertTrue(
+            "The reentry/exit radiuses in make_sgp4_polyjectory() cannot be NaN"
+            in str(cm.exception)
+        )
 
         with self.assertRaises(ValueError) as cm:
             make_sgp4_polyjectory(arr, 0.0, 1.0, reentry_radius=2, exit_radius=2)[0]
         self.assertTrue(
-            "The reentry radius (2) must be less than the exit radius (2)"
+            "The reentry radius (2) must be less than the exit radius (2) in make_sgp4_polyjectory()"
             in str(cm.exception)
         )
 
         with self.assertRaises(ValueError) as cm:
             make_sgp4_polyjectory(arr, 0.0, 1.0, reentry_radius=3, exit_radius=2)[0]
         self.assertTrue(
-            "The reentry radius (3) must be less than the exit radius (2)"
+            "The reentry radius (3) must be less than the exit radius (2) in make_sgp4_polyjectory()"
             in str(cm.exception)
         )
 

@@ -80,7 +80,8 @@ namespace detail
 namespace
 {
 
-// NOTE: this is a thin wrapper around oneapi::tbb::task_group that enforces wait() on destruction.
+// NOTE: this is a thin wrapper around oneapi::tbb::task_group that enforces wait() on destruction. We want this
+// behaviour in order to automatically wait() in case of exceptions.
 class jtask_group
 {
     oneapi::tbb::task_group m_tg;
@@ -971,16 +972,31 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
 
     // Flag to indicate that the writer thread should stop writing.
     std::atomic<bool> stop_writing = false;
+
+    // NOTE: below we will have several threads waiting on each other. For instance, the writer thread needs to wait for
+    // the processor threads to produce the trajectories before writing them to disk. On the other hand, the current
+    // thread needs to wait for the writer thread to write enough trajectories to disk before enqueuing another producer
+    // task.
+    //
+    // This creates situations in which an exception in a thread will lead to other threads hanging and waiting forever.
+    //
+    // We thus introduce a pair of atomic booleans, initially set to false, that will be set to true if the
+    // writer/producer threads interrupt due to an exception. Within the wait() calls, we will be periodically checking
+    // on these boolean flags and interrupt the wait in case they become true.
+    //
+    // NOTE: the point of using atomics instead other mechanisms (such as condition variables) is that they provide
+    // noexcept behaviour, whereas traditional locking can in principle throw.
+
     // Flag to indicate that an exception was thrown in the writer thread.
     std::atomic<bool> writer_failure = false;
-    // Flag to indicate that an exception was thrown in a processor thread.
-    std::atomic<bool> processor_failure = false;
+    // Flag to indicate that an exception was thrown in a producer thread.
+    std::atomic<bool> producer_failure = false;
 
     // Timeout duration for wait operations.
     using namespace std::chrono_literals;
     const auto wait_timeout = 250ms;
 
-    // Data structure to coordinate between the writer thread and the data processing threads.
+    // Data structure to coordinate between the writer thread and the producer threads.
     struct {
         // The total number of satellites whose trajectories have been written to disk.
         std::size_t n_sats_written = 0;
@@ -997,7 +1013,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
         = std::async(std::launch::async, [&traj_file, &traj_futures, &traj_offsets, &time_file, &time_futures, op1,
                                           &stop_writing, &writer_failure, n_sats, &wpc, wait_timeout]() {
               // NOTE: we place everything in a try/catch block so that we can set writer_failure to true in case of
-              // exceptions.
+              // exceptions before re-throwing.
               try {
                   // Track the trajectory offsets to build up traj_offsets.
                   safe_size_t cur_traj_offset = 0;
@@ -1011,6 +1027,9 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
                       while (traj_fut.wait_for(wait_timeout) != std::future_status::ready
                              || time_fut.wait_for(wait_timeout) != std::future_status::ready) {
                           // LCOV_EXCL_START
+                          // NOTE: stop_writing will be set to true if an exception is thrown either by a producer
+                          // thread or by the code that enqueues the producer tasks. Thus, here we are also indirectly
+                          // checking the status of producer_failure.
                           if (stop_writing) [[unlikely]] {
                               return;
                           }
@@ -1171,10 +1190,11 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
         constexpr auto chunk_size = 256u;
 
         for (std::size_t start_sat_idx = 0; start_sat_idx != n_sats;) {
-            // Flag to signal that an exception in the writer/processor threads was detected.
+            // Flag to signal that an exception was thrown in the writer/producer threads.
             bool wait_failure = false;
 
             // Flag to signal that we already reported a delay in task processing for this iteration.
+            // This is relevant only for debug output.
             bool delay_reported = false;
 
             // NOTE: if this is the first iteration of the for loop, do not wait on the condition variable and
@@ -1184,6 +1204,8 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
                 // fraction of the number of computed trajectories. The goal here is to avoid enqueueing too many tasks
                 // if the writer thread is not keeping up - this would lead to high memory consumption because the
                 // computed trajectories will be kept in RAM until they are written to disk.
+
+                // Predicate for waiting on wpc.cv.
                 const auto pred = [&wpc, &delay_reported] {
                     if (wpc.n_sats_processed == 0u) {
                         // NOTE: if we get here, we know that we already scheduled the first task but it has not made
@@ -1196,8 +1218,9 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
                         = static_cast<double>(wpc.n_sats_written) / static_cast<double>(wpc.n_sats_processed);
                     if (!std::isfinite(ratio)) [[unlikely]] {
                         // LCOV_EXCL_START
-                        throw std::runtime_error(fmt::format(
-                            "A non-finite n_sats_written/n_sats_processed ratio of {} was detected", ratio));
+                        throw std::runtime_error(fmt::format("A non-finite n_sats_written/n_sats_processed ratio of {} "
+                                                             "was detected in make_sgp4_polyjectory()",
+                                                             ratio));
                         // LCOV_EXCL_STOP
                     }
 
@@ -1212,22 +1235,27 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
                     return ratio >= min_ratio;
                 };
 
+                // Wait on wpc.cv until either the writer thread has made enough progress, or an exception was raised in
+                // the writer/producer threads.
                 std::unique_lock lock(wpc.mut);
                 while (!wpc.cv.wait_for(lock, wait_timeout, pred)) {
+                    // NOTE: if we end up here, it means that wait_timeout has elapsed and not enough progress on the
+                    // writing has been made yet. Before resuming waiting, we check for failures in the writer and
+                    // producer threads. If we detect failures, we set the flag wait_failure to true and break out.
+
                     // LCOV_EXCL_START
                     // NOTE: we can unlock while we check the failure flags since we are not accessing anything in wpc.
                     lock.unlock();
 
-                    // NOTE: if we end up here, it means that wait_timeout has elapsed and not enough progress on the
-                    // writing has been made yet. Before resuming waiting, we check for failures in the writer and
-                    // processor threads. If we detect failures, we set the flag wait_failure to true and break out.
                     if (writer_failure.load()) [[unlikely]] {
-                        log_warning("Failure detected in the writer thread of make_sgp4_polyjectory()");
+                        log_warning("Exception detected in the writer thread of make_sgp4_polyjectory()");
                         wait_failure = true;
                         break;
                     }
-                    if (processor_failure.load()) [[unlikely]] {
-                        log_warning("Failure detected in a processor thread of make_sgp4_polyjectory()");
+                    if (producer_failure.load()) [[unlikely]] {
+                        // NOTE: in case of a producer failure, the writer thread will eventually become stuck waiting
+                        // on a trajectory that will never be produced.
+                        log_warning("Exception detected in a producer thread of make_sgp4_polyjectory()");
                         wait_failure = true;
                         break;
                     }
@@ -1239,7 +1267,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
             } // LCOV_EXCL_LINE
 
             if (wait_failure) [[unlikely]] {
-                // One of the writer/processor threads threw an exception, break out. The exception will be raised
+                // One of the writer/producer threads threw an exception, break out. The exception will be raised
                 // either in the destructor of the task group (which implicitly invokes wait(), which will raise the
                 // exception), or when we wait on the writer future.
                 break; // LCOV_EXCL_LINE
@@ -1251,9 +1279,9 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
 
             tg.run([&ets, &gpe_groups, dl_jd_begin = dfloat{jd_begin, 0.}, dl_jd_end = dfloat{jd_end, 0.},
                     &global_status, &traj_promises, &time_promises, epoch_tai, reentry_radius, exit_radius,
-                    start_sat_idx, end_sat_idx, &wpc, &processor_failure]() {
-                // NOTE: we place the entire task in a try/catch block so that we can set processor_failure to true in
-                // case of exceptions.
+                    start_sat_idx, end_sat_idx, &wpc, &producer_failure]() {
+                // NOTE: we place the entire task in a try/catch block so that we can set producer_failure to true in
+                // case of exceptions before re-throwing.
                 try {
                     oneapi::tbb::parallel_for(
                         oneapi::tbb::blocked_range<decltype(gpe_groups.size())>(start_sat_idx, end_sat_idx),
@@ -1385,7 +1413,7 @@ auto interpolate_all(const auto &c_nodes_unit, const auto &ta_kepler_tplt, const
                         });
                     // LCOV_EXCL_START
                 } catch (...) {
-                    processor_failure.store(true);
+                    producer_failure.store(true);
                     throw;
                 }
                 // LCOV_EXCL_STOP
@@ -1451,11 +1479,12 @@ polyjectory make_sgp4_polyjectory(heyoka::mdspan<const gpe, heyoka::extents<std:
     // std::isnan() returns int...
     // NOLINTNEXTLINE(readability-implicit-bool-conversion)
     if (std::isnan(reentry_radius) || std::isnan(exit_radius)) [[unlikely]] {
-        throw std::invalid_argument("The reentry/exit radiuses cannot be NaN");
+        throw std::invalid_argument("The reentry/exit radiuses in make_sgp4_polyjectory() cannot be NaN");
     }
     if (!(reentry_radius < exit_radius)) [[unlikely]] {
         throw std::invalid_argument(
-            fmt::format("The reentry radius ({}) must be less than the exit radius ({})", reentry_radius, exit_radius));
+            fmt::format("The reentry radius ({}) must be less than the exit radius ({}) in make_sgp4_polyjectory()",
+                        reentry_radius, exit_radius));
     }
 
     // Cache the total number of GPEs.
